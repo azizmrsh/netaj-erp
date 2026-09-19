@@ -21,6 +21,7 @@ function requiredModule(path: string) {
   if (path.startsWith("/api/external") || path.startsWith("/external")) return "EXTERNAL";
   if (path.startsWith("/api/projects") || path.startsWith("/projects")) return "PROJECTS";
   if (path.startsWith("/api/imports") || path.startsWith("/imports")) return "IMPORT";
+  if (path.startsWith("/api/configuration") || path.startsWith("/api/custom-reports") || path.startsWith("/settings/configuration") || path.startsWith("/reports/builder")) return "CONFIG";
   return "CORE";
 }
 

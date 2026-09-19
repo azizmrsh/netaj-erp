@@ -11,6 +11,7 @@ const menu = [
   ["المحاسبة والمالية", "/accounting", "ACCOUNTING"], ["الموارد البشرية", "/hr", "HR"], ["الأعمال الخارجية", "/external", "EXTERNAL"], ["التقارير والمقارنات", "/reports", "CORE"],
   ["المشاريع والمقاولات", "/projects", "PROJECTS"],
   ["مركز استيراد البيانات", "/imports", "IMPORT"],
+  ["التخصيص بدون كود", "/settings/configuration", "CONFIG"], ["منشئ التقارير", "/reports/builder", "CONFIG"],
   ["المستخدمون والصلاحيات", "/settings/users", "CORE"], ["إعدادات المؤسسة", "/settings/organization", "CORE"],
 ] as const;
 const money=(value:unknown)=>`${Number(value??0).toLocaleString("ar-SA",{minimumFractionDigits:2,maximumFractionDigits:2})} ر.س`;

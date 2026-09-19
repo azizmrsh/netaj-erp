@@ -14,6 +14,7 @@ type Party = {
   isSupplier: boolean;
   isActive: boolean;
 };
+type CustomField = { id: number; fieldKey: string; labelAr: string; fieldType: string; required: boolean; options?: string[]; defaultValue?: string | null };
 
 const emptyForm = {
   nameAr: "",
@@ -36,6 +37,7 @@ const emptyForm = {
     shortAddress: "",
     mapLink: "",
   },
+  customFields: {} as Record<string, unknown>,
 };
 
 export default function PartiesClient() {
@@ -45,6 +47,7 @@ export default function PartiesClient() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [form, setForm] = useState(emptyForm);
+  const [customFieldDefinitions, setCustomFieldDefinitions] = useState<CustomField[]>([]);
 
   async function loadParties() {
     try {
@@ -60,10 +63,10 @@ export default function PartiesClient() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/parties")
-      .then((response) => response.json())
-      .then((result) => {
-        if (!cancelled) setParties(Array.isArray(result) ? result : []);
+    Promise.all([fetch("/api/parties"), fetch("/api/custom-fields?entityType=PARTY")])
+      .then(async ([partyResponse, fieldResponse]) => [await partyResponse.json(), await fieldResponse.json()])
+      .then(([result, fieldResult]) => {
+        if (!cancelled) { setParties(Array.isArray(result) ? result : []); setCustomFieldDefinitions(Array.isArray(fieldResult) ? fieldResult : []); }
       })
       .catch(() => {
         if (!cancelled) setParties([]);
@@ -92,6 +95,7 @@ export default function PartiesClient() {
       },
     }));
   }
+  function updateCustomField(name: string, value: unknown) { setForm((old) => ({ ...old, customFields: { ...old.customFields, [name]: value } })); }
 
   async function saveParty(e: React.FormEvent) {
     e.preventDefault();
@@ -284,6 +288,8 @@ export default function PartiesClient() {
               مورد
             </label>
           </div>
+
+          {customFieldDefinitions.length > 0 && <><h3>حقول الشركة المخصصة</h3><div style={grid}>{customFieldDefinitions.map((field) => field.fieldType === "BOOLEAN" ? <label key={field.id}><input type="checkbox" checked={Boolean(form.customFields[field.fieldKey])} onChange={(e) => updateCustomField(field.fieldKey, e.target.checked)}/> {field.labelAr}{field.required ? " *" : ""}</label> : field.fieldType === "SELECT" ? <label key={field.id}>{field.labelAr}{field.required ? " *" : ""}<select value={String(form.customFields[field.fieldKey] ?? field.defaultValue ?? "")} onChange={(e) => updateCustomField(field.fieldKey, e.target.value)} style={{display:"block",width:"100%",padding:"10px",border:"1px solid #cbd5e1",borderRadius:"8px",marginTop:"6px"}}><option value="">اختر</option>{(field.options??[]).map(option=><option key={option}>{option}</option>)}</select></label> : <Field key={field.id} label={`${field.labelAr}${field.required ? " *" : ""}`} value={String(form.customFields[field.fieldKey] ?? field.defaultValue ?? "")} onChange={(value) => updateCustomField(field.fieldKey, field.fieldType === "NUMBER" ? Number(value) : value)}/>)}</div></>}
 
           <h3>العنوان الوطني</h3>
 

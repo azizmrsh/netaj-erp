@@ -2277,30 +2277,36 @@ model Company {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  tenant          Tenant                @relation(fields: [tenantId], references: [id])
-  group           CompanyGroup?         @relation(fields: [groupId], references: [id])
-  country         Country               @relation(fields: [countryCode], references: [code])
-  baseCurrency    Currency              @relation(fields: [baseCurrencyCode], references: [code])
-  language        Language              @relation(fields: [defaultLanguageCode], references: [code])
-  timeZone        TimeZone              @relation(fields: [timeZoneName], references: [name])
-  branches        Branch[]
-  warehouses      Warehouse[]
-  departments     Department[]
-  costCenters     CostCenter[]
-  fiscalYears     FiscalYear[]
-  exchangeRates   ExchangeRate[]
-  budgets         Budget[]
-  fxRevaluations  FxRevaluation[]
-  projects        Project[]
-  costCodes       CostCode[]
-  localizations   CompanyLocalization[]
-  modules         CompanyModule[]
-  entitlements    CompanyEntitlement[]
-  roles           Role[]
-  userAccess      CompanyAccess[]
-  sessions        AuthSession[]
-  importBatches   ImportBatch[]
-  importTemplates ImportTemplate[]
+  tenant                 Tenant                   @relation(fields: [tenantId], references: [id])
+  group                  CompanyGroup?            @relation(fields: [groupId], references: [id])
+  country                Country                  @relation(fields: [countryCode], references: [code])
+  baseCurrency           Currency                 @relation(fields: [baseCurrencyCode], references: [code])
+  language               Language                 @relation(fields: [defaultLanguageCode], references: [code])
+  timeZone               TimeZone                 @relation(fields: [timeZoneName], references: [name])
+  branches               Branch[]
+  warehouses             Warehouse[]
+  departments            Department[]
+  costCenters            CostCenter[]
+  fiscalYears            FiscalYear[]
+  exchangeRates          ExchangeRate[]
+  budgets                Budget[]
+  fxRevaluations         FxRevaluation[]
+  projects               Project[]
+  costCodes              CostCode[]
+  localizations          CompanyLocalization[]
+  modules                CompanyModule[]
+  entitlements           CompanyEntitlement[]
+  roles                  Role[]
+  userAccess             CompanyAccess[]
+  sessions               AuthSession[]
+  importBatches          ImportBatch[]
+  importTemplates        ImportTemplate[]
+  customFieldDefinitions CustomFieldDefinition[]
+  customFieldValues      CustomFieldValue[]
+  configurations         CompanyConfiguration[]
+  approvalRules          ApprovalRule[]
+  customReports          CustomReportDefinition[]
+  industryProfile        CompanyIndustryProfile?
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -2420,6 +2426,150 @@ model ImportTemplate {
 
   @@unique([tenantId, companyId, targetType, name])
   @@index([tenantId, companyId, targetType])
+}
+
+// ============================================================
+// NO-CODE COMPANY CONFIGURATION AND CUSTOM REPORTS
+// ============================================================
+
+model CustomFieldDefinition {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int      @default(1)
+  companyId      Int      @default(1)
+  entityType     String
+  fieldKey       String
+  labelAr        String
+  labelEn        String?
+  fieldType      String
+  required       Boolean  @default(false)
+  visible        Boolean  @default(true)
+  optionsJson    String   @default("[]")
+  defaultValue   String?
+  validationJson String   @default("{}")
+  conditionJson  String   @default("{}")
+  sortOrder      Int      @default(0)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  company Company            @relation(fields: [companyId], references: [id])
+  values  CustomFieldValue[]
+
+  @@unique([tenantId, companyId, entityType, fieldKey])
+  @@index([tenantId, companyId, entityType, isActive])
+}
+
+model CustomFieldValue {
+  id         Int      @id @default(autoincrement())
+  tenantId   Int      @default(1)
+  companyId  Int      @default(1)
+  fieldId    Int
+  entityType String
+  entityId   Int
+  valueJson  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  company Company               @relation(fields: [companyId], references: [id])
+  field   CustomFieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([fieldId, entityType, entityId])
+  @@index([tenantId, companyId, entityType, entityId])
+}
+
+model CompanyConfiguration {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1)
+  companyId Int      @default(1)
+  category  String
+  configKey String
+  labelAr   String?
+  labelEn   String?
+  valueType String   @default("JSON")
+  valueJson String
+  isSystem  Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([tenantId, companyId, category, configKey])
+  @@index([tenantId, companyId, category, isActive])
+}
+
+model ApprovalRule {
+  id            Int      @id @default(autoincrement())
+  tenantId      Int      @default(1)
+  companyId     Int      @default(1)
+  code          String
+  name          String
+  entityType    String
+  conditionJson String   @default("{}")
+  stepsJson     String   @default("[]")
+  priority      Int      @default(100)
+  isActive      Boolean  @default(true)
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([tenantId, companyId, code])
+  @@index([tenantId, companyId, entityType, isActive])
+}
+
+model CustomReportDefinition {
+  id               Int      @id @default(autoincrement())
+  tenantId         Int      @default(1)
+  companyId        Int      @default(1)
+  code             String
+  name             String
+  sourceType       String
+  fieldsJson       String
+  filtersJson      String   @default("[]")
+  groupByJson      String   @default("[]")
+  sortJson         String   @default("[]")
+  calculationsJson String   @default("[]")
+  visibility       String   @default("PRIVATE")
+  ownerUserId      Int?
+  roleCodesJson    String   @default("[]")
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([tenantId, companyId, code])
+  @@index([tenantId, companyId, sourceType, isActive])
+}
+
+model IndustryTemplateDefinition {
+  code       String   @id
+  nameAr     String
+  nameEn     String
+  configJson String   @default("{}")
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  companies CompanyIndustryProfile[]
+}
+
+model CompanyIndustryProfile {
+  id            Int      @id @default(autoincrement())
+  tenantId      Int      @default(1)
+  companyId     Int      @unique
+  templateCode  String
+  overridesJson String   @default("{}")
+  appliedAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  company  Company                    @relation(fields: [companyId], references: [id])
+  template IndustryTemplateDefinition @relation(fields: [templateCode], references: [code])
+
+  @@index([tenantId, companyId])
 }
 
 model Branch {

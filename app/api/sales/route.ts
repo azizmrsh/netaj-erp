@@ -9,6 +9,7 @@ import {
   parseCommerceLines,
   requiredText,
 } from "@/lib/commerce";
+import { evaluateApprovalRules } from "@/lib/configuration";
 
 export async function GET() {
   try {
@@ -33,6 +34,8 @@ export async function POST(request: Request) {
     }
     const lines = parseCommerceLines(body.items);
     const totals = commerceTotals(lines);
+    const approvalRules = await prisma.approvalRule.findMany({ where: { entityType: "SALE", isActive: true }, orderBy: { priority: "asc" } });
+    const requiredApprovals = evaluateApprovalRules(approvalRules, { ...body, totalAmount: totals.totalAmount, subtotal: totals.subtotal });
 
     const [party, validItems] = await Promise.all([
       prisma.party.findUnique({ where: { id: partyId } }),
@@ -57,13 +60,13 @@ export async function POST(request: Request) {
         paymentMethod: optionalText(body.paymentMethod),
         dueDate: optionalDate(body.dueDate),
         ...totals,
-        status: optionalText(body.status) ?? "DRAFT",
+        status: requiredApprovals.length ? "PENDING" : optionalText(body.status) ?? "DRAFT",
         notes: optionalText(body.notes),
         items: { create: lines },
       },
       include: { party: true, items: { include: { item: true } } },
     });
-    return NextResponse.json(sale, { status: 201 });
+    return NextResponse.json({ ...sale, requiredApprovals }, { status: 201 });
   } catch (error) {
     console.error(error);
     if (error instanceof CommerceValidationError) {

@@ -19,6 +19,8 @@ export const scopedModels = new Set([
   "ProjectChangeOrder", "ProjectChangeOrderLine", "ProjectProgress", "ProgressCertificate",
   "ProgressCertificateLine", "SubcontractorContract", "SubcontractorCertificate",
   "ImportBatch", "ImportRow", "LegacyRecordLink", "ImportTemplate",
+  "CustomFieldDefinition", "CustomFieldValue", "CompanyConfiguration", "ApprovalRule",
+  "CustomReportDefinition", "CompanyIndustryProfile",
 ]);
 
 export async function getVerifiedDataScope(): Promise<DataScope> {

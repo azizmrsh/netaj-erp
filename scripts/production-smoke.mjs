@@ -66,6 +66,8 @@ const routes = [
   "/projects",
   "/imports",
   "/settings/organization",
+  "/settings/configuration",
+  "/reports/builder",
   "/api/units",
   "/api/item-categories",
   "/api/items",
@@ -116,6 +118,9 @@ const routes = [
   "/api/projects",
   "/api/imports",
   "/api/imports/template?target=PARTIES",
+  "/api/configuration",
+  "/api/custom-fields?entityType=PARTY",
+  "/api/custom-reports",
   "/api/reports/legacy?report=monthly-comparison&from=2026-01-01&to=2026-12-31",
 ];
 
@@ -210,6 +215,31 @@ try {
     }),
   });
   assert.equal(partyResult.response.status, 201);
+
+  const customField = await jsonRequest("/api/configuration", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "CUSTOM_FIELD", entityType: "PARTY", fieldKey: `smoke_code_${suffix.toLowerCase()}`, labelAr: "رمز اختبار التهيئة", fieldType: "TEXT", sortOrder: 10 }),
+  });
+  assert.equal(customField.response.status, 201, JSON.stringify(customField.body));
+  const customFieldValue = await jsonRequest("/api/custom-fields", {
+    method: "PUT", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ entityType: "PARTY", entityId: partyResult.body.id, values: { [customField.body.fieldKey]: "CONFIG-OK" } }),
+  });
+  assert.equal(customFieldValue.response.status, 200, JSON.stringify(customFieldValue.body));
+  assert.equal(customFieldValue.body.find((field) => field.fieldKey === customField.body.fieldKey)?.value, "CONFIG-OK");
+  const customReport = await jsonRequest("/api/custom-reports", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code: `SMOKE_PARTIES_${suffix}`, name: "تقرير اختبار الإنتاج", sourceType: "PARTIES", fields: ["id", "nameAr", "isCustomer"], filters: [{ field: "nameAr", operator: "CONTAINS", value: "اختبار" }], sort: [{ field: "id", direction: "desc" }], calculations: [{ field: "id", operation: "COUNT", label: "count" }], visibility: "COMPANY" }),
+  });
+  assert.equal(customReport.response.status, 201, JSON.stringify(customReport.body));
+  assert.equal(customReport.body.result.rows.some((row) => row.id === partyResult.body.id), true);
+  for (const format of ["xlsx", "pdf"]) {
+    const response = await fetch(`http://127.0.0.1:${port}/api/custom-reports/${customReport.body.definition.id}/export?format=${format}`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    assert.equal(response.status, 200);
+    assert.equal(format === "xlsx" ? String.fromCharCode(...bytes.slice(0, 2)) : String.fromCharCode(...bytes.slice(0, 4)), format === "xlsx" ? "PK" : "%PDF");
+  }
+  console.log("PASS production Phase H custom fields, filtered reports, Excel/PDF exports");
 
   const switchToSecond = await jsonRequest("/api/auth/switch-company", {
     method: "POST", headers: { "content-type": "application/json" },

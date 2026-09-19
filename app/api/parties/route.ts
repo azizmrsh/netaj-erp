@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { ConfigurationError, saveCustomFieldValues } from "@/lib/configuration";
 
 export async function GET() {
   try {
@@ -42,7 +43,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const party = await prisma.party.create({
+    const party = await prisma.$transaction(async (tx) => {
+      const created = await tx.party.create({
       data: {
         nameAr: body.nameAr.trim(),
         nameEn: body.nameEn?.trim() || null,
@@ -76,12 +78,18 @@ export async function POST(request: NextRequest) {
       include: {
         address: true,
       },
+      });
+      await saveCustomFieldValues(tx, "PARTY", created.id, body.customFields);
+      return created;
     });
 
     return NextResponse.json(party, { status: 201 });
   } catch (error) {
     console.error(error);
 
+    if (error instanceof ConfigurationError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"

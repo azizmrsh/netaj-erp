@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { authorizeRequest, authErrorResponse } from "@/lib/api-auth";
 import { AuthError } from "@/lib/auth";
+import { customFieldsForEntity, saveCustomFieldValues } from "@/lib/configuration";
 
 export async function GET(
   request: Request,
@@ -47,6 +48,7 @@ export async function GET(
       attachments,
       factoryTransactions,
       factoryFeeRates,
+      customFields,
     ] =
       await Promise.all([
         inventoryAccess ? prisma.partyStockAccount.findMany({
@@ -102,6 +104,7 @@ export async function GET(
         }),
         factoryAccess ? prisma.factoryTransaction.findMany({ where: { partyId }, include: { item: true }, orderBy: [{ transactionDate: "desc" }, { id: "desc" }] }) : [],
         factoryAccess ? prisma.factoryFeeRate.findMany({ where: { partyId, isActive: true }, include: { item: true }, orderBy: { itemId: "asc" } }) : [],
+        prisma.$transaction((tx) => customFieldsForEntity(tx, "PARTY", partyId)),
       ]);
 
     return NextResponse.json({
@@ -117,6 +120,7 @@ export async function GET(
       attachments,
       factoryTransactions,
       factoryFeeRates,
+      customFields,
     });
   } catch (error) {
     console.error(error);
@@ -150,7 +154,8 @@ export async function PATCH(
       );
     }
 
-    const party = await prisma.party.update({
+    const party = await prisma.$transaction(async (tx) => {
+      const updated = await tx.party.update({
       where: { id: partyId },
       data: {
         ...(typeof body.isCustomer === "boolean"
@@ -166,6 +171,9 @@ export async function PATCH(
       include: {
         address: true,
       },
+      });
+      await saveCustomFieldValues(tx, "PARTY", partyId, body.customFields);
+      return updated;
     });
 
     return NextResponse.json(party);

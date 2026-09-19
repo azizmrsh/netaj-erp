@@ -174,6 +174,10 @@ export async function resolveAuthContext(tx: Prisma.TransactionClient, token: st
     companyCode: session.company.code,
     availableCompanies: session.membership.companies.filter((access) => access.company.isActive).map((access) => access.company),
     permissions,
+    roleCodes: session.membership.roles
+      .map((membershipRole) => membershipRole.role)
+      .filter((role) => role.tenantId === session.membership.tenantId && (!role.companyId || role.companyId === session.companyId))
+      .map((role) => role.code),
     companyModules: new Map(session.company.modules.map((row) => [row.moduleKey, row.enabled])),
     subscription: session.membership.tenant.subscriptions.find(
       (row) =>
