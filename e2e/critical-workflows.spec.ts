@@ -103,6 +103,12 @@ test("NETAJ ONE يعمل عالميًا بالكتابة ويعرض نتيجة �
   await page.getByPlaceholder(/اسأل: لماذا انخفض الربح/).fill("كم السيولة؟");
   await page.getByRole("button", { name: "اسأل", exact: true }).click();
   await expect(page.getByText(/السيولة الحالية/)).toBeVisible();
+  await page.getByRole("button", { name: "نفّذ بعد المراجعة" }).click();
+  await page.getByPlaceholder(/أضف عميل شركة إعمار/).fill(`أضف عميل شركة تجربة المتصفح ${Date.now()} في الرياض ورقم الهاتف 0501234567`);
+  await page.getByRole("button", { name: "جهّز المعاينة" }).click();
+  await expect(page.getByText("لم يتم تغيير أي بيانات بعد.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "اعتماد وتنفيذ" })).toBeVisible();
+  await page.getByRole("button", { name: "إلغاء" }).click();
 });
 
 test("الواجهة الحرجة قابلة للاستخدام على شاشة هاتف", async ({ page }, testInfo) => {

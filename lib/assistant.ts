@@ -126,7 +126,7 @@ export async function saveAssistantProposal(tx: Tx, input: Record<string, unknow
   const action = text(input.action).toUpperCase();
   if (action === "PROPOSE") {
     const actionType = text(input.actionType).toUpperCase();
-    const permission = actionType === "CRM_TASK" ? "CRM.CREATE" : actionType === "PARTY_CREATE" ? "CORE.CREATE" : actionType === "SALES_WORKFLOW_DRAFT" ? "SALES.CREATE" : "";
+    const permission = actionType === "CRM_TASK" ? "CRM.CREATE" : actionType === "PARTY_CREATE" ? "CORE.CREATE" : actionType === "SALES_WORKFLOW_DRAFT" ? "SALES.CREATE" : actionType === "PURCHASE_WORKFLOW_DRAFT" ? "PURCHASES.CREATE" : actionType === "FINANCIAL_VOUCHER_DRAFT" ? "ACCOUNTING.CREATE" : actionType === "OWNERSHIP_TRANSFER" ? "INVENTORY.CREATE" : "";
     if (!permission || !context.permissions.has(permission)) throw new AssistantError("الإجراء غير مسموح", 403, "ASSISTANT_ACTION_DENIED");
     const conversationId = Number(input.conversationId);
     const conversation = await tx.assistantConversation.findUnique({ where: { id: conversationId } });
@@ -162,9 +162,22 @@ export async function saveAssistantProposal(tx: Tx, input: Record<string, unknow
       const { createBusinessDocument, parseWorkflowInput } = await import("@/lib/workflows");
       const document = await createBusinessDocument(tx, parseWorkflowInput(payload, "SALES_ORDER"));
       result = { document };
+    } else if (proposal.actionType === "PURCHASE_WORKFLOW_DRAFT") {
+      if (!context.permissions.has("PURCHASES.CREATE") || !context.enabledModules.has("PURCHASES")) throw new AssistantError("فقدت صلاحية إنشاء مستند الشراء", 403, "ASSISTANT_ACTION_DENIED");
+      const { createBusinessDocument, parseWorkflowInput } = await import("@/lib/workflows");
+      const document = await createBusinessDocument(tx, parseWorkflowInput(payload, "PURCHASE_ORDER"));
+      result = { document };
+    } else if (proposal.actionType === "FINANCIAL_VOUCHER_DRAFT") {
+      if (!context.permissions.has("ACCOUNTING.CREATE") || !context.enabledModules.has("ACCOUNTING")) throw new AssistantError("فقدت صلاحية إنشاء السند المالي", 403, "ASSISTANT_ACTION_DENIED");
+      const { createVoucher, ensureFinanceFoundation } = await import("@/lib/finance"); await ensureFinanceFoundation(tx);
+      const voucher = await createVoucher(tx, payload); result = { voucher };
+    } else if (proposal.actionType === "OWNERSHIP_TRANSFER") {
+      if (!context.permissions.has("INVENTORY.CREATE") || !context.enabledModules.has("INVENTORY")) throw new AssistantError("فقدت صلاحية تحويل ملكية المخزون", 403, "ASSISTANT_ACTION_DENIED");
+      const { transferStockOwnership } = await import("@/lib/inventory");
+      const transfer = await transferStockOwnership(tx, { direction: String(payload.direction) as "COMPANY_TO_PARTY" | "PARTY_TO_COMPANY", itemId: Number(payload.itemId), partyId: Number(payload.partyId), quantity: number(payload.quantity), unitCost: number(payload.unitCost), notes: text(payload.notes) || null }); result = { transfer };
     } else throw new AssistantError("نوع المقترح غير مدعوم");
     await tx.assistantActionProposal.update({ where: { id: proposal.id }, data: { status: "CONFIRMED", confirmedAt: new Date() } });
-    const entity = (result.activity ?? result.party ?? result.document) as { id: number };
+    const entity = (result.activity ?? result.party ?? result.document ?? result.voucher ?? (result.transfer as { source?: { movement?: { id: number } } } | undefined)?.source?.movement) as { id: number };
     await audit(tx, { action: "ASSISTANT_CONFIRMED_ACTION", entityType: proposal.actionType, entityId: entity.id, userId: String(context.userId), metadata: { proposalId: proposal.id } });
     return { proposalId: proposal.id, ...result };
   }
@@ -180,6 +193,9 @@ function proposalPreview(actionType: string, payload: Record<string, unknown>) {
     const subtotal = items.reduce((sum, row) => sum + number(row.quantity) * number(row.unitPrice), 0), vat = items.reduce((sum, row) => sum + number(row.quantity) * number(row.unitPrice) * number(row.vatRate ?? 15) / 100, 0);
     return { title: "NETAJ ONE — مسودة أمر بيع", customer: payload.partyName, material: items[0]?.itemName, quantity: items[0]?.quantity, unitPrice: items[0]?.unitPrice, subtotal, vat, total: subtotal + vat, ownership: "COMPANY", nextSteps: "أمر بيع → سند تسليم → نقل عند اختيار سيارة الشركة → فاتورة → محاسبة", effect: "لا مخزون ولا GL قبل ترحيل المستندات اللاحقة" };
   }
+  if (actionType === "PURCHASE_WORKFLOW_DRAFT") { const items = Array.isArray(payload.items) ? payload.items as Record<string, unknown>[] : []; if (!Number(payload.partyId) || !items.length) throw new AssistantError("المورد والمادة والكمية مطلوبة لإعداد الشراء"); const subtotal = items.reduce((sum, row) => sum + number(row.quantity) * number(row.unitPrice), 0), vat = items.reduce((sum, row) => sum + number(row.quantity) * number(row.unitPrice) * number(row.vatRate ?? 15) / 100, 0); return { title: "NETAJ ONE — مسودة أمر شراء", customer: payload.partyName, material: items[0]?.itemName, quantity: items[0]?.quantity, unitPrice: items[0]?.unitPrice, subtotal, vat, total: subtotal + vat, nextSteps: "أمر شراء → استلام → فاتورة مورد → محاسبة", effect: "مسودة فقط؛ لا مخزون ولا AP ولا GL قبل المراحل اللاحقة" }; }
+  if (actionType === "FINANCIAL_VOUCHER_DRAFT") { if (!Number(payload.partyId) || !Number(payload.bankAccountId) || number(payload.amount) <= 0 || !["CUSTOMER_RECEIPT", "SUPPLIER_PAYMENT"].includes(text(payload.voucherType).toUpperCase())) throw new AssistantError("نوع السند والجهة والبنك والمبلغ مطلوبة"); return { title: payload.voucherType === "CUSTOMER_RECEIPT" ? "NETAJ ONE — مسودة سند قبض" : "NETAJ ONE — مسودة سند صرف", customer: payload.partyName, amount: payload.amount, bank: payload.bankName, effect: "إنشاء مسودة فقط؛ لا حركة بنك ولا قيد GL قبل الترحيل الصريح" }; }
+  if (actionType === "OWNERSHIP_TRANSFER") { if (!Number(payload.partyId) || !Number(payload.itemId) || number(payload.quantity) <= 0 || !["COMPANY_TO_PARTY", "PARTY_TO_COMPANY"].includes(text(payload.direction).toUpperCase())) throw new AssistantError("اتجاه التحويل والعميل والمادة والكمية مطلوبة"); return { title: "NETAJ ONE — تحويل ملكية مخزون", customer: payload.partyName, material: payload.itemName, quantity: payload.quantity, ownership: payload.direction === "COMPANY_TO_PARTY" ? "من الشركة إلى العميل" : "من العميل إلى الشركة", effect: payload.direction === "COMPANY_TO_PARTY" ? "سيُرفض التنفيذ إذا كان رصيد الشركة غير كافٍ" : "سيُسمح برصيد عميل سالب وفق قواعد الملكية" }; }
   throw new AssistantError("نوع المقترح غير مدعوم");
 }
 
@@ -195,14 +211,38 @@ export async function interpretAssistantCommand(tx: Tx, input: Record<string, un
     const city = command.match(/(?:في|بالمدينة|المدينة)\s+([\p{L}\s]+?)(?=\s+(?:رقم|هاتف|جوال|phone)|$)/iu)?.[1]?.trim() ?? "";
     return saveAssistantProposal(tx, { action: "PROPOSE", actionType: "PARTY_CREATE", conversationId: conversation.id, payload: { nameAr: name, telephone, city, isCustomer: true } }, context);
   }
+  if (/(حول|حوّل|نقل).*(ملكي|ownership)/i.test(command)) {
+    if (!context.enabledModules.has("INVENTORY") || !context.permissions.has("INVENTORY.CREATE")) throw new AssistantError("لا تملك صلاحية تحويل ملكية المخزون", 403, "ASSISTANT_ACTION_DENIED");
+    const [parties, items] = await Promise.all([tx.party.findMany({ where: { isCustomer: true, isActive: true }, select: { id: true, nameAr: true, unifiedNumber: true } }), tx.item.findMany({ where: { isActive: true }, select: { id: true, code: true, nameAr: true } })]), normalized = command.toLowerCase(), party = matchMention(normalized, parties), item = matchMention(normalized, items.map((row) => ({ ...row, unifiedNumber: row.code }))), quantity = commandQuantity(command), direction = /من\s+(?:الشركه|الشركة|company)\s+(?:الى|إلى|to)/i.test(command) ? "COMPANY_TO_PARTY" : /من\s+(?:العميل|customer)\s+(?:الى|إلى|to)\s+(?:الشركه|الشركة|company)/i.test(command) ? "PARTY_TO_COMPANY" : "";
+    if (!party || !item || quantity <= 0 || !direction) throw new AssistantError("لم أستطع تحديد اتجاه التحويل والعميل والمادة والكمية بثقة.", 400, "COMMAND_NEEDS_REVIEW");
+    return saveAssistantProposal(tx, { action: "PROPOSE", actionType: "OWNERSHIP_TRANSFER", conversationId: conversation.id, payload: { direction, partyId: party.id, partyName: party.nameAr, itemId: item.id, itemName: item.nameAr, quantity, notes: `اعتمد بواسطة NETAJ ONE: ${command}` } }, context);
+  }
+  if (/(اشترينا|شراء|طلب شراء|purchase|buy)/i.test(command)) {
+    if (!context.enabledModules.has("PURCHASES") || !context.permissions.has("PURCHASES.CREATE")) throw new AssistantError("لا تملك صلاحية إنشاء مشتريات", 403, "ASSISTANT_ACTION_DENIED");
+    const [parties, items] = await Promise.all([tx.party.findMany({ where: { isSupplier: true, isActive: true }, select: { id: true, nameAr: true, unifiedNumber: true } }), tx.item.findMany({ where: { isActive: true }, select: { id: true, code: true, nameAr: true, vatRate: true } })]), normalized = command.toLowerCase(), party = matchMention(normalized, parties), item = matchMention(normalized, items.map((row) => ({ ...row, unifiedNumber: row.code }))), quantity = commandQuantity(command), unitPrice = commandPrice(command);
+    if (!party || !item || quantity <= 0 || unitPrice < 0) throw new AssistantError("لم أستطع تحديد المورد والمادة والكمية والسعر بثقة.", 400, "COMMAND_NEEDS_REVIEW");
+    const payload = { documentType: "PURCHASE_ORDER", documentDate: new Date().toISOString(), partyId: party.id, partyName: party.nameAr, currency: "SAR", notes: `أُعد بواسطة NETAJ ONE بعد مراجعة المستخدم: ${command}`, items: [{ itemId: item.id, itemName: item.nameAr, lineType: "ITEM", quantity, unitPrice, discount: 0, vatRate: Number(item.vatRate) }] };
+    return saveAssistantProposal(tx, { action: "PROPOSE", actionType: "PURCHASE_WORKFLOW_DRAFT", conversationId: conversation.id, payload }, context);
+  }
+  if (/(سند\s*(?:قبض|صرف)|ادفع|إدفع|استلم|payment|receipt)/i.test(command)) {
+    if (!context.enabledModules.has("ACCOUNTING") || !context.permissions.has("ACCOUNTING.CREATE")) throw new AssistantError("لا تملك صلاحية إنشاء سند مالي", 403, "ASSISTANT_ACTION_DENIED");
+    const receipt = /(قبض|استلم|receipt)/i.test(command), [parties, banks] = await Promise.all([tx.party.findMany({ where: receipt ? { isCustomer: true, isActive: true } : { isSupplier: true, isActive: true }, select: { id: true, nameAr: true, unifiedNumber: true } }), tx.bankAccount.findMany({ where: { isActive: true }, select: { id: true, name: true, bankName: true, currency: true } })]), normalized = command.toLowerCase(), party = matchMention(normalized, parties), bank = banks.sort((a, b) => Math.max(b.name.length, b.bankName?.length ?? 0) - Math.max(a.name.length, a.bankName?.length ?? 0)).find((row) => normalized.includes(row.name.toLowerCase()) || Boolean(row.bankName && normalized.includes(row.bankName.toLowerCase()))), amount = commandMoney(command);
+    if (!party || !bank || amount <= 0) throw new AssistantError("لم أستطع تحديد الجهة والبنك والمبلغ بثقة.", 400, "COMMAND_NEEDS_REVIEW");
+    return saveAssistantProposal(tx, { action: "PROPOSE", actionType: "FINANCIAL_VOUCHER_DRAFT", conversationId: conversation.id, payload: { voucherType: receipt ? "CUSTOMER_RECEIPT" : "SUPPLIER_PAYMENT", voucherDate: new Date().toISOString(), partyId: party.id, partyName: party.nameAr, bankAccountId: bank.id, bankName: bank.name, amount, currency: bank.currency, paymentMethod: "BANK", description: `أُعد بواسطة NETAJ ONE بعد مراجعة المستخدم: ${command}` } }, context);
+  }
   if (/(بعنا|بيع|sales?|sell)/i.test(command)) {
     if (!context.enabledModules.has("SALES") || !context.permissions.has("SALES.CREATE")) throw new AssistantError("لا تملك صلاحية إنشاء مبيعات", 403, "ASSISTANT_ACTION_DENIED");
     const [parties, items] = await Promise.all([tx.party.findMany({ where: { isCustomer: true, isActive: true }, select: { id: true, nameAr: true, unifiedNumber: true } }), tx.item.findMany({ where: { isActive: true }, select: { id: true, code: true, nameAr: true, vatRate: true } })]);
-    const normalized = command.toLowerCase(), party = parties.sort((a, b) => b.nameAr.length - a.nameAr.length).find((row) => normalized.includes(row.nameAr.toLowerCase()) || Boolean(row.unifiedNumber && normalized.includes(row.unifiedNumber.toLowerCase()))), item = items.sort((a, b) => b.nameAr.length - a.nameAr.length).find((row) => normalized.includes(row.nameAr.toLowerCase()) || normalized.includes(row.code.toLowerCase()));
-    const quantity = number(command.match(/([\d٠-٩۰-۹,.]+)\s*(?:طن|kg|كجم|وحده|وحدة|piece)/i)?.[1]?.replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit))).replace(/,/g, "")), unitPrice = number(command.match(/(?:بسعر|سعر|at)\s*([\d٠-٩۰-۹,.]+)/i)?.[1]?.replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit))).replace(/,/g, ""));
+    const normalized = command.toLowerCase(), party = matchMention(normalized, parties), item = matchMention(normalized, items.map((row) => ({ ...row, unifiedNumber: row.code }))), quantity = commandQuantity(command), unitPrice = commandPrice(command);
     if (!party || !item || quantity <= 0 || unitPrice < 0) throw new AssistantError("لم أستطع تحديد العميل والمادة والكمية والسعر بثقة. اذكر أسماءها كما تظهر في النظام.", 400, "COMMAND_NEEDS_REVIEW");
     const payload = { documentType: "SALES_ORDER", documentDate: new Date().toISOString(), partyId: party.id, partyName: party.nameAr, currency: "SAR", notes: `أُعد بواسطة NETAJ ONE بعد مراجعة المستخدم: ${command}`, items: [{ itemId: item.id, itemName: item.nameAr, lineType: "ITEM", quantity, unitPrice, discount: 0, vatRate: Number(item.vatRate) }] };
     return saveAssistantProposal(tx, { action: "PROPOSE", actionType: "SALES_WORKFLOW_DRAFT", conversationId: conversation.id, payload }, context);
   }
   throw new AssistantError("هذا الأمر غير مدعوم كعملية كتابة. استخدم وضع السؤال للتحليلات أو اطلب إضافة عميل/إعداد بيع.", 400, "COMMAND_NOT_SUPPORTED");
 }
+
+function matchMention<T extends { nameAr: string; unifiedNumber?: string | null }>(command: string, rows: T[]) { return rows.sort((left, right) => Math.max(right.nameAr.length, right.unifiedNumber?.length ?? 0) - Math.max(left.nameAr.length, left.unifiedNumber?.length ?? 0)).find((row) => command.includes(row.nameAr.toLowerCase()) || Boolean(row.unifiedNumber && command.includes(row.unifiedNumber.toLowerCase()))); }
+function commandNumber(value?: string) { return number(value?.replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit))).replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit))).replace(/,/g, "")); }
+function commandQuantity(command: string) { return commandNumber(command.match(/([\d٠-٩۰-۹,.]+)\s*(?:طن|kg|كجم|وحده|وحدة|piece)/i)?.[1]); }
+function commandPrice(command: string) { return commandNumber(command.match(/(?:بسعر|سعر|at)\s*([\d٠-٩۰-۹,.]+)/i)?.[1]); }
+function commandMoney(command: string) { return commandNumber(command.match(/(?:مبلغ|بقيمة|amount|ادفع|إدفع|استلم)\s*[:\-]?\s*([\d٠-٩۰-۹,.]+)/i)?.[1]); }

@@ -19,8 +19,8 @@ copyFileSync("prisma/netaj.db", database);
 const prisma = new PrismaClient({ adapter: new PrismaBetterSqlite3({ url: `file:${database}` }) });
 const suffix = Date.now().toString(36).toUpperCase();
 const allModules = new Set(["CORE", "ACCOUNTING", "INVENTORY", "FACTORY", "TRANSPORT", "SALES", "PURCHASES", "PROJECTS", "CRM", "DMS"]);
-const context = { userId: 1, enabledModules: allModules, permissions: new Set(["CRM.CREATE", "CORE.CREATE", "SALES.CREATE", ...[...allModules].map((module) => `${module}.READ`)]) };
-let supplier, voiceCustomer, voiceItem;
+const context = { userId: 1, enabledModules: allModules, permissions: new Set(["CRM.CREATE", "CORE.CREATE", "SALES.CREATE", "PURCHASES.CREATE", "ACCOUNTING.CREATE", "INVENTORY.CREATE", ...[...allModules].map((module) => `${module}.READ`)]) };
+let supplier, voiceCustomer, voiceItem, voiceBank;
 
 before(async () => {
   process.env.MFA_ENCRYPTION_KEY = `phase-l-key-${suffix}`;
@@ -29,6 +29,9 @@ before(async () => {
   voiceCustomer = await prisma.party.create({ data: { nameAr: `عميل صوتي ${suffix}`, isCustomer: true } });
   const unit = await prisma.unit.create({ data: { code: `VOICE-${suffix}`, nameAr: "طن صوتي", nameEn: "Voice Ton" } });
   voiceItem = await prisma.item.create({ data: { code: `VOICE-ITEM-${suffix}`, nameAr: `مادة صوتية ${suffix}`, unitId: unit.id, vatRate: 15 } });
+  await prisma.companyStock.create({ data: { itemId: voiceItem.id, quantity: 20, averageCost: 12 } });
+  const bankLedger = await prisma.account.create({ data: { code: `VOICE-BANK-${suffix}`, nameAr: "حساب بنك صوتي", accountType: "ASSET" } });
+  voiceBank = await prisma.bankAccount.create({ data: { name: `بنك صوتي ${suffix}`, bankName: `بنك صوتي ${suffix}`, ledgerAccountId: bankLedger.id, currentBalance: 10000, openingBalance: 10000 } });
 });
 after(async () => { delete process.env.MFA_ENCRYPTION_KEY; await prisma.$disconnect(); rmSync(directory, { recursive: true, force: true }); });
 
@@ -70,6 +73,29 @@ test("NETAJ ONE يجهز أمر بيع مترابط ولا يحرك المخزو
   const confirmed = await prisma.$transaction((tx) => saveAssistantProposal(tx, { action: "CONFIRM", id: proposal.id }, context));
   assert.equal(confirmed.document.documentType, "SALES_ORDER"); assert.equal(confirmed.document.status, "DRAFT");
   assert.equal(await prisma.stockMovement.count(), stockBefore); assert.equal(await prisma.journalEntry.count(), journalsBefore);
+});
+
+test("NETAJ ONE يجهز أمر شراء كمسودة دون مخزون أو AP أو GL", async () => {
+  const stockBefore = await prisma.stockMovement.count(), journalsBefore = await prisma.journalEntry.count();
+  const proposal = await prisma.$transaction((tx) => interpretAssistantCommand(tx, { command: `طلب شراء 4 طن من المادة ${voiceItem.code} من المورد ${supplier.nameAr} بسعر 75` }, context));
+  assert.equal(proposal.actionType, "PURCHASE_WORKFLOW_DRAFT"); assert.equal(await prisma.businessDocument.count({ where: { partyId: supplier.id, documentType: "PURCHASE_ORDER" } }), 0);
+  const confirmed = await prisma.$transaction((tx) => saveAssistantProposal(tx, { action: "CONFIRM", id: proposal.id }, context));
+  assert.equal(confirmed.document.documentType, "PURCHASE_ORDER"); assert.equal(confirmed.document.status, "DRAFT"); assert.equal(await prisma.stockMovement.count(), stockBefore); assert.equal(await prisma.journalEntry.count(), journalsBefore);
+});
+
+test("NETAJ ONE ينشئ سند صرف كمسودة ولا يحرك البنك أو GL", async () => {
+  const balanceBefore = Number(voiceBank.currentBalance), journalsBefore = await prisma.journalEntry.count();
+  const proposal = await prisma.$transaction((tx) => interpretAssistantCommand(tx, { command: `ادفع 125 للمورد ${supplier.nameAr} من ${voiceBank.name}` }, context));
+  assert.equal(proposal.actionType, "FINANCIAL_VOUCHER_DRAFT"); assert.equal(await prisma.financialVoucher.count({ where: { partyId: supplier.id, amount: 125 } }), 0);
+  const confirmed = await prisma.$transaction((tx) => saveAssistantProposal(tx, { action: "CONFIRM", id: proposal.id }, context));
+  assert.equal(confirmed.voucher.status, "DRAFT"); assert.equal(Number((await prisma.bankAccount.findUniqueOrThrow({ where: { id: voiceBank.id } })).currentBalance), balanceBefore); assert.equal(await prisma.journalEntry.count(), journalsBefore);
+});
+
+test("NETAJ ONE يعرض تحويل الملكية أولًا ثم ينفذ حركتين مترابطتين بعد الاعتماد", async () => {
+  const movementBefore = await prisma.stockMovement.count(), proposal = await prisma.$transaction((tx) => interpretAssistantCommand(tx, { command: `حوّل ملكية 3 طن من المادة ${voiceItem.code} من الشركة إلى العميل ${voiceCustomer.nameAr}` }, context));
+  assert.equal(proposal.actionType, "OWNERSHIP_TRANSFER"); assert.equal(await prisma.stockMovement.count(), movementBefore);
+  const confirmed = await prisma.$transaction((tx) => saveAssistantProposal(tx, { action: "CONFIRM", id: proposal.id }, context));
+  assert.equal(await prisma.stockMovement.count(), movementBefore + 2); assert.equal(confirmed.transfer.source.newQuantity, 17); assert.equal(confirmed.transfer.destination.newQuantity, 3);
 });
 
 test("MFA يفعّل TOTP ويصدر رموز استرداد أحادية الاستخدام", async () => {

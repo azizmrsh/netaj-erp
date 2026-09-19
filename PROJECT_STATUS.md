@@ -3,7 +3,7 @@
 Last verified: 2026-09-19  
 Baseline commit: `47e5abe`  
 Project-wide completion at start of Final Product Completion: **86%**
-Current verified project-wide completion after this batch: **94%**
+Current verified project-wide completion after this batch: **96%**
 
 Status meanings:
 
@@ -39,7 +39,7 @@ Status meanings:
 | Tenant theme builder | COMPLETE | colors, logos, fonts, card/table/chart modes, login branding and Executive Gold/Crystal Blue/Pearl White presets | design tests, TypeScript and production build | Additional tenant presets can be added without core changes |
 | Document/print designer | PARTIAL | versioned templates, publish/snapshot, drag reorder, QR/barcode | design tests and E2E | Complete field-placement canvas and full Arabic/English/bilingual output matrix |
 | Controlled AI read layer | COMPLETE | permission-aware intent registry; no raw SQL; audit and drill-down | `phase-l.test.mjs` | Broaden analytical intents while keeping allow-list model |
-| Human-in-the-loop AI writes | PARTIAL | audited proposal/edit/cancel/confirm exists for CRM tasks, customers and sales-order drafts | phase-l and browser tests | Add the same safe proposal adapters for payments, purchases and stock transfers |
+| Human-in-the-loop AI writes | COMPLETE | audited proposal/edit/cancel/confirm exists for CRM tasks, customers, sales/purchase drafts, financial-voucher drafts and ownership transfers | phase-l and browser tests | Extend the same adapter contract when new write domains are introduced |
 | Global voice AI / NETAJ ONE | COMPLETE | global gold microphone/text control, Arabic browser speech, explicit state machine and preview/approve workflow | phase-l tests and desktop/mobile E2E | Cloud STT/TTS is external activation when credentials are supplied |
 | Morning brief / Ask Your Business / What-if | PARTIAL | dashboard/assistant answer current KPIs and selected analyses | analytics/assistant tests | Personalized brief, causal analysis and labeled scenario engine |
 | AI anomaly/control center | COMPLETE | duplicate, margin, post-close and unusual activity controls with neutral statuses | phase-l tests | Provider-based enrichment optional |
@@ -72,8 +72,8 @@ Status meanings:
 
 ## Current execution focus
 
-1. Extend safe NETAJ ONE write adapters to payments, purchases and stock transfers.
-2. Activate external provider integrations when credentials are available.
-3. Complete ZATCA live signing/submission and broader bilingual print visual matrix.
-4. Add broader persona/role visual regression coverage.
-5. Rehearse PostgreSQL cutover and off-site disaster recovery in the production environment.
+1. Activate external provider integrations when credentials are available.
+2. Complete ZATCA live signing/submission and broader bilingual print visual matrix.
+3. Add broader persona/role visual regression coverage.
+4. Rehearse PostgreSQL cutover and off-site disaster recovery in the production environment.
+5. Continue smart-document OCR and outbound collections delivery through configured providers.
