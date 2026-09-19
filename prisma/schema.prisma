@@ -2319,6 +2319,21 @@ model Company {
   onboardingSessions     OnboardingSession[]
   invitations            UserInvitation[]
   supportGrants          SupportAccessGrant[]
+  crmLeads               CrmLead[]
+  crmOpportunities       CrmOpportunity[]
+  crmActivities          CrmActivity[]
+  assetCategories        AssetCategory[]
+  assets                 Asset[]
+  maintenancePlans       MaintenancePlan[]
+  maintenanceWorkOrders  MaintenanceWorkOrder[]
+  managedDocuments       ManagedDocument[]
+  documentCategories     DocumentCategory[]
+  approvalRequests       UnifiedApprovalRequest[]
+  portalIdentities       PortalIdentity[]
+  portalRequests         PortalRequest[]
+  treasuryAdjustments    TreasuryForecastAdjustment[]
+  integrationConnections IntegrationConnection[]
+  webhookEndpoints       WebhookEndpoint[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -3600,6 +3615,432 @@ model TenantUsageSnapshot {
   tenant Tenant @relation(fields: [tenantId], references: [id])
 
   @@index([tenantId, capturedAt])
+}
+
+model CrmLead {
+  id                Int              @id @default(autoincrement())
+  tenantId          Int              @default(1)
+  companyId         Int              @default(1)
+  leadNumber        String
+  name              String
+  companyName       String?
+  email             String?
+  phone             String?
+  source            String?
+  status            String           @default("NEW")
+  salespersonUserId Int?
+  partyId           Int?
+  notes             String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  company           Company          @relation(fields: [companyId], references: [id])
+  opportunities     CrmOpportunity[]
+  activities        CrmActivity[]
+
+  @@unique([tenantId, companyId, leadNumber])
+  @@index([tenantId, companyId, status])
+}
+
+model CrmOpportunity {
+  id                 Int           @id @default(autoincrement())
+  tenantId           Int           @default(1)
+  companyId          Int           @default(1)
+  opportunityNumber  String
+  name               String
+  leadId             Int?
+  partyId            Int?
+  salespersonUserId  Int?
+  stage              String        @default("QUALIFICATION")
+  probability        Int           @default(10)
+  expectedValue      Decimal       @default(0)
+  expectedCloseDate  DateTime?
+  businessDocumentId Int?
+  status             String        @default("OPEN")
+  lostReason         String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  company            Company       @relation(fields: [companyId], references: [id])
+  lead               CrmLead?      @relation(fields: [leadId], references: [id])
+  activities         CrmActivity[]
+
+  @@unique([tenantId, companyId, opportunityNumber])
+  @@index([tenantId, companyId, stage, status])
+}
+
+model CrmActivity {
+  id             Int             @id @default(autoincrement())
+  tenantId       Int             @default(1)
+  companyId      Int             @default(1)
+  activityType   String
+  subject        String
+  leadId         Int?
+  opportunityId  Int?
+  partyId        Int?
+  assignedUserId Int?
+  dueAt          DateTime?
+  completedAt    DateTime?
+  status         String          @default("OPEN")
+  outcome        String?
+  notes          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  company        Company         @relation(fields: [companyId], references: [id])
+  lead           CrmLead?        @relation(fields: [leadId], references: [id])
+  opportunity    CrmOpportunity? @relation(fields: [opportunityId], references: [id])
+
+  @@index([tenantId, companyId, status, dueAt])
+}
+
+model AssetCategory {
+  id                               Int      @id @default(autoincrement())
+  tenantId                         Int      @default(1)
+  companyId                        Int      @default(1)
+  code                             String
+  name                             String
+  usefulLifeMonths                 Int
+  depreciationMethod               String   @default("STRAIGHT_LINE")
+  assetAccountId                   Int?
+  accumulatedDepreciationAccountId Int?
+  depreciationExpenseAccountId     Int?
+  createdAt                        DateTime @default(now())
+  updatedAt                        DateTime @updatedAt
+  company                          Company  @relation(fields: [companyId], references: [id])
+  assets                           Asset[]
+
+  @@unique([tenantId, companyId, code])
+}
+
+model Asset {
+  id                      Int                    @id @default(autoincrement())
+  tenantId                Int                    @default(1)
+  companyId               Int                    @default(1)
+  assetNumber             String
+  name                    String
+  categoryId              Int
+  acquisitionDate         DateTime
+  acquisitionCost         Decimal
+  residualValue           Decimal                @default(0)
+  accumulatedDepreciation Decimal                @default(0)
+  status                  String                 @default("ACTIVE")
+  location                String?
+  serialNumber            String?
+  projectId               Int?
+  costCenterId            Int?
+  journalEntryId          Int?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  company                 Company                @relation(fields: [companyId], references: [id])
+  category                AssetCategory          @relation(fields: [categoryId], references: [id])
+  depreciations           AssetDepreciation[]
+  maintenancePlans        MaintenancePlan[]
+  workOrders              MaintenanceWorkOrder[]
+
+  @@unique([tenantId, companyId, assetNumber])
+  @@index([tenantId, companyId, status])
+}
+
+model AssetDepreciation {
+  id               Int      @id @default(autoincrement())
+  tenantId         Int      @default(1)
+  companyId        Int      @default(1)
+  assetId          Int
+  periodDate       DateTime
+  amount           Decimal
+  accumulatedAfter Decimal
+  bookValueAfter   Decimal
+  journalEntryId   Int?
+  createdAt        DateTime @default(now())
+  asset            Asset    @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, periodDate])
+  @@index([tenantId, companyId])
+}
+
+model MaintenancePlan {
+  id              Int                    @id @default(autoincrement())
+  tenantId        Int                    @default(1)
+  companyId       Int                    @default(1)
+  assetId         Int
+  name            String
+  intervalDays    Int
+  lastPerformedAt DateTime?
+  nextDueAt       DateTime
+  checklistJson   String                 @default("[]")
+  isActive        Boolean                @default(true)
+  company         Company                @relation(fields: [companyId], references: [id])
+  asset           Asset                  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  workOrders      MaintenanceWorkOrder[]
+
+  @@index([tenantId, companyId, nextDueAt])
+}
+
+model MaintenanceWorkOrder {
+  id              Int                    @id @default(autoincrement())
+  tenantId        Int                    @default(1)
+  companyId       Int                    @default(1)
+  workOrderNumber String
+  assetId         Int
+  planId          Int?
+  workType        String
+  priority        String                 @default("NORMAL")
+  status          String                 @default("OPEN")
+  reportedAt      DateTime               @default(now())
+  scheduledAt     DateTime?
+  completedAt     DateTime?
+  description     String
+  resolution      String?
+  laborCost       Decimal                @default(0)
+  externalCost    Decimal                @default(0)
+  expenseId       Int?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+  company         Company                @relation(fields: [companyId], references: [id])
+  asset           Asset                  @relation(fields: [assetId], references: [id])
+  plan            MaintenancePlan?       @relation(fields: [planId], references: [id])
+  spareParts      MaintenanceSparePart[]
+
+  @@unique([tenantId, companyId, workOrderNumber])
+  @@index([tenantId, companyId, status])
+}
+
+model MaintenanceSparePart {
+  id              Int                  @id @default(autoincrement())
+  tenantId        Int                  @default(1)
+  companyId       Int                  @default(1)
+  workOrderId     Int
+  itemId          Int
+  quantity        Decimal
+  unitCost        Decimal              @default(0)
+  stockMovementId Int?
+  workOrder       MaintenanceWorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, companyId])
+}
+
+model DocumentCategory {
+  id                   Int               @id @default(autoincrement())
+  tenantId             Int               @default(1)
+  companyId            Int               @default(1)
+  code                 String
+  name                 String
+  defaultRetentionDays Int?
+  isActive             Boolean           @default(true)
+  company              Company           @relation(fields: [companyId], references: [id])
+  documents            ManagedDocument[]
+
+  @@unique([tenantId, companyId, code])
+}
+
+model ManagedDocument {
+  id              Int                         @id @default(autoincrement())
+  tenantId        Int                         @default(1)
+  companyId       Int                         @default(1)
+  documentNumber  String
+  title           String
+  categoryId      Int
+  ownerType       String?
+  ownerId         Int?
+  effectiveDate   DateTime?
+  expiryDate      DateTime?
+  status          String                      @default("ACTIVE")
+  confidentiality String                      @default("INTERNAL")
+  createdBy       Int?
+  createdAt       DateTime                    @default(now())
+  updatedAt       DateTime                    @updatedAt
+  company         Company                     @relation(fields: [companyId], references: [id])
+  category        DocumentCategory            @relation(fields: [categoryId], references: [id])
+  versions        ManagedDocumentVersion[]
+  permissions     ManagedDocumentPermission[]
+
+  @@unique([tenantId, companyId, documentNumber])
+  @@index([tenantId, companyId, expiryDate, status])
+}
+
+model ManagedDocumentVersion {
+  id           Int             @id @default(autoincrement())
+  tenantId     Int             @default(1)
+  companyId    Int             @default(1)
+  documentId   Int
+  version      Int
+  attachmentId Int
+  changeNotes  String?
+  uploadedBy   Int?
+  createdAt    DateTime        @default(now())
+  document     ManagedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, version])
+  @@index([tenantId, companyId])
+}
+
+model ManagedDocumentPermission {
+  id          Int             @id @default(autoincrement())
+  tenantId    Int             @default(1)
+  companyId   Int             @default(1)
+  documentId  Int
+  subjectType String
+  subjectId   String
+  canRead     Boolean         @default(true)
+  canUpdate   Boolean         @default(false)
+  document    ManagedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, subjectType, subjectId])
+  @@index([tenantId, companyId])
+}
+
+model UnifiedApprovalRequest {
+  id            Int                     @id @default(autoincrement())
+  tenantId      Int                     @default(1)
+  companyId     Int                     @default(1)
+  requestNumber String
+  moduleKey     String
+  entityType    String
+  entityId      Int
+  entityNumber  String?
+  title         String
+  requestedBy   Int?
+  currentStep   Int                     @default(1)
+  status        String                  @default("PENDING")
+  amount        Decimal?
+  dueAt         DateTime?
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  company       Company                 @relation(fields: [companyId], references: [id])
+  actions       UnifiedApprovalAction[]
+
+  @@unique([tenantId, companyId, moduleKey, entityType, entityId])
+  @@unique([tenantId, companyId, requestNumber])
+  @@index([tenantId, companyId, status, dueAt])
+}
+
+model UnifiedApprovalAction {
+  id          Int                    @id @default(autoincrement())
+  tenantId    Int                    @default(1)
+  companyId   Int                    @default(1)
+  requestId   Int
+  action      String
+  comment     String?
+  actorUserId Int
+  createdAt   DateTime               @default(now())
+  request     UnifiedApprovalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, companyId, requestId])
+}
+
+model PortalIdentity {
+  id              Int             @id @default(autoincrement())
+  tenantId        Int             @default(1)
+  companyId       Int             @default(1)
+  partyId         Int
+  email           String
+  passwordHash    String?
+  status          String          @default("INVITED")
+  permissionsJson String          @default("[]")
+  lastLoginAt     DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  company         Company         @relation(fields: [companyId], references: [id])
+  requests        PortalRequest[]
+
+  @@unique([tenantId, companyId, email])
+  @@index([tenantId, companyId, partyId])
+}
+
+model PortalRequest {
+  id               Int            @id @default(autoincrement())
+  tenantId         Int            @default(1)
+  companyId        Int            @default(1)
+  portalIdentityId Int
+  requestNumber    String
+  requestType      String
+  subject          String
+  details          String?
+  status           String         @default("OPEN")
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  company          Company        @relation(fields: [companyId], references: [id])
+  identity         PortalIdentity @relation(fields: [portalIdentityId], references: [id])
+
+  @@unique([tenantId, companyId, requestNumber])
+  @@index([tenantId, companyId, status])
+}
+
+model TreasuryForecastAdjustment {
+  id           Int      @id @default(autoincrement())
+  tenantId     Int      @default(1)
+  companyId    Int      @default(1)
+  forecastDate DateTime
+  direction    String
+  description  String
+  amount       Decimal
+  probability  Int      @default(100)
+  sourceType   String?
+  sourceId     Int?
+  createdAt    DateTime @default(now())
+  company      Company  @relation(fields: [companyId], references: [id])
+
+  @@index([tenantId, companyId, forecastDate])
+}
+
+model IntegrationConnection {
+  id                   Int               @id @default(autoincrement())
+  tenantId             Int               @default(1)
+  companyId            Int               @default(1)
+  code                 String
+  providerType         String
+  name                 String
+  status               String            @default("DISABLED")
+  baseUrl              String?
+  encryptedCredentials String?
+  configJson           String            @default("{}")
+  lastSuccessAt        DateTime?
+  lastErrorAt          DateTime?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  company              Company           @relation(fields: [companyId], references: [id])
+  deliveries           WebhookDelivery[]
+
+  @@unique([tenantId, companyId, code])
+}
+
+model WebhookEndpoint {
+  id             Int               @id @default(autoincrement())
+  tenantId       Int               @default(1)
+  companyId      Int               @default(1)
+  code           String
+  url            String
+  secretHash     String
+  eventTypesJson String
+  status         String            @default("ACTIVE")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  company        Company           @relation(fields: [companyId], references: [id])
+  deliveries     WebhookDelivery[]
+
+  @@unique([tenantId, companyId, code])
+}
+
+model WebhookDelivery {
+  id             Int                    @id @default(autoincrement())
+  tenantId       Int                    @default(1)
+  companyId      Int                    @default(1)
+  endpointId     Int?
+  connectionId   Int?
+  eventType      String
+  eventId        String
+  payloadJson    String
+  status         String                 @default("PENDING")
+  attemptCount   Int                    @default(0)
+  nextAttemptAt  DateTime?
+  responseStatus Int?
+  responseBody   String?
+  lastError      String?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  endpoint       WebhookEndpoint?       @relation(fields: [endpointId], references: [id])
+  connection     IntegrationConnection? @relation(fields: [connectionId], references: [id])
+
+  @@unique([tenantId, companyId, eventId, endpointId])
+  @@index([tenantId, companyId, status, nextAttemptAt])
 }
 
 model TenantMembership {

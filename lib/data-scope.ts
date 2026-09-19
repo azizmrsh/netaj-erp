@@ -24,6 +24,10 @@ export const scopedModels = new Set([
   "DocumentTemplate", "IssuedDocumentPresentation", "CompanyThemeProfile",
   "DashboardDefinition", "DashboardWidget",
   "OnboardingSession", "UserInvitation",
+  "CrmLead", "CrmOpportunity", "CrmActivity", "AssetCategory", "Asset", "AssetDepreciation",
+  "MaintenancePlan", "MaintenanceWorkOrder", "MaintenanceSparePart", "DocumentCategory", "ManagedDocument",
+  "ManagedDocumentVersion", "ManagedDocumentPermission", "UnifiedApprovalRequest", "UnifiedApprovalAction",
+  "PortalIdentity", "PortalRequest", "TreasuryForecastAdjustment", "IntegrationConnection", "WebhookEndpoint", "WebhookDelivery",
 ]);
 
 export async function getVerifiedDataScope(): Promise<DataScope> {

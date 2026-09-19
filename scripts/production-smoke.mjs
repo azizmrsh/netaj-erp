@@ -72,6 +72,15 @@ const routes = [
   "/dashboards",
   "/onboarding",
   "/super-admin",
+  "/crm",
+  "/assets",
+  "/documents",
+  "/approvals",
+  "/portal-admin",
+  "/treasury",
+  "/integrations",
+  "/manifest.webmanifest",
+  "/sw.js",
   "/api/units",
   "/api/item-categories",
   "/api/items",
@@ -130,6 +139,14 @@ const routes = [
   "/api/design/branding",
   "/api/onboarding",
   "/api/super-admin",
+  "/api/crm",
+  "/api/assets",
+  "/api/documents",
+  "/api/approvals",
+  "/api/portal-admin",
+  "/api/treasury",
+  "/api/integrations",
+  "/api/v1/integrations",
   "/api/reports/legacy?report=monthly-comparison&from=2026-01-01&to=2026-12-31",
 ];
 
@@ -271,6 +288,25 @@ try {
   const revokeGrant = await jsonRequest("/api/super-admin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "SUPPORT_REVOKE", id: supportGrant.body.id }) });
   assert.equal(revokeGrant.response.status, 201);
   console.log("PASS production Phase J plan limits, separate super admin, audited support grants");
+
+  const crmLead = await jsonRequest("/api/crm", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "LEAD", name: "عميل محتمل Production", companyName: "شركة اختبار CRM" }) });
+  assert.equal(crmLead.response.status, 201, JSON.stringify(crmLead.body));
+  assert.match(crmLead.body.leadNumber, /^LEAD-/);
+  const dmsCategory = await jsonRequest("/api/documents", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "CATEGORY", code: `SMOKE_DMS_${suffix}`, name: "عقود اختبار" }) });
+  assert.equal(dmsCategory.response.status, 201, JSON.stringify(dmsCategory.body));
+  const dmsDocument = await jsonRequest("/api/documents", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "DOCUMENT", categoryId: dmsCategory.body.id, title: "مستند Production", expiryDate: new Date(Date.now() + 5 * 86400000).toISOString() }) });
+  assert.equal(dmsDocument.response.status, 201, JSON.stringify(dmsDocument.body));
+  const portalIdentity = await jsonRequest("/api/portal-admin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "IDENTITY", partyId: partyResult.body.id, email: `portal-${suffix.toLowerCase()}@netaj.test`, permissions: ["INVOICES", "ORDERS"] }) });
+  assert.equal(portalIdentity.response.status, 201, JSON.stringify(portalIdentity.body));
+  const treasuryAdjustment = await jsonRequest("/api/treasury", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ forecastDate: new Date(Date.now() + 86400000).toISOString(), direction: "IN", description: "تحصيل متوقع Production", amount: 100, probability: 75 }) });
+  assert.equal(treasuryAdjustment.response.status, 201, JSON.stringify(treasuryAdjustment.body));
+  const webhook = await jsonRequest("/api/v1/integrations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "WEBHOOK", code: `SMOKE_HOOK_${suffix}`, url: "https://example.test/netaj", eventTypes: ["sale.posted"] }) });
+  assert.equal(webhook.response.status, 201, JSON.stringify(webhook.body));
+  assert.ok(webhook.body.secret);
+  const safeIntegrations = await jsonRequest("/api/v1/integrations");
+  assert.equal(safeIntegrations.response.status, 200);
+  assert.equal(safeIntegrations.body.endpoints.find((row) => row.id === webhook.body.id)?.secretHash, "[REDACTED]");
+  console.log("PASS production Phase K CRM, DMS, portal foundation, treasury, versioned integrations, and PWA shell");
 
   const switchToSecond = await jsonRequest("/api/auth/switch-company", {
     method: "POST", headers: { "content-type": "application/json" },

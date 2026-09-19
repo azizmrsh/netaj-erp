@@ -13,5 +13,6 @@ export async function authorizeAttachmentEntity(request: Request, entityType: st
   else if (["EXPENSE", "REVENUE", "FINANCIAL_VOUCHER", "JOURNAL_ENTRY", "BANK_TRANSFER", "BANK_RECONCILIATION", "VAT_RETURN", "CREDIT_DEBIT_NOTE", "ACCOUNTING_ADJUSTMENT"].includes(entityType)) moduleKey = "ACCOUNTING";
   else if (entityType === "FACTORY_MAINTENANCE") moduleKey = "FACTORY";
   else if (["EMPLOYEE", "EXTERNAL_WORKER"].includes(entityType)) moduleKey = "HR";
+  else if (entityType === "MANAGED_DOCUMENT") moduleKey = "DMS";
   return authorizeRequest(request, { moduleKey, action });
 }

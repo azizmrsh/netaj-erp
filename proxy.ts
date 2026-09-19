@@ -23,6 +23,13 @@ function requiredModule(path: string) {
   if (path.startsWith("/api/external") || path.startsWith("/external")) return "EXTERNAL";
   if (path.startsWith("/api/projects") || path.startsWith("/projects")) return "PROJECTS";
   if (path.startsWith("/api/imports") || path.startsWith("/imports")) return "IMPORT";
+  if (path.startsWith("/api/crm") || path.startsWith("/crm")) return "CRM";
+  if (path.startsWith("/api/assets") || path.startsWith("/assets")) return "ASSETS";
+  if (path.startsWith("/api/documents") || path.startsWith("/documents")) return "DMS";
+  if (path.startsWith("/api/approvals") || path.startsWith("/approvals")) return "APPROVALS";
+  if (path.startsWith("/api/portal-admin") || path.startsWith("/portal-admin")) return "PORTAL";
+  if (path.startsWith("/api/treasury") || path.startsWith("/treasury")) return "TREASURY";
+  if (path.startsWith("/api/integrations") || path.startsWith("/api/v1/integrations") || path.startsWith("/integrations")) return "INTEGRATIONS";
   if (path.startsWith("/api/configuration") || path.startsWith("/api/custom-reports") || path.startsWith("/settings/configuration") || path.startsWith("/reports/builder")) return "CONFIG";
   return "CORE";
 }

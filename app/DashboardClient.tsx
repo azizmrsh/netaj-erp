@@ -15,6 +15,8 @@ const menu = [
   ["التخصيص بدون كود", "/settings/configuration", "CONFIG"], ["منشئ التقارير", "/reports/builder", "CONFIG"],
   ["مصمم المستندات والهوية", "/settings/design", "DESIGN"], ["لوحاتي", "/dashboards", "DESIGN"],
   ["معالج تهيئة الشركة", "/onboarding", "CORE"], ["إدارة منصة SaaS", "/super-admin", "CORE"],
+  ["CRM", "/crm", "CRM"], ["الأصول والصيانة", "/assets", "ASSETS"], ["إدارة المستندات", "/documents", "DMS"],
+  ["صندوق الموافقات", "/approvals", "APPROVALS"], ["بوابة الأطراف", "/portal-admin", "PORTAL"], ["الخزينة", "/treasury", "TREASURY"], ["التكاملات", "/integrations", "INTEGRATIONS"],
   ["المستخدمون والصلاحيات", "/settings/users", "CORE"], ["إعدادات المؤسسة", "/settings/organization", "CORE"],
 ] as const;
 const money=(value:unknown)=>`${Number(value??0).toLocaleString("ar-SA",{minimumFractionDigits:2,maximumFractionDigits:2})} ر.س`;

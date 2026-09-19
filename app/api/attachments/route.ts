@@ -15,7 +15,7 @@ const allowed = new Map([
   ["application/pdf", ".pdf"], ["image/jpeg", ".jpg"], ["image/png", ".png"],
   ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx"], ["application/vnd.ms-excel", ".xls"],
 ]);
-const knownEntities = new Set(["BUSINESS_DOCUMENT", "DELIVERY_RECEIPT_NOTE", "SALES_INVOICE", "SUPPLIER_INVOICE", "PARTY", "TRANSPORT_TRIP", "TRUCK", "DRIVER", "EXPENSE", "REVENUE", "FINANCIAL_VOUCHER", "JOURNAL_ENTRY", "BANK_TRANSFER", "FACTORY_MAINTENANCE", "EMPLOYEE", "EXTERNAL_WORKER"]);
+const knownEntities = new Set(["BUSINESS_DOCUMENT", "DELIVERY_RECEIPT_NOTE", "SALES_INVOICE", "SUPPLIER_INVOICE", "PARTY", "TRANSPORT_TRIP", "TRUCK", "DRIVER", "EXPENSE", "REVENUE", "FINANCIAL_VOUCHER", "JOURNAL_ENTRY", "BANK_TRANSFER", "FACTORY_MAINTENANCE", "EMPLOYEE", "EXTERNAL_WORKER", "MANAGED_DOCUMENT"]);
 
 async function entityExists(entityType: string, entityId: number) {
   switch (entityType) {
@@ -35,6 +35,7 @@ async function entityExists(entityType: string, entityId: number) {
     case "FACTORY_MAINTENANCE": return Boolean(await prisma.factoryMaintenance.findUnique({ where: { id: entityId }, select: { id: true } }));
     case "EMPLOYEE": return Boolean(await prisma.employee.findUnique({ where: { id: entityId }, select: { id: true } }));
     case "EXTERNAL_WORKER": return Boolean(await prisma.externalWorker.findUnique({ where: { id: entityId }, select: { id: true } }));
+    case "MANAGED_DOCUMENT": return Boolean(await prisma.managedDocument.findUnique({ where: { id: entityId }, select: { id: true } }));
     default: return false;
   }
 }
