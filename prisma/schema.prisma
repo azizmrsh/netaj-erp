@@ -2235,11 +2235,15 @@ model Tenant {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  groups        CompanyGroup[]
-  companies     Company[]
-  memberships   TenantMembership[]
-  roles         Role[]
-  subscriptions TenantSubscription[]
+  groups         CompanyGroup[]
+  companies      Company[]
+  memberships    TenantMembership[]
+  roles          Role[]
+  subscriptions  TenantSubscription[]
+  onboarding     OnboardingSession[]
+  invitations    UserInvitation[]
+  supportGrants  SupportAccessGrant[]
+  usageSnapshots TenantUsageSnapshot[]
 }
 
 model CompanyGroup {
@@ -2312,6 +2316,9 @@ model Company {
   themeProfile           CompanyThemeProfile?
   dashboards             DashboardDefinition[]
   dashboardWidgets       DashboardWidget[]
+  onboardingSessions     OnboardingSession[]
+  invitations            UserInvitation[]
+  supportGrants          SupportAccessGrant[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -3391,6 +3398,7 @@ model EntitlementDefinition {
   createdAt   DateTime @default(now())
 
   companies CompanyEntitlement[]
+  plans     PlanEntitlement[]
 }
 
 model CompanyEntitlement {
@@ -3410,18 +3418,25 @@ model CompanyEntitlement {
 }
 
 model SubscriptionPlan {
-  id           Int      @id @default(autoincrement())
-  code         String   @unique
-  name         String
-  status       String   @default("ACTIVE")
-  userLimit    Int?
-  companyLimit Int?
-  storageMb    Int?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                Int      @id @default(autoincrement())
+  code              String   @unique
+  name              String
+  status            String   @default("ACTIVE")
+  userLimit         Int?
+  companyLimit      Int?
+  storageMb         Int?
+  monthlyPrice      Decimal  @default(0)
+  annualPrice       Decimal  @default(0)
+  currencyCode      String   @default("SAR")
+  trialDays         Int      @default(14)
+  featureLimitsJson String   @default("{}")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  modules       PlanModule[]
-  subscriptions TenantSubscription[]
+  modules              PlanModule[]
+  entitlements         PlanEntitlement[]
+  subscriptions        TenantSubscription[]
+  pendingSubscriptions TenantSubscription[] @relation("PendingSubscriptionPlan")
 }
 
 model PlanModule {
@@ -3437,20 +3452,42 @@ model PlanModule {
 }
 
 model TenantSubscription {
-  id          Int       @id @default(autoincrement())
-  tenantId    Int
-  planId      Int
-  status      String    @default("TRIAL")
-  startsAt    DateTime  @default(now())
-  trialEndsAt DateTime?
-  endsAt      DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                      Int       @id @default(autoincrement())
+  tenantId                Int
+  planId                  Int
+  status                  String    @default("TRIAL")
+  startsAt                DateTime  @default(now())
+  trialEndsAt             DateTime?
+  endsAt                  DateTime?
+  billingPeriod           String    @default("MONTHLY")
+  currentPeriodStart      DateTime  @default(now())
+  currentPeriodEnd        DateTime?
+  renewsAt                DateTime?
+  cancelAtPeriodEnd       Boolean   @default(false)
+  pendingPlanId           Int?
+  changeEffectiveAt       DateTime?
+  externalCustomerRef     String?
+  externalSubscriptionRef String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
-  tenant Tenant           @relation(fields: [tenantId], references: [id])
-  plan   SubscriptionPlan @relation(fields: [planId], references: [id])
+  tenant      Tenant            @relation(fields: [tenantId], references: [id])
+  plan        SubscriptionPlan  @relation(fields: [planId], references: [id])
+  pendingPlan SubscriptionPlan? @relation("PendingSubscriptionPlan", fields: [pendingPlanId], references: [id])
 
   @@index([tenantId, status])
+}
+
+model PlanEntitlement {
+  id             Int    @id @default(autoincrement())
+  planId         Int
+  entitlementKey String
+  value          String
+
+  plan        SubscriptionPlan      @relation(fields: [planId], references: [id], onDelete: Cascade)
+  entitlement EntitlementDefinition @relation(fields: [entitlementKey], references: [key])
+
+  @@unique([planId, entitlementKey])
 }
 
 model PlatformUser {
@@ -3464,8 +3501,105 @@ model PlatformUser {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  memberships TenantMembership[]
-  sessions    AuthSession[]
+  memberships           TenantMembership[]
+  sessions              AuthSession[]
+  platformAdministrator PlatformAdministrator?
+  sentInvitations       UserInvitation[]       @relation("InvitationSender")
+}
+
+model PlatformAdministrator {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique
+  role      String   @default("PLATFORM_ADMIN")
+  status    String   @default("ACTIVE")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user          PlatformUser         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  supportGrants SupportAccessGrant[]
+}
+
+model SupportAccessGrant {
+  id              Int       @id @default(autoincrement())
+  platformAdminId Int
+  tenantId        Int
+  companyId       Int?
+  scopeJson       String    @default("[]")
+  reason          String
+  approvedBy      String
+  startsAt        DateTime  @default(now())
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  administrator PlatformAdministrator @relation(fields: [platformAdminId], references: [id])
+  tenant        Tenant                @relation(fields: [tenantId], references: [id])
+  company       Company?              @relation(fields: [companyId], references: [id])
+
+  @@index([platformAdminId, expiresAt, revokedAt])
+  @@index([tenantId, companyId])
+}
+
+model PlatformConfiguration {
+  id        Int      @id @default(autoincrement())
+  configKey String   @unique
+  valueJson String
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model OnboardingSession {
+  id          Int       @id @default(autoincrement())
+  tenantId    Int
+  companyId   Int
+  currentStep String    @default("COMPANY")
+  status      String    @default("IN_PROGRESS")
+  dataJson    String    @default("{}")
+  startedBy   Int?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([tenantId, companyId])
+}
+
+model UserInvitation {
+  id          Int       @id @default(autoincrement())
+  tenantId    Int
+  companyId   Int
+  email       String
+  roleCode    String
+  tokenHash   String    @unique
+  status      String    @default("PENDING")
+  invitedById Int
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  tenant    Tenant       @relation(fields: [tenantId], references: [id])
+  company   Company      @relation(fields: [companyId], references: [id])
+  invitedBy PlatformUser @relation("InvitationSender", fields: [invitedById], references: [id])
+
+  @@unique([tenantId, companyId, email, status])
+  @@index([tenantId, companyId, expiresAt])
+}
+
+model TenantUsageSnapshot {
+  id           Int      @id @default(autoincrement())
+  tenantId     Int
+  capturedAt   DateTime @default(now())
+  userCount    Int      @default(0)
+  companyCount Int      @default(0)
+  storageBytes BigInt   @default(0)
+  metricsJson  String   @default("{}")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, capturedAt])
 }
 
 model TenantMembership {

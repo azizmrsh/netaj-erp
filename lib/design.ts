@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { audit } from "@/lib/audit";
+import { assertFeatureLimit } from "@/lib/saas";
 
 export const documentTypes = ["INVOICE", "QUOTATION", "PROFORMA_INVOICE", "SALES_ORDER", "PURCHASE_ORDER", "RECEIPT_NOTE", "DELIVERY_NOTE", "RECEIPT_VOUCHER", "PAYMENT_VOUCHER", "PROGRESS_CERTIFICATE", "ACCOUNT_STATEMENT", "FINANCIAL_REPORT", "PAYROLL"] as const;
 export const widgetTypes = ["KPI", "CHART", "TABLE", "ALERT", "LIST", "COMPARISON"] as const;
@@ -44,6 +45,17 @@ export function normalizeDesign(input: unknown): DocumentDesign {
     features: { signatures: bool(features.signatures, true), stamp: bool(features.stamp, true), qr: bool(features.qr, true), barcode: bool(features.barcode, true) },
     terms: text(root.terms),
   };
+}
+
+export async function initializeCompanyDesign(tx: Prisma.TransactionClient, tenantId: number, companyId: number) {
+  await tx.companyThemeProfile.upsert({ where: { companyId }, create: { tenantId, companyId }, update: {} });
+  const labels: Record<string, string> = { INVOICE: "فاتورة", QUOTATION: "عرض سعر", PROFORMA_INVOICE: "فاتورة أولية", SALES_ORDER: "أمر بيع", PURCHASE_ORDER: "أمر شراء", RECEIPT_NOTE: "سند استلام", DELIVERY_NOTE: "سند تسليم", RECEIPT_VOUCHER: "سند قبض", PAYMENT_VOUCHER: "سند صرف", PROGRESS_CERTIFICATE: "مستخلص مشروع", ACCOUNT_STATEMENT: "كشف حساب", FINANCIAL_REPORT: "تقرير مالي", PAYROLL: "مستند رواتب" };
+  for (const documentType of documentTypes) {
+    const code = `DEFAULT_${documentType}`, template = await tx.documentTemplate.upsert({ where: { tenantId_companyId_code: { tenantId, companyId, code } }, create: { tenantId, companyId, code, name: labels[documentType], documentType, language: "BILINGUAL", isDefault: true }, update: {} });
+    const existing = await tx.documentTemplateVersion.findFirst({ where: { templateId: template.id } }); if (!existing) await tx.documentTemplateVersion.create({ data: { templateId: template.id, version: 1, status: "PUBLISHED", designJson: JSON.stringify(normalizeDesign({ body: { fieldOrder: ["documentNumber", "date", "party", "reference", "transport", "items", "totals", "notes"] } })), changeNotes: "الإصدار الافتراضي", publishedAt: new Date() } });
+  }
+  const dashboard = await tx.dashboardDefinition.upsert({ where: { tenantId_companyId_code: { tenantId, companyId, code: "EXECUTIVE" } }, create: { tenantId, companyId, code: "EXECUTIVE", name: "لوحة الإدارة التنفيذية", roleCodesJson: '["OWNER","ADMIN"]', isDefault: true }, update: {} });
+  if (!(await tx.dashboardWidget.count({ where: { dashboardId: dashboard.id } }))) for (const [position, widget] of [{ widgetType: "KPI", title: "المبيعات", dataSource: "kpis.sales", width: 1 }, { widgetType: "KPI", title: "صافي الربح", dataSource: "kpis.netProfit", width: 1 }, { widgetType: "CHART", title: "المقارنة الشهرية", dataSource: "monthly", width: 2 }, { widgetType: "ALERT", title: "التنبيهات", dataSource: "alerts", width: 1 }].entries()) await tx.dashboardWidget.create({ data: { tenantId, companyId, dashboardId: dashboard.id, position: position + 1, ...widget } });
 }
 
 export async function listDesignWorkspace(tx: Prisma.TransactionClient) {
@@ -105,6 +117,8 @@ export async function saveDashboard(tx: Prisma.TransactionClient, input: Record<
   if (!code || !name) throw new DesignError("اسم وكود لوحة المعلومات مطلوبان");
   if (widgets.length > 40) throw new DesignError("الحد الأقصى 40 عنصرًا في اللوحة");
   const tenantId = Number(input.tenantId), companyId = Number(input.companyId), roles = Array.isArray(input.roleCodes) ? input.roleCodes.map(text).filter(Boolean) : [];
+  const existing = await tx.dashboardDefinition.findUnique({ where: { tenantId_companyId_code: { tenantId, companyId, code } } });
+  if (!existing) await assertFeatureLimit(tx, tenantId, companyId, "CUSTOM_DASHBOARDS_MAX", await tx.dashboardDefinition.count({ where: { isActive: true } }));
   for (const widget of widgets) if (!widgetTypes.includes(text(widget.widgetType).toUpperCase() as typeof widgetTypes[number]) || !dashboardDataSources.includes(text(widget.dataSource) as typeof dashboardDataSources[number])) throw new DesignError("نوع أو مصدر أحد عناصر اللوحة غير مدعوم");
   const dashboard = await tx.dashboardDefinition.upsert({ where: { tenantId_companyId_code: { tenantId, companyId, code } }, create: { tenantId, companyId, code, name, roleCodesJson: JSON.stringify(roles), isDefault: Boolean(input.isDefault), createdBy: userId }, update: { name, roleCodesJson: JSON.stringify(roles), isDefault: Boolean(input.isDefault), isActive: true } });
   if (input.isDefault) await tx.dashboardDefinition.updateMany({ where: { id: { not: dashboard.id } }, data: { isDefault: false } });

@@ -23,6 +23,7 @@ export const scopedModels = new Set([
   "CustomReportDefinition", "CompanyIndustryProfile",
   "DocumentTemplate", "IssuedDocumentPresentation", "CompanyThemeProfile",
   "DashboardDefinition", "DashboardWidget",
+  "OnboardingSession", "UserInvitation",
 ]);
 
 export async function getVerifiedDataScope(): Promise<DataScope> {

@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { audit } from "@/lib/audit";
 import type { ReportTable } from "@/lib/financial-export";
+import { assertFeatureLimit } from "@/lib/saas";
 
 type Row = Record<string, string | number | boolean | null>;
 type Filter = { field: string; operator: "EQ" | "CONTAINS" | "GTE" | "LTE"; value: unknown };
@@ -33,6 +34,8 @@ export async function saveCustomReport(tx: Prisma.TransactionClient, input: Reco
   if (!fields.length) throw new CustomReportError("اختر حقلًا واحدًا على الأقل");
   const filters = Array.isArray(input.filters) ? input.filters : [], groupBy = Array.isArray(input.groupBy) ? input.groupBy.map(text).filter((field) => allowed.has(field)) : [], sort = Array.isArray(input.sort) ? input.sort : [], calculations = Array.isArray(input.calculations) ? input.calculations : [];
   const tenantId = Number(input.tenantId), companyId = Number(input.companyId), visibility = ["PRIVATE", "COMPANY", "ROLES"].includes(text(input.visibility).toUpperCase()) ? text(input.visibility).toUpperCase() : "PRIVATE";
+  const existing = await tx.customReportDefinition.findUnique({ where: { tenantId_companyId_code: { tenantId, companyId, code } } });
+  if (!existing) await assertFeatureLimit(tx, tenantId, companyId, "CUSTOM_REPORTS_MAX", await tx.customReportDefinition.count({ where: { isActive: true } }));
   const data = { name: text(input.name), sourceType, fieldsJson: JSON.stringify(fields), filtersJson: JSON.stringify(filters), groupByJson: JSON.stringify(groupBy), sortJson: JSON.stringify(sort), calculationsJson: JSON.stringify(calculations), visibility, ownerUserId: userId, roleCodesJson: JSON.stringify(Array.isArray(input.roleCodes) ? input.roleCodes.map(text) : []), isActive: input.isActive !== false };
   const record = await tx.customReportDefinition.upsert({ where: { tenantId_companyId_code: { tenantId, companyId, code } }, create: { tenantId, companyId, code, ...data }, update: data });
   await audit(tx, { action: "CUSTOM_REPORT_SAVE", entityType: "CUSTOM_REPORT", entityId: record.id, userId: String(userId), metadata: { code, sourceType } });

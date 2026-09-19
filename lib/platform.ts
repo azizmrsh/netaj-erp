@@ -1,14 +1,7 @@
 import type { Prisma } from "@prisma/client";
-
-export class PlatformError extends Error {
-  constructor(
-    message: string,
-    public readonly code: string,
-    public readonly status = 400
-  ) {
-    super(message);
-  }
-}
+import { activeSubscription, assertTenantLimit } from "@/lib/saas";
+import { PlatformError } from "@/lib/platform-error";
+export { PlatformError } from "@/lib/platform-error";
 
 const companyInclude = {
   group: true,
@@ -67,6 +60,9 @@ export async function createCompany(
 ) {
   const tenant = await tx.tenant.findUnique({ where: { id: tenantId } });
   if (!tenant) throw new PlatformError("المستأجر غير موجود", "TENANT_NOT_FOUND", 404);
+  const subscription = await activeSubscription(tx, tenantId);
+  if (subscription) await assertTenantLimit(tx, tenantId, "COMPANIES");
+  else if (await tx.company.count({ where: { tenantId, isActive: true } })) throw new PlatformError("يجب تفعيل اشتراك قبل إضافة شركة أخرى", "SUBSCRIPTION_REQUIRED", 402);
 
   const code = requiredText(input.code, "رمز الشركة").toUpperCase();
   const legalNameAr = requiredText(input.legalNameAr, "الاسم القانوني");

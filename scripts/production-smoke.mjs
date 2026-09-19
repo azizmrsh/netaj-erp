@@ -70,6 +70,8 @@ const routes = [
   "/reports/builder",
   "/settings/design",
   "/dashboards",
+  "/onboarding",
+  "/super-admin",
   "/api/units",
   "/api/item-categories",
   "/api/items",
@@ -126,6 +128,8 @@ const routes = [
   "/api/design",
   "/api/design/runtime",
   "/api/design/branding",
+  "/api/onboarding",
+  "/api/super-admin",
   "/api/reports/legacy?report=monthly-comparison&from=2026-01-01&to=2026-12-31",
 ];
 
@@ -257,12 +261,26 @@ try {
   assert.equal(designRuntime.response.status, 200);
   assert.equal(designRuntime.body.dashboards.some((row) => row.id === customDashboard.body.id), true);
   console.log("PASS production Phase I theme, versioned template publish, role dashboard runtime");
+  const platformAdmin = await jsonRequest("/api/super-admin");
+  assert.equal(platformAdmin.response.status, 200, JSON.stringify(platformAdmin.body));
+  assert.equal("parties" in platformAdmin.body, false);
+  const commercialPlan = await jsonRequest("/api/super-admin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "PLAN", code: `SMOKE_PLAN_${suffix}`, name: "Smoke Commercial Plan", userLimit: 3, companyLimit: 2, storageMb: 128, monthlyPrice: 99, annualPrice: 990, trialDays: 7, moduleKeys: ["CORE", "DESIGN"], featureLimits: { CUSTOM_DASHBOARDS_MAX: 2 } }) });
+  assert.equal(commercialPlan.response.status, 201, JSON.stringify(commercialPlan.body));
+  const supportGrant = await jsonRequest("/api/super-admin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "SUPPORT_GRANT", tenantId: 1, companyId: 1, reason: "Production smoke diagnostics", approvedBy: "NETAj owner", expiresAt: new Date(Date.now() + 3600000).toISOString(), scopes: ["DIAGNOSTICS"] }) });
+  assert.equal(supportGrant.response.status, 201, JSON.stringify(supportGrant.body));
+  const revokeGrant = await jsonRequest("/api/super-admin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "SUPPORT_REVOKE", id: supportGrant.body.id }) });
+  assert.equal(revokeGrant.response.status, 201);
+  console.log("PASS production Phase J plan limits, separate super admin, audited support grants");
 
   const switchToSecond = await jsonRequest("/api/auth/switch-company", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ companyId: companyResult.body.id }),
   });
   assert.equal(switchToSecond.response.status, 200);
+  const secondOnboarding = await jsonRequest("/api/onboarding");
+  assert.equal(secondOnboarding.response.status, 200);
+  assert.equal(secondOnboarding.body.session.status, "IN_PROGRESS");
+  assert.equal(secondOnboarding.body.templates.some((row) => row.code === "RETAIL"), true);
   const secondParty = await jsonRequest("/api/parties", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ nameAr: "عميل الشركة الثانية", isCustomer: true }),
@@ -345,6 +363,9 @@ try {
   assert.equal(forbiddenModule.body.code, "PERMISSION_DENIED");
   const forbiddenUserAdmin = await jsonRequest("/api/platform/users");
   assert.equal(forbiddenUserAdmin.response.status, 403);
+  const forbiddenSuperAdmin = await jsonRequest("/api/super-admin");
+  assert.equal(forbiddenSuperAdmin.response.status, 403);
+  assert.equal(forbiddenSuperAdmin.body.code, "PLATFORM_ADMIN_REQUIRED");
   const forbiddenFinancialExport = await fetch(`http://127.0.0.1:${port}/api/finance/reports/export?report=trial-balance&format=xlsx`);
   assert.equal(forbiddenFinancialExport.status, 403);
   const limitedDashboard = await jsonRequest("/api/analytics?from=2026-01-01&to=2026-12-31");

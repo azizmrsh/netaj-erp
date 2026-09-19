@@ -83,10 +83,12 @@ export async function completeInitialSetup(
     throw new AuthError("تم إغلاق الإعداد الأولي بالفعل", "SETUP_ALREADY_COMPLETED", 409);
   }
 
-  return tx.platformUser.update({
+  const user = await tx.platformUser.update({
     where: { id: unconfigured[0].id },
     data: { email, passwordHash: await bcrypt.hash(password, 12) },
   });
+  await tx.platformAdministrator.upsert({ where: { userId: user.id }, create: { userId: user.id, role: "PLATFORM_OWNER" }, update: { status: "ACTIVE" } });
+  return user;
 }
 
 export async function authenticateCredentials(

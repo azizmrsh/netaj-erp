@@ -7,6 +7,8 @@ import { audit } from "@/lib/audit";
 import { authorizeAttachmentEntity } from "@/lib/attachment-authorization";
 import { AuthError } from "@/lib/auth";
 import { authErrorResponse } from "@/lib/api-auth";
+import { assertTenantLimit } from "@/lib/saas";
+import { PlatformError, platformErrorResponse } from "@/lib/platform";
 
 const maximumSize = 10 * 1024 * 1024;
 const allowed = new Map([
@@ -62,7 +64,7 @@ export async function POST(request: Request) {
     if (!(file instanceof File) || !knownEntities.has(entityType) || !Number.isInteger(entityId) || entityId <= 0) {
       return NextResponse.json({ error: "الملف أو مرجع المستند غير صحيح" }, { status: 400 });
     }
-    await authorizeAttachmentEntity(request, entityType, entityId, "CREATE");
+    const auth = await authorizeAttachmentEntity(request, entityType, entityId, "CREATE");
     if (!(await entityExists(entityType, entityId))) {
       return NextResponse.json({ error: "المستند المرتبط بالمرفق غير موجود" }, { status: 404 });
     }
@@ -70,6 +72,7 @@ export async function POST(request: Request) {
     if (!extension || file.size <= 0 || file.size > maximumSize) {
       return NextResponse.json({ error: "يسمح بملفات PDF/JPG/PNG/Excel حتى 10MB" }, { status: 400 });
     }
+    await prisma.$transaction((tx) => assertTenantLimit(tx, auth.tenantId, "STORAGE", file.size));
     const originalExtension = extname(file.name).toLowerCase();
     if (originalExtension && originalExtension !== extension && !(extension === ".jpg" && originalExtension === ".jpeg")) {
       return NextResponse.json({ error: "امتداد الملف لا يطابق نوعه" }, { status: 400 });
@@ -93,6 +96,7 @@ export async function POST(request: Request) {
       const response = authErrorResponse(error);
       return NextResponse.json({ error: response.message, code: response.code }, { status: response.status });
     }
+    if (error instanceof PlatformError) { const response = platformErrorResponse(error); return NextResponse.json({ error: response.message, code: response.code }, { status: response.status }); }
     return NextResponse.json({ error: "تعذر رفع المرفق" }, { status: 500 });
   }
 }

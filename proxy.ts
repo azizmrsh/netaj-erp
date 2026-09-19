@@ -7,6 +7,7 @@ const publicPaths = ["/login", "/setup", "/api/auth/login", "/api/auth/setup", "
 
 function requiredModule(path: string) {
   if (path.startsWith("/api/platform")) return null;
+  if (path.startsWith("/api/super-admin") || path.startsWith("/super-admin")) return null;
   if (path.startsWith("/api/design") || path.startsWith("/settings/design") || path.startsWith("/dashboards")) return "DESIGN";
   if (/^\/api\/notes\/\d+$/.test(path) || /^\/api\/finance\/(vouchers|transfers|periods)\/\d+$/.test(path) || /^\/api\/hr\/payroll\/\d+$/.test(path)) return null;
   if (/^\/(api\/)?(items|item-categories|units|parties|attachments|settings)/.test(path) || path === "/") return "CORE";

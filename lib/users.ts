@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import type { Prisma } from "@prisma/client";
 import { PlatformError } from "@/lib/platform";
+import { assertTenantLimit } from "@/lib/saas";
 
 export async function listTenantUsers(tx: Prisma.TransactionClient, tenantId: number) {
   return tx.tenantMembership.findMany({
@@ -19,6 +20,7 @@ export async function createTenantUser(
   tenantId: number,
   input: Record<string, unknown>
 ) {
+  await assertTenantLimit(tx, tenantId, "USERS");
   const email = String(input.email ?? "").trim().toLowerCase();
   const name = String(input.name ?? "").trim();
   const password = String(input.password ?? "");
