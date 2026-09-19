@@ -1,0 +1,2 @@
+import{NextResponse}from"next/server";import{prisma}from"@/lib/prisma";import{createExternalWorker,hrErrorResponse}from"@/lib/hr";
+export async function GET(){return NextResponse.json(await prisma.externalWorker.findMany({include:{costs:true},orderBy:{name:"asc"}}))}export async function POST(request:Request){try{const body=await request.json(),row=await prisma.$transaction(tx=>createExternalWorker(tx,body));return NextResponse.json(row,{status:201})}catch(e){console.error(e);const r=hrErrorResponse(e);return NextResponse.json({error:r.message},{status:r.status})}}

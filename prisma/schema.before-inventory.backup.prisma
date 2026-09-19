@@ -1,0 +1,865 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ======================================================
+// NETAJ ERP
+// Core Database Schema - Phase 1
+// ======================================================
+
+// ======================================================
+// ENTITIES
+// العميل / المورد / الاثنين معاً
+// ======================================================
+
+model Party {
+  sales     Sale[]
+  purchases Purchase[]
+  id        Int        @id @default(autoincrement())
+
+  nameAr String
+  nameEn String?
+
+  unifiedNumber String? @unique
+  vatNumber     String?
+
+  telephone String?
+  email     String?
+
+  isCustomer Boolean @default(false)
+  isSupplier Boolean @default(false)
+
+  isActive Boolean @default(true)
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  address PartyAddress?
+
+  stockAccounts  PartyStockAccount[]
+  stockMovements StockMovement[]
+
+  notesDocuments DeliveryReceiptNote[]
+}
+
+// ======================================================
+// NATIONAL ADDRESS
+// العنوان الوطني
+// ======================================================
+
+model PartyAddress {
+  id Int @id @default(autoincrement())
+
+  partyId Int @unique
+
+  buildingNumber  String?
+  street          String?
+  secondaryNumber String?
+  district        String?
+  city            String?
+  postalCode      String?
+  region          String?
+  shortAddress    String?
+  mapLink         String?
+
+  party Party @relation(fields: [partyId], references: [id], onDelete: Cascade)
+}
+
+// ======================================================
+// ITEM CATEGORIES
+// تصنيفات المواد
+// ======================================================
+
+model ItemCategory {
+  id Int @id @default(autoincrement())
+
+  nameAr String
+  nameEn String?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items Item[]
+}
+
+// ======================================================
+// UNITS
+// الوحدات
+// طن / كجم / لتر / قطعة / برميل
+// ======================================================
+
+model Unit {
+  id Int @id @default(autoincrement())
+
+  code String @unique
+
+  nameAr String
+  nameEn String
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items Item[]
+}
+
+// ======================================================
+// ITEMS / MATERIALS
+// المواد والمنتجات
+// ======================================================
+
+model Item {
+  saleItems     SaleItem[]
+  purchaseItems PurchaseItem[]
+  id            Int            @id @default(autoincrement())
+
+  code String @unique
+
+  nameAr String
+  nameEn String?
+
+  categoryId Int?
+  unitId     Int
+
+  specification   String?
+  manufacturer    String?
+  countryOfOrigin String?
+  batchNumber     String?
+
+  costPrice Decimal @default(0)
+  salePrice Decimal @default(0)
+
+  vatRate Decimal @default(15)
+
+  minimumStock Decimal @default(0)
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  category ItemCategory? @relation(fields: [categoryId], references: [id])
+
+  unit Unit @relation(fields: [unitId], references: [id])
+
+  companyStock CompanyStock?
+
+  partyStocks PartyStockAccount[]
+
+  stockMovements StockMovement[]
+
+  noteItems DeliveryReceiptNoteItem[]
+}
+
+// ======================================================
+// COMPANY MAIN STOCK
+// مخزون الشركة الرئيسي
+// ======================================================
+
+model CompanyStock {
+  id Int @id @default(autoincrement())
+
+  itemId Int @unique
+
+  quantity Decimal @default(0)
+
+  averageCost Decimal @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+}
+
+// ======================================================
+// CUSTOMER / PARTY STOCK
+// مخزون العميل المستقل
+//
+// مهم:
+// الرصيد يمكن أن يصبح سالباً.
+// النظام سيحذر المستخدم ولكنه لا يمنع العملية.
+// ======================================================
+
+model PartyStockAccount {
+  id Int @id @default(autoincrement())
+
+  partyId Int
+  itemId  Int
+
+  quantity     Decimal @default(0)
+  averageValue Decimal @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  party Party @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([partyId, itemId])
+}
+
+// ======================================================
+// STOCK MOVEMENTS
+// حركة المخزون
+//
+// ownershipType:
+//
+// COMPANY
+// CUSTOMER
+//
+// movementType:
+//
+// OPENING
+// RECEIPT
+// DELIVERY
+// PURCHASE
+// SALE
+// TRANSFER_IN
+// TRANSFER_OUT
+// PROCESSING_IN
+// PROCESSING_OUT
+// ADJUSTMENT
+// ======================================================
+
+model StockMovement {
+  id Int @id @default(autoincrement())
+
+  movementNumber String @unique
+
+  movementDate DateTime @default(now())
+
+  itemId  Int
+  partyId Int?
+
+  ownershipType String
+  movementType  String
+
+  quantityIn  Decimal @default(0)
+  quantityOut Decimal @default(0)
+
+  unitCost   Decimal @default(0)
+  totalValue Decimal @default(0)
+
+  balanceAfter Decimal?
+
+  referenceType   String?
+  referenceId     Int?
+  referenceNumber String?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+
+  item Item @relation(fields: [itemId], references: [id])
+
+  party Party? @relation(fields: [partyId], references: [id])
+
+  @@index([movementDate])
+  @@index([itemId])
+  @@index([partyId])
+}
+
+// ======================================================
+// RECEIPT / DELIVERY NOTES
+//
+// سند استلام
+// سند تسليم
+//
+// لا توجد أسعار في السند.
+// ======================================================
+
+model DeliveryReceiptNote {
+  id Int @id @default(autoincrement())
+
+  noteNumber String @unique
+
+  noteType String
+  noteDate DateTime @default(now())
+
+  partyId Int
+
+  invoiceNumber   String?
+  orderNumber     String?
+  referenceNumber String?
+
+  // ------------------------------------------
+  // Transport Method
+  //
+  // COMPANY
+  // CUSTOMER
+  // EXTERNAL
+  // ------------------------------------------
+
+  transportMethod String?
+
+  carrierName String?
+
+  vehiclePlate String?
+
+  driverName     String?
+  driverIdNumber String?
+  driverPhone    String?
+
+  source String?
+
+  loadingPoint   String?
+  unloadingPoint String?
+
+  status String @default("DRAFT")
+
+  notes String?
+
+  // ------------------------------------------
+  // Signatures
+  // ------------------------------------------
+
+  recipientName  String?
+  purchasingName String?
+  warehouseName  String?
+  accountantName String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  party Party @relation(fields: [partyId], references: [id])
+
+  items DeliveryReceiptNoteItem[]
+
+  @@index([noteDate])
+  @@index([partyId])
+}
+
+// ======================================================
+// RECEIPT / DELIVERY NOTE ITEMS
+//
+// بدون أسعار
+// ======================================================
+
+model DeliveryReceiptNoteItem {
+  id Int @id @default(autoincrement())
+
+  noteId Int
+  itemId Int
+
+  sequence Int
+
+  description   String?
+  materialGrade String?
+  orderNumber   String?
+
+  quantity Decimal
+
+  note DeliveryReceiptNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  item Item @relation(fields: [itemId], references: [id])
+
+  @@index([noteId])
+  @@index([itemId])
+}
+
+// ======================================================
+// TRANSPORT MODULE
+// نظام النقل
+// ======================================================
+
+model Truck {
+  id          Int      @id @default(autoincrement())
+  plateNumber String   @unique
+  truckType   String?
+  model       String?
+  modelYear   Int?
+  trailerType String?
+  capacity    Decimal?
+  status      String   @default("ACTIVE")
+
+  fuelType         String?
+  fuelConsumption  Decimal? // liters per 100 km
+  fuelPrice        Decimal?
+  maintenancePerKm Decimal?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documents TruckDocument[]
+  trips     TransportTrip[]
+}
+
+// ======================================================
+// TRUCK DOCUMENTS
+// وثائق الشاحنات
+// ======================================================
+
+model TruckDocument {
+  id      Int @id @default(autoincrement())
+  truckId Int
+
+  documentType   String
+  documentNumber String?
+
+  issueDate  DateTime?
+  expiryDate DateTime?
+
+  attachmentUrl String?
+  notes         String?
+
+  createdAt DateTime @default(now())
+
+  truck Truck @relation(fields: [truckId], references: [id], onDelete: Cascade)
+
+  @@index([truckId])
+  @@index([expiryDate])
+}
+
+// ======================================================
+// DRIVERS
+// السائقون
+// ======================================================
+
+model Driver {
+  id Int @id @default(autoincrement())
+
+  name        String
+  idNumber    String? @unique
+  phone       String?
+  nationality String?
+
+  licenseNumber String?
+  licenseExpiry DateTime?
+
+  passportNumber String?
+  passportExpiry DateTime?
+
+  driverCardNumber String?
+  driverCardExpiry DateTime?
+
+  status String  @default("ACTIVE")
+  notes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  documents DriverDocument[]
+  trips     TransportTrip[]
+}
+
+// ======================================================
+// DRIVER DOCUMENTS
+// وثائق السائق
+// ======================================================
+
+model DriverDocument {
+  id       Int @id @default(autoincrement())
+  driverId Int
+
+  documentType   String
+  documentNumber String?
+
+  issueDate  DateTime?
+  expiryDate DateTime?
+
+  attachmentUrl String?
+  notes         String?
+
+  createdAt DateTime @default(now())
+
+  driver Driver @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId])
+  @@index([expiryDate])
+}
+
+// ======================================================
+// TRANSPORT TRIPS
+// الرحلات
+//
+// يتم إنشاء الرحلة تلقائياً من السند
+// عندما تكون وسيلة النقل = سيارات الشركة
+// ======================================================
+
+model TransportTrip {
+  id Int @id @default(autoincrement())
+
+  tripNumber String   @unique
+  tripDate   DateTime @default(now())
+
+  noteId  Int? @unique
+  partyId Int?
+  itemId  Int?
+
+  truckId  Int?
+  driverId Int?
+
+  quantity Decimal  @default(0)
+  weight   Decimal?
+
+  source         String?
+  loadingPoint   String?
+  unloadingPoint String?
+
+  estimatedKm Decimal?
+  actualKm    Decimal?
+
+  // ----------------------------
+  // Transport Revenue
+  // إيراد النقل
+  // ----------------------------
+
+  transportRevenue     Decimal  @default(0)
+  transportPricePerTon Decimal?
+
+  // ----------------------------
+  // Fuel
+  // الديزل
+  // ----------------------------
+
+  fuelLiters        Decimal @default(0)
+  fuelPricePerLiter Decimal @default(0)
+  fuelCost          Decimal @default(0)
+
+  // ----------------------------
+  // Driver trip wage
+  // أجرة السائق للرحلة
+  // لا يوجد Bonus
+  // ----------------------------
+
+  driverTripFee       Decimal @default(0)
+  driverPaidAmount    Decimal @default(0)
+  driverPaymentStatus String  @default("DUE")
+
+  // ----------------------------
+  // Other trip costs
+  // ----------------------------
+
+  maintenanceCost    Decimal @default(0)
+  administrativeCost Decimal @default(0)
+  roadPermitCost     Decimal @default(0)
+  otherCost          Decimal @default(0)
+
+  // ----------------------------
+  // Calculated financial values
+  // ----------------------------
+
+  totalCost Decimal @default(0)
+  netProfit Decimal @default(0)
+
+  status String @default("OPEN")
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  truck  Truck?  @relation(fields: [truckId], references: [id])
+  driver Driver? @relation(fields: [driverId], references: [id])
+
+  expenses TransportTripExpense[]
+
+  @@index([tripDate])
+  @@index([partyId])
+  @@index([itemId])
+  @@index([truckId])
+  @@index([driverId])
+}
+
+// ======================================================
+// ADDITIONAL TRIP EXPENSES
+// مصاريف إضافية للرحلة
+// ======================================================
+
+model TransportTripExpense {
+  id Int @id @default(autoincrement())
+
+  tripId Int
+
+  expenseDate DateTime @default(now())
+  expenseType String
+  description String?
+
+  amount Decimal @default(0)
+
+  attachmentUrl String?
+  notes         String?
+
+  createdAt DateTime @default(now())
+
+  trip TransportTrip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  @@index([tripId])
+}
+
+// ============================================================
+// SALES
+// المبيعات
+// ============================================================
+
+model Sale {
+  id Int @id @default(autoincrement())
+
+  invoiceNumber String   @unique
+  invoiceDate   DateTime @default(now())
+
+  partyId Int
+
+  referenceNumber     String?
+  purchaseOrderNumber String?
+  paymentMethod       String?
+  dueDate             DateTime?
+
+  subtotal    Decimal @default(0)
+  discount    Decimal @default(0)
+  vatAmount   Decimal @default(0)
+  totalAmount Decimal @default(0)
+
+  status String  @default("DRAFT")
+  notes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  party Party      @relation(fields: [partyId], references: [id])
+  items SaleItem[]
+
+  @@index([invoiceDate])
+  @@index([partyId])
+}
+
+model SaleItem {
+  id Int @id @default(autoincrement())
+
+  saleId Int
+  itemId Int
+
+  quantity    Decimal @default(0)
+  unitPrice   Decimal @default(0)
+  discount    Decimal @default(0)
+  vatRate     Decimal @default(15)
+  vatAmount   Decimal @default(0)
+  totalAmount Decimal @default(0)
+
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  item Item @relation(fields: [itemId], references: [id])
+
+  @@index([saleId])
+  @@index([itemId])
+}
+
+// ============================================================
+// PURCHASES
+// المشتريات
+// ============================================================
+
+model Purchase {
+  id Int @id @default(autoincrement())
+
+  purchaseNumber String   @unique
+  purchaseDate   DateTime @default(now())
+
+  partyId Int
+
+  supplierInvoiceNumber String?
+  referenceNumber       String?
+
+  subtotal    Decimal @default(0)
+  discount    Decimal @default(0)
+  vatAmount   Decimal @default(0)
+  totalAmount Decimal @default(0)
+
+  status String  @default("DRAFT")
+  notes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  party Party          @relation(fields: [partyId], references: [id])
+  items PurchaseItem[]
+
+  @@index([purchaseDate])
+  @@index([partyId])
+}
+
+model PurchaseItem {
+  id Int @id @default(autoincrement())
+
+  purchaseId Int
+  itemId     Int
+
+  quantity    Decimal @default(0)
+  unitPrice   Decimal @default(0)
+  discount    Decimal @default(0)
+  vatRate     Decimal @default(15)
+  vatAmount   Decimal @default(0)
+  totalAmount Decimal @default(0)
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  item     Item     @relation(fields: [itemId], references: [id])
+
+  @@index([purchaseId])
+  @@index([itemId])
+}
+
+// ============================================================
+// FACTORY
+// المصنع - تكلفة التصنيع مستقلة عن ملكية خام العميل
+// ============================================================
+
+model FactoryTransaction {
+  id Int @id @default(autoincrement())
+
+  transactionNumber String   @unique
+  transactionDate   DateTime @default(now())
+
+  partyId Int?
+  itemId  Int?
+
+  transactionType String
+
+  quantity               Decimal @default(0)
+  manufacturingFeePerTon Decimal @default(0)
+  manufacturingFeeTotal  Decimal @default(0)
+
+  description String?
+  notes       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([transactionDate])
+  @@index([partyId])
+  @@index([itemId])
+}
+
+model FactoryExpense {
+  id Int @id @default(autoincrement())
+
+  expenseDate DateTime @default(now())
+  expenseType String
+  description String?
+
+  amount Decimal @default(0)
+
+  supplierName    String?
+  referenceNumber String?
+  notes           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([expenseDate])
+  @@index([expenseType])
+}
+
+// ============================================================
+// ACCOUNTING
+// المحاسبة
+// ============================================================
+
+model JournalEntry {
+  id Int @id @default(autoincrement())
+
+  entryNumber String   @unique
+  entryDate   DateTime @default(now())
+
+  description     String?
+  referenceType   String?
+  referenceId     Int?
+  referenceNumber String?
+
+  status String @default("DRAFT")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines JournalEntryLine[]
+
+  @@index([entryDate])
+}
+
+model JournalEntryLine {
+  id Int @id @default(autoincrement())
+
+  journalEntryId Int
+
+  accountCode String
+  accountName String
+
+  debit  Decimal @default(0)
+  credit Decimal @default(0)
+
+  partyId     Int?
+  costCenter  String?
+  description String?
+
+  journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+
+  @@index([journalEntryId])
+  @@index([partyId])
+}
+
+model Expense {
+  id Int @id @default(autoincrement())
+
+  voucherNumber String   @unique
+  expenseDate   DateTime @default(now())
+
+  expenseType String
+  description String?
+  beneficiary String?
+
+  amountBeforeVat Decimal @default(0)
+  vatAmount       Decimal @default(0)
+  totalAmount     Decimal @default(0)
+
+  paymentMethod       String?
+  cashBankAccount     String?
+  costCenter          String?
+  responsibleEmployee String?
+
+  referenceNumber String?
+  notes           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([expenseDate])
+  @@index([expenseType])
+}
+
+model Revenue {
+  id Int @id @default(autoincrement())
+
+  voucherNumber String   @unique
+  revenueDate   DateTime @default(now())
+
+  revenueType String
+  partyId     Int?
+
+  description String?
+
+  amountBeforeVat Decimal @default(0)
+  vatAmount       Decimal @default(0)
+  totalAmount     Decimal @default(0)
+
+  collectionMethod String?
+  cashBankAccount  String?
+  activity         String?
+  costCenter       String?
+
+  referenceNumber String?
+  notes           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([revenueDate])
+  @@index([partyId])
+}

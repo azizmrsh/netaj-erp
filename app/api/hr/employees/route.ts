@@ -1,0 +1,2 @@
+import{NextResponse}from"next/server";import{prisma}from"@/lib/prisma";import{createEmployee,hrErrorResponse}from"@/lib/hr";
+export async function GET(){return NextResponse.json(await prisma.employee.findMany({include:{driver:true},orderBy:{nameAr:"asc"}}))}export async function POST(request:Request){try{const body=await request.json(),row=await prisma.$transaction(tx=>createEmployee(tx,body));return NextResponse.json(row,{status:201})}catch(e){console.error(e);const r=hrErrorResponse(e);return NextResponse.json({error:r.message},{status:r.status})}}

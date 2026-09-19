@@ -1,0 +1,3 @@
+import { NextResponse } from "next/server";import { prisma } from "@/lib/prisma";import { createFactoryMaintenance, factoryErrorResponse } from "@/lib/factory";
+export async function GET(){return NextResponse.json(await prisma.factoryMaintenance.findMany({include:{expense:true},orderBy:[{maintenanceDate:"desc"},{id:"desc"}]}));}
+export async function POST(request:Request){try{const body=await request.json(),row=await prisma.$transaction(tx=>createFactoryMaintenance(tx,body));return NextResponse.json(row,{status:201});}catch(error){console.error(error);const r=factoryErrorResponse(error);return NextResponse.json({error:r.message},{status:r.status});}}
