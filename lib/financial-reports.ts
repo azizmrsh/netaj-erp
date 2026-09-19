@@ -16,9 +16,12 @@ export async function agingReport(kind: "AR" | "AP", asOf = new Date()) {
   const rows = kind === "AR"
     ? (await prisma.sale.findMany({ where: { status: "COMPLETED", invoiceDate: { lte: asOf } }, include: { party: true, allocations: { where: { voucher: { status: "POSTED", voucherDate: { lte: asOf } } } } }, orderBy: { invoiceDate: "asc" } })).map((row) => ({ id: row.id, number: row.invoiceNumber, invoiceDate: row.invoiceDate, dueDate: row.dueDate, partyId: row.partyId, partyName: row.party.nameAr, totalAmount: row.totalAmount, allocations: row.allocations }))
     : (await prisma.purchase.findMany({ where: { status: "COMPLETED", purchaseDate: { lte: asOf } }, include: { party: true, allocations: { where: { voucher: { status: "POSTED", voucherDate: { lte: asOf } } } } }, orderBy: { purchaseDate: "asc" } })).map((row) => ({ id: row.id, number: row.purchaseNumber, invoiceDate: row.purchaseDate, dueDate: row.dueDate, partyId: row.partyId, partyName: row.party.nameAr, totalAmount: row.totalAmount, allocations: row.allocations }));
+  const notes = await prisma.creditDebitNote.findMany({ where: { direction: kind === "AR" ? "SALES" : "PURCHASE", status: "POSTED", noteDate: { lte: asOf } } });
+  const noteBalance = new Map<number, number>();
+  for (const note of notes) { const sourceId = kind === "AR" ? note.saleId : note.purchaseId; if (!sourceId) continue; noteBalance.set(sourceId, (noteBalance.get(sourceId) ?? 0) + (note.noteType === "DEBIT_NOTE" ? decimal(note.totalAmount) : -decimal(note.totalAmount))); }
   const items = rows.flatMap((row) => {
     const paid = row.allocations.reduce((sum, allocation) => sum + decimal(allocation.amount), 0);
-    const outstanding = decimal(row.totalAmount) - paid;
+    const outstanding = decimal(row.totalAmount) + (noteBalance.get(row.id) ?? 0) - paid;
     if (outstanding <= 0.004) return [];
     const invoiceDate = row.invoiceDate;
     const dueDate = row.dueDate ?? invoiceDate;

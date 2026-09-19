@@ -6,7 +6,7 @@ import { ensureFinanceFoundation } from "@/lib/finance";
 export async function GET() {
   try {
     await prisma.$transaction((tx) => ensureFinanceFoundation(tx));
-    const [banks, receivables, payables, statements, cash, recentVouchers, categories, parties, accounts, periods, journals, transfers, reconciliations, vatReturns] = await Promise.all([
+    const [banks, receivables, payables, statements, cash, recentVouchers, categories, parties, accounts, periods, journals, transfers, reconciliations, vatReturns, creditDebitNotes, adjustments, invoices] = await Promise.all([
       prisma.bankAccount.findMany({ where: { isActive: true }, include: { ledgerAccount: true }, orderBy: { name: "asc" } }),
       agingReport("AR"), agingReport("AP"), statementReport(), cashFlow(),
       prisma.financialVoucher.findMany({ include: { party: true, bankAccount: true, allocations: true }, orderBy: [{ voucherDate: "desc" }, { id: "desc" }], take: 30 }),
@@ -18,8 +18,11 @@ export async function GET() {
       prisma.bankTransfer.findMany({ include: { fromBankAccount: true, toBankAccount: true }, orderBy: [{ transferDate: "desc" }, { id: "desc" }], take: 50 }),
       prisma.bankReconciliation.findMany({ include: { bankAccount: true, lines: true }, orderBy: [{ periodEnd: "desc" }, { id: "desc" }], take: 50 }),
       prisma.vatReturn.findMany({ include: { lines: true, bankAccount: true }, orderBy: [{ periodEnd: "desc" }, { id: "desc" }], take: 50 }),
+      prisma.creditDebitNote.findMany({ include: { party: true, sale: true, purchase: true }, orderBy: [{ noteDate: "desc" }, { id: "desc" }], take: 50 }),
+      prisma.accountingAdjustment.findMany({ include: { lines: { include: { account: true } } }, orderBy: [{ adjustmentDate: "desc" }, { id: "desc" }], take: 50 }),
+      Promise.all([prisma.sale.findMany({ where: { status: "COMPLETED" }, select: { id: true, invoiceNumber: true, partyId: true, totalAmount: true }, orderBy: { invoiceDate: "desc" }, take: 200 }), prisma.purchase.findMany({ where: { status: "COMPLETED" }, select: { id: true, purchaseNumber: true, partyId: true, totalAmount: true }, orderBy: { purchaseDate: "desc" }, take: 200 })]),
     ]);
     return NextResponse.json({ banks, receivables, payables, statements, cash, recentVouchers,
-      expenseCategories: categories[0], revenueCategories: categories[1], costCenters: categories[2], parties, accounts, periods, journals, transfers, reconciliations, vatReturns });
+      expenseCategories: categories[0], revenueCategories: categories[1], costCenters: categories[2], parties, accounts, periods, journals, transfers, reconciliations, vatReturns, creditDebitNotes, adjustments, salesInvoices: invoices[0], purchaseInvoices: invoices[1] });
   } catch (error) { console.error(error); return NextResponse.json({ error: "تعذر تحميل البيانات المالية" }, { status: 500 }); }
 }

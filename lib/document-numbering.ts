@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 
 const supportedCodes = new Set([
-  "QT", "PI", "SO", "PR", "PO", "GRN", "DN", "TR", "INV", "PV", "RV", "JE", "BT", "BR", "VAT", "FT", "FF", "FM", "EMP", "EWR", "PAY", "ADV", "EWC", "XTR", "XCO", "XEX",
+  "QT", "PI", "SO", "PR", "PO", "GRN", "DN", "TR", "INV", "PV", "RV", "JE", "BT", "BR", "VAT", "CN", "DBN", "ADJ", "FT", "FF", "FM", "EMP", "EWR", "PAY", "ADV", "EWC", "XTR", "XCO", "XEX",
 ]);
 
 export async function nextDocumentNumber(

@@ -51,6 +51,7 @@ model Party {
   financialVouchers   FinancialVoucher[]
   factoryTransactions FactoryTransaction[]
   factoryFeeRates     FactoryFeeRate[]
+  creditDebitNotes    CreditDebitNote[]
 
   notesDocuments DeliveryReceiptNote[]
 
@@ -1052,6 +1053,7 @@ model Sale {
   sourceOrder        BusinessDocument?    @relation("SalesInvoiceOrder", fields: [sourceOrderId], references: [id])
   deliveryNote       DeliveryReceiptNote? @relation(fields: [deliveryNoteId], references: [id])
   allocations        VoucherAllocation[]
+  creditDebitNotes   CreditDebitNote[]
   factoryTransaction FactoryTransaction?  @relation(fields: [factoryTransactionId], references: [id])
 
   @@index([invoiceDate])
@@ -1119,11 +1121,12 @@ model Purchase {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  party       Party                @relation(fields: [partyId], references: [id])
-  items       PurchaseItem[]
-  sourceOrder BusinessDocument?    @relation("SupplierInvoiceOrder", fields: [sourceOrderId], references: [id])
-  receiptNote DeliveryReceiptNote? @relation(fields: [receiptNoteId], references: [id])
-  allocations VoucherAllocation[]
+  party            Party                @relation(fields: [partyId], references: [id])
+  items            PurchaseItem[]
+  sourceOrder      BusinessDocument?    @relation("SupplierInvoiceOrder", fields: [sourceOrderId], references: [id])
+  receiptNote      DeliveryReceiptNote? @relation(fields: [receiptNoteId], references: [id])
+  allocations      VoucherAllocation[]
+  creditDebitNotes CreditDebitNote[]
 
   @@index([purchaseDate])
   @@index([partyId])
@@ -1334,19 +1337,21 @@ model JournalEntry {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  lines               JournalEntryLine[]
-  financialVoucher    FinancialVoucher?
-  expense             Expense?
-  revenue             Revenue?
-  bankTransfer        BankTransfer?
-  factoryTransaction  FactoryTransaction?
-  factoryFuelMovement FactoryFuelMovement?
-  employeeAdvance     EmployeeAdvance?
-  payrollRun          PayrollRun?
-  payrollPayment      PayrollPayment?
-  vatReturnFiling     VatReturn?           @relation("VatReturnFilingJournal")
-  vatReturnSettlement VatReturn?           @relation("VatReturnSettlementJournal")
-  fiscalYearClosing   FiscalYear?          @relation("FiscalYearClosingJournal")
+  lines                JournalEntryLine[]
+  financialVoucher     FinancialVoucher?
+  expense              Expense?
+  revenue              Revenue?
+  bankTransfer         BankTransfer?
+  factoryTransaction   FactoryTransaction?
+  factoryFuelMovement  FactoryFuelMovement?
+  employeeAdvance      EmployeeAdvance?
+  payrollRun           PayrollRun?
+  payrollPayment       PayrollPayment?
+  vatReturnFiling      VatReturn?            @relation("VatReturnFilingJournal")
+  vatReturnSettlement  VatReturn?            @relation("VatReturnSettlementJournal")
+  fiscalYearClosing    FiscalYear?           @relation("FiscalYearClosingJournal")
+  creditDebitNote      CreditDebitNote?
+  accountingAdjustment AccountingAdjustment?
 
   @@unique([referenceType, referenceId])
   @@index([entryDate])
@@ -1526,13 +1531,14 @@ model Account {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  parent            Account?            @relation("AccountHierarchy", fields: [parentId], references: [id])
-  children          Account[]           @relation("AccountHierarchy")
+  parent            Account?                   @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children          Account[]                  @relation("AccountHierarchy")
   journalLines      JournalEntryLine[]
   mappings          AccountingMapping[]
   bankAccounts      BankAccount[]
   expenseCategories ExpenseCategory[]
   revenueCategories RevenueCategory[]
+  adjustmentLines   AccountingAdjustmentLine[]
 
   @@index([parentId])
   @@index([tenantId, companyId])
@@ -1891,6 +1897,88 @@ model VoucherAllocation {
   @@index([saleId])
   @@index([purchaseId])
   @@index([tenantId, companyId])
+}
+
+model CreditDebitNote {
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
+
+  noteNumber      String    @unique
+  noteDate        DateTime  @default(now())
+  noteType        String
+  direction       String
+  partyId         Int
+  saleId          Int?
+  purchaseId      Int?
+  amountBeforeVat Decimal   @default(0)
+  vatAmount       Decimal   @default(0)
+  totalAmount     Decimal   @default(0)
+  reason          String
+  status          String    @default("DRAFT")
+  journalEntryId  Int?      @unique
+  postedAt        DateTime?
+  cancelledAt     DateTime?
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  party        Party         @relation(fields: [partyId], references: [id])
+  sale         Sale?         @relation(fields: [saleId], references: [id])
+  purchase     Purchase?     @relation(fields: [purchaseId], references: [id])
+  journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+
+  @@index([tenantId, companyId])
+  @@index([direction, noteDate])
+  @@index([partyId])
+  @@index([saleId])
+  @@index([purchaseId])
+}
+
+model AccountingAdjustment {
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
+
+  adjustmentNumber String    @unique
+  adjustmentDate   DateTime  @default(now())
+  adjustmentType   String
+  description      String
+  referenceNumber  String?
+  status           String    @default("DRAFT")
+  journalEntryId   Int?      @unique
+  postedAt         DateTime?
+  cancelledAt      DateTime?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  journalEntry JournalEntry?              @relation(fields: [journalEntryId], references: [id])
+  lines        AccountingAdjustmentLine[]
+
+  @@index([tenantId, companyId])
+  @@index([adjustmentType, adjustmentDate])
+}
+
+model AccountingAdjustmentLine {
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
+
+  adjustmentId Int
+  accountId    Int
+  debit        Decimal @default(0)
+  credit       Decimal @default(0)
+  partyId      Int?
+  costCenter   String?
+  description  String?
+
+  adjustment AccountingAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
+  account    Account              @relation(fields: [accountId], references: [id])
+
+  @@index([tenantId, companyId])
+  @@index([adjustmentId])
+  @@index([accountId])
 }
 
 model VatReturn {

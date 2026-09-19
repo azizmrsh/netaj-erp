@@ -86,6 +86,8 @@ const routes = [
   "/api/finance/reconciliations",
   "/api/finance/vat-returns",
   "/api/finance/fiscal-calendar",
+  "/api/finance/credit-debit-notes",
+  "/api/finance/adjustments",
   "/api/finance/reports?report=trial-balance",
   "/api/factory",
   "/api/factory/transactions",
@@ -436,6 +438,27 @@ try {
     method: "POST", headers: movementHeaders, body: JSON.stringify({ name: `بنك المطابقة ${suffix}`, openingBalance: 500 }),
   });
   assert.equal(reconciliationBank.response.status, 201);
+  const creditNote = await jsonRequest("/api/finance/credit-debit-notes", {
+    method: "POST", headers: movementHeaders, body: JSON.stringify({ direction: "SALES", noteType: "CREDIT_NOTE", saleId: salesInvoice.body.invoice.id, noteDate: "2026-09-19", amountBeforeVat: 10, vatAmount: 1.5, reason: "Production smoke credit note" }),
+  });
+  assert.equal(creditNote.response.status, 201, `Credit note failed: ${JSON.stringify(creditNote.body)}`);
+  const postedCreditNote = await jsonRequest(`/api/finance/credit-debit-notes/${creditNote.body.id}`, {
+    method: "PATCH", headers: movementHeaders, body: JSON.stringify({ action: "POST" }),
+  });
+  assert.equal(postedCreditNote.response.status, 200);
+  assert.equal(Number(postedCreditNote.body.journalEntry.totalDebit), Number(postedCreditNote.body.journalEntry.totalCredit));
+  const financeOverview = await jsonRequest("/api/finance");
+  const adjustedReceivable = financeOverview.body.receivables.items.find((row) => row.id === salesInvoice.body.invoice.id);
+  assert.equal(Number(adjustedReceivable.outstanding), Number(salesInvoice.body.invoice.totalAmount) - 11.5);
+  const adjustment = await jsonRequest("/api/finance/adjustments", {
+    method: "POST", headers: movementHeaders, body: JSON.stringify({ adjustmentType: "ACCRUAL", adjustmentDate: "2026-09-19", description: "Production smoke accrual", lines: [{ accountId: financeOverview.body.accounts[0].id, debit: 25 }, { accountId: financeOverview.body.accounts[1].id, credit: 25 }] }),
+  });
+  assert.equal(adjustment.response.status, 201, `Adjustment failed: ${JSON.stringify(adjustment.body)}`);
+  const postedAdjustment = await jsonRequest(`/api/finance/adjustments/${adjustment.body.id}`, {
+    method: "PATCH", headers: movementHeaders, body: JSON.stringify({ action: "POST" }),
+  });
+  assert.equal(postedAdjustment.response.status, 200);
+  assert.equal(Number(postedAdjustment.body.journalEntry.totalDebit), Number(postedAdjustment.body.journalEntry.totalCredit));
   const vatReturn = await jsonRequest("/api/finance/vat-returns", {
     method: "POST", headers: movementHeaders, body: JSON.stringify({ periodStart: "2026-09-19", periodEnd: "2026-09-19", notes: "Production smoke" }),
   });
@@ -480,6 +503,7 @@ try {
   assert.equal(reopenedPeriod.response.status, 200);
   assert.equal(reopenedPeriod.body.status, "OPEN");
   console.log("PASS production fiscal calendar, guarded period close, and audited reopen");
+  console.log("PASS production credit note, accrual adjustment, journals, and VAT integration");
   console.log("PASS production VAT reconciliation, filing, settlement, and bank reconciliation");
   console.log("PASS production sales and purchase workflows, accounting idempotency, and attachment upload");
   console.log("PASS production note to stock to transport flow on isolated database");

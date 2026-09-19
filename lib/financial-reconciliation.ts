@@ -79,12 +79,13 @@ export async function completeBankReconciliation(tx: Tx, id: number, userId?: st
 type VatSnapshotLine = { direction: "OUTPUT" | "INPUT"; sourceType: string; sourceId: number; sourceNumber: string; sourceDate: Date; netAmount: Prisma.Decimal; documentVat: Prisma.Decimal; ledgerVat: Prisma.Decimal; variance: Prisma.Decimal; journalEntryId: number | null };
 
 export async function buildVatSnapshot(tx: Tx, periodStart: Date, periodEnd: Date) {
-  const [sales, purchases, expenses, revenues, journals] = await Promise.all([
+  const [sales, purchases, expenses, revenues, notes, journals] = await Promise.all([
     tx.sale.findMany({ where: { status: "COMPLETED", invoiceDate: { gte: periodStart, lte: periodEnd }, vatAmount: { not: 0 } } }),
     tx.purchase.findMany({ where: { status: "COMPLETED", purchaseDate: { gte: periodStart, lte: periodEnd }, vatAmount: { not: 0 } } }),
     tx.expense.findMany({ where: { status: "POSTED", expenseDate: { gte: periodStart, lte: periodEnd }, vatAmount: { not: 0 } } }),
     tx.revenue.findMany({ where: { status: "POSTED", revenueDate: { gte: periodStart, lte: periodEnd }, vatAmount: { not: 0 } } }),
-    tx.journalEntry.findMany({ where: { status: "POSTED", referenceType: { in: ["SALES_INVOICE", "SUPPLIER_INVOICE", "EXPENSE", "REVENUE"] } }, include: { lines: { include: { account: { include: { mappings: true } } } } } }),
+    tx.creditDebitNote.findMany({ where: { status: "POSTED", noteDate: { gte: periodStart, lte: periodEnd }, vatAmount: { not: 0 } } }),
+    tx.journalEntry.findMany({ where: { status: "POSTED", referenceType: { in: ["SALES_INVOICE", "SUPPLIER_INVOICE", "EXPENSE", "REVENUE", "CREDIT_DEBIT_NOTE"] } }, include: { lines: { include: { account: { include: { mappings: true } } } } } }),
   ]);
   const byReference = new Map(journals.map((journal) => [`${journal.referenceType}:${journal.referenceId}`, journal]));
   const sourceRows = [
@@ -92,6 +93,8 @@ export async function buildVatSnapshot(tx: Tx, periodStart: Date, periodEnd: Dat
     ...revenues.map((row) => ({ direction: "OUTPUT" as const, sourceType: "REVENUE", sourceId: row.id, sourceNumber: row.voucherNumber, sourceDate: row.revenueDate, netAmount: row.amountBeforeVat, documentVat: row.vatAmount })),
     ...purchases.map((row) => ({ direction: "INPUT" as const, sourceType: "SUPPLIER_INVOICE", sourceId: row.id, sourceNumber: row.purchaseNumber, sourceDate: row.purchaseDate, netAmount: new Prisma.Decimal(row.subtotal).minus(row.discount), documentVat: row.vatAmount })),
     ...expenses.map((row) => ({ direction: "INPUT" as const, sourceType: "EXPENSE", sourceId: row.id, sourceNumber: row.voucherNumber, sourceDate: row.expenseDate, netAmount: row.amountBeforeVat, documentVat: row.vatAmount })),
+    ...notes.map((row) => ({ direction: (row.direction === "SALES" ? "OUTPUT" : "INPUT") as "OUTPUT" | "INPUT", sourceType: "CREDIT_DEBIT_NOTE", sourceId: row.id, sourceNumber: row.noteNumber, sourceDate: row.noteDate,
+      netAmount: (row.noteType === "CREDIT_NOTE" ? row.amountBeforeVat.negated() : row.amountBeforeVat), documentVat: (row.noteType === "CREDIT_NOTE" ? row.vatAmount.negated() : row.vatAmount) })),
   ];
   const lines: VatSnapshotLine[] = sourceRows.map((source) => {
     const journal = byReference.get(`${source.sourceType}:${source.sourceId}`);
