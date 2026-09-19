@@ -40,13 +40,15 @@ export async function fiscalPeriodBlockers(tx: Tx, periodId: number) {
   return { period, blockers, counts: { draftJournals, draftVouchers, draftVatReturns, draftFxRevaluations, unbalancedJournals: unbalanced.length } };
 }
 
-export async function closeFiscalPeriod(tx: Tx, periodId: number, userId?: string | number | null) {
+export async function closeFiscalPeriod(tx: Tx, periodId: number, userId?: string | number | null, options?: { overrideWarnings?: boolean; reason?: unknown }) {
   const result = await fiscalPeriodBlockers(tx, periodId);
   if (result.period.status === "CLOSED") return result.period;
   if (result.period.fiscalYear.status !== "OPEN") throw new FiscalCloseError("INVALID_STATUS", "السنة المالية ليست مفتوحة");
-  if (result.blockers.length) throw new FiscalCloseError("BLOCKED", "لا يمكن إغلاق الفترة قبل معالجة العناصر المعلقة", result.blockers);
-  const row = await tx.fiscalPeriod.update({ where: { id: periodId }, data: { status: "CLOSED", closedAt: new Date(), closedBy: actor(userId) } });
-  await audit(tx, { action: "FISCAL_PERIOD_CLOSE", entityType: "FISCAL_PERIOD", entityId: periodId, userId: actor(userId), metadata: result.counts });
+  const overrideReason = String(options?.reason ?? "").trim();
+  if (result.blockers.length && !options?.overrideWarnings) throw new FiscalCloseError("BLOCKED", "لا يمكن إغلاق الفترة قبل معالجة العناصر المعلقة", result.blockers);
+  if (result.blockers.length && overrideReason.length < 5) throw new FiscalCloseError("INVALID_INPUT", "سبب موافقة المسؤول على الإقفال مع التحذيرات مطلوب", result.blockers);
+  const row = await tx.fiscalPeriod.update({ where: { id: periodId }, data: { status: "CLOSED", closedAt: new Date(), closedBy: actor(userId), closeWarningsJson: JSON.stringify(result.blockers), closeOverrideReason: result.blockers.length ? overrideReason : null, closeApprovedBy: result.blockers.length ? actor(userId) : null } });
+  await audit(tx, { action: "FISCAL_PERIOD_CLOSE", entityType: "FISCAL_PERIOD", entityId: periodId, userId: actor(userId), metadata: { ...result.counts, blockers: result.blockers, overrideReason: result.blockers.length ? overrideReason : null } });
   return row;
 }
 
@@ -57,7 +59,7 @@ export async function reopenFiscalPeriod(tx: Tx, periodId: number, reason: unkno
   if (!period) throw new FiscalCloseError("NOT_FOUND", "الفترة المالية غير موجودة");
   if (period.fiscalYear.status !== "OPEN") throw new FiscalCloseError("INVALID_STATUS", "يجب إعادة فتح السنة المالية أولًا");
   if (period.status === "OPEN") return period;
-  const row = await tx.fiscalPeriod.update({ where: { id: periodId }, data: { status: "OPEN", closedAt: null, closedBy: null, reopenedAt: new Date() } });
+  const row = await tx.fiscalPeriod.update({ where: { id: periodId }, data: { status: "OPEN", closedAt: null, closedBy: null, reopenedAt: new Date(), closeWarningsJson: "[]", closeOverrideReason: null, closeApprovedBy: null } });
   await audit(tx, { action: "FISCAL_PERIOD_REOPEN", entityType: "FISCAL_PERIOD", entityId: periodId, userId: actor(userId), metadata: { reason: explanation } });
   return row;
 }

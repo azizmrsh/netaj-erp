@@ -33,6 +33,40 @@ async function ledgerProfit(tx: Tx, range: Range) {
   return { revenue, expenses, netProfit: revenue - expenses, lines };
 }
 
+async function executiveFinancialView(tx: Tx, range: Range, officialNetProfit: number) {
+  const now = range.to < new Date() ? range.to : new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1), monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+  const [lines, centers, monthSales, monthPurchases, includedTransport] = await Promise.all([
+    tx.journalEntryLine.findMany({ where: { journalEntry: { status: "POSTED", entryDate: dateWhere(range) }, account: { accountType: { in: ["REVENUE", "EXPENSE"] } } }, include: { account: true } }),
+    tx.costCenter.findMany({ where: { isActive: true } }),
+    tx.sale.findMany({ where: { status: active, invoiceDate: { gte: monthStart, lte: now } } }),
+    tx.purchase.findMany({ where: { status: active, purchaseDate: { gte: monthStart, lte: now } } }),
+    tx.sale.aggregate({ where: { status: active, invoiceDate: dateWhere(range), transportMode: "INCLUDED" }, _sum: { includedTransportRevenue: true } }),
+  ]);
+  const centerById = new Map(centers.map((row) => [row.id, row.code]));
+  const canonical = (value: string | null | undefined) => {
+    const key = String(value ?? "ADMIN").toUpperCase();
+    if (["TRADE", "SALES", "PURCHASING", "WAREHOUSE"].includes(key)) return "TRADE";
+    if (key === "FACTORY") return "FACTORY";
+    if (key === "TRANSPORT") return "TRANSPORT";
+    return "ADMIN";
+  };
+  const divisions = new Map(["TRADE", "FACTORY", "TRANSPORT", "ADMIN"].map((code) => [code, { code, revenue: 0, expenses: 0, netProfit: 0 }]));
+  for (const line of lines) {
+    const row = divisions.get(canonical(line.costCenter ?? centerById.get(line.costCenterId ?? -1)))!;
+    if (line.account?.accountType === "REVENUE") row.revenue += n(line.credit) - n(line.debit);
+    else row.expenses += n(line.debit) - n(line.credit);
+  }
+  const transportReallocation = n(includedTransport._sum.includedTransportRevenue);
+  divisions.get("TRADE")!.revenue -= transportReallocation;
+  divisions.get("TRANSPORT")!.revenue += transportReallocation;
+  for (const row of divisions.values()) row.netProfit = row.revenue - row.expenses;
+  const outputVat = monthSales.reduce((sum, row) => sum + n(row.functionalVatAmount || row.vatAmount), 0);
+  const inputVat = monthPurchases.reduce((sum, row) => sum + n(row.functionalVatAmount || row.vatAmount), 0);
+  const dueToDate = outputVat - inputVat, elapsedDays = Math.max(1, now.getDate()), daysInMonth = monthEnd.getDate();
+  return { officialNetProfit, managerialNetProfit: [...divisions.values()].reduce((sum, row) => sum + row.netProfit, 0), divisions: [...divisions.values()], tax: { asOf: day(now), outputVat, inputVat, dueToDate, estimatedMonthEnd: dueToDate / elapsedDays * daysInMonth, elapsedDays, daysInMonth }, transportReallocation };
+}
+
 async function materialProfitability(tx: Tx, range: Range, itemIds: number[] = []) {
   const itemFilter = itemIds.length ? { itemId: { in: itemIds } } : {};
   const [items, sales, purchases, movements, linkedCosts, fuel] = await Promise.all([
@@ -163,7 +197,8 @@ export async function loadExecutiveDashboard(tx: Tx, range: Range, enabledModule
     enabledModules.has("ACCOUNTING") ? widget("material-profitability", () => materialProfitability(tx, range), []) : [],
     enabledModules.has("INVENTORY") ? widget("negative-customer-stocks", () => tx.partyStockAccount.count({ where: { quantity: { lt: 0 } } }), 0) : 0,
   ]);
-  return { range: { from: day(range.from), to: day(range.to) }, kpis: { sales: salesTotal, purchases: purchaseTotal, netProfit: ledger.netProfit, liquidity: banks.reduce((sum, row) => sum + n(row.currentBalance), 0), inventory: stocks.reduce((sum, row) => sum + n(row.quantity) * n(row.averageCost), 0), ar, ap, cashFlow: n(cashFlow?._sum.functionalAmountIn) - n(cashFlow?._sum.functionalAmountOut), activeCustomers:customers.filter(row=>!row.inactive).length, vat:vatReturns.reduce((sum,row)=>sum+n(row.netVatDue),0), projectProfit }, factory, transport, monthly, materials, customerActivity: customers, latestTransactions, alerts: { negativeCustomerStocks, inactiveCustomers: customers.filter((row) => row.inactive).length, decliningCustomers: customers.filter((row) => row.declining).length, stoppedCustomers: customers.filter((row) => row.stopped).length, newCustomers: customers.filter((row) => row.isNew).length, overdueReceivables: sales.filter((row) => row.dueDate && row.dueDate < range.to).length, openTrips: transport?.trips.filter((row) => row.status === "OPEN").length ?? 0, pendingApprovals, failedJobs, migrationWarnings, openControlAlerts } };
+  const executiveFinancial = enabledModules.has("ACCOUNTING") ? await widget("executive-financial", () => executiveFinancialView(tx, range, ledger.netProfit), null) : null;
+  return { range: { from: day(range.from), to: day(range.to) }, kpis: { sales: salesTotal, purchases: purchaseTotal, netProfit: ledger.netProfit, liquidity: banks.reduce((sum, row) => sum + n(row.currentBalance), 0), inventory: stocks.reduce((sum, row) => sum + n(row.quantity) * n(row.averageCost), 0), ar, ap, cashFlow: n(cashFlow?._sum.functionalAmountIn) - n(cashFlow?._sum.functionalAmountOut), activeCustomers:customers.filter(row=>!row.inactive).length, vat:executiveFinancial?.tax.dueToDate ?? vatReturns.reduce((sum,row)=>sum+n(row.netVatDue),0), projectProfit }, executiveFinancial, factory, transport, monthly, materials, customerActivity: customers, latestTransactions, alerts: { negativeCustomerStocks, inactiveCustomers: customers.filter((row) => row.inactive).length, decliningCustomers: customers.filter((row) => row.declining).length, stoppedCustomers: customers.filter((row) => row.stopped).length, newCustomers: customers.filter((row) => row.isNew).length, overdueReceivables: sales.filter((row) => row.dueDate && row.dueDate < range.to).length, openTrips: transport?.trips.filter((row) => row.status === "OPEN").length ?? 0, pendingApprovals, failedJobs, migrationWarnings, openControlAlerts } };
 }
 
 export async function loadLegacyReport(tx: Tx, report: string, range: Range, params: URLSearchParams) {

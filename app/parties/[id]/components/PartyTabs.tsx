@@ -82,6 +82,7 @@ type Attachment = { id:number;originalName:string;mimeType:string;size:number;up
 type BusinessDocument = { id:number;documentNumber:string;documentType:string;documentDate:string;status:string;totalAmount:string|number };
 type FactoryTransaction = { id:number;transactionNumber:string;transactionDate:string;quantity:string|number;manufacturingFeePerTon:string|number;manufacturingFeeTotal:string|number;totalAmount:string|number;status:string;item:ItemRef };
 type FactoryFeeRate = { id:number;feePerTon:string|number;item:ItemRef };
+type FinancialExposure = { receivable:string|number;inventoryValue:string|number;exposureRatio:string|number;shortage:string|number;status:string;thresholds:{warning:number;critical:number};lines:Array<{itemId:number;unitValue:string|number;value:string|number;effectiveAt?:string|null}> };
 type PartyData = {
   stockAccounts?: StockAccount[];
   stockMovements?: StockMovement[];
@@ -94,6 +95,7 @@ type PartyData = {
   attachments?: Attachment[];
   factoryTransactions?: FactoryTransaction[];
   factoryFeeRates?: FactoryFeeRate[];
+  financialExposure?: FinancialExposure | null;
 };
 
 export default function PartyTabs({ partyId }: Props) {
@@ -122,6 +124,7 @@ export default function PartyTabs({ partyId }: Props) {
   const attachments = data?.attachments ?? [];
   const factoryTransactions = data?.factoryTransactions ?? [];
   const factoryFeeRates = data?.factoryFeeRates ?? [];
+  const exposure = data?.financialExposure;
 
   async function uploadPartyAttachment(file: File) {
     const form = new FormData();
@@ -249,7 +252,11 @@ export default function PartyTabs({ partyId }: Props) {
                 title="صافي النقل"
                 value={`${formatMoney(transportProfit)} ر.س`}
               />
+              {exposure && <Summary title="المديونية المالية" value={`${formatMoney(exposure.receivable)} ر.س`} />}
+              {exposure && <Summary title="قيمة مخزونه التقديرية" value={`${formatMoney(exposure.inventoryValue)} ر.س`} />}
+              {exposure && <Summary title="Financial Exposure" value={`${formatNumber(exposure.exposureRatio)}٪`} />}
             </div>
+            {exposure && exposure.status !== "NORMAL" && <div style={{marginTop:16,padding:16,borderRadius:12,border:"1px solid #fecaca",background:"#fef2f2",color:"#b91c1c",fontWeight:700}}>تنبيه التعرض المالي: {exposure.status === "DEFICIT" ? `عجز بقيمة ${formatMoney(exposure.shortage)} ر.س` : `تجاوز مستوى ${exposure.status === "CRITICAL" ? exposure.thresholds.critical : exposure.thresholds.warning}٪`}</div>}
           </>
         ) : activeTab === "المبيعات" ? (
           <>
@@ -315,12 +322,14 @@ export default function PartyTabs({ partyId }: Props) {
             <h3>رصيد المخزون</h3>
             <Table
               headers={["المادة", "الوارد", "الصادر", "الرصيد الحالي", "متوسط القيمة", "الحالة"]}
-              rows={stockStatement.map((row) => [
+              rows={stockStatement.map((row) => {
+                const valuation = exposure?.lines.find((line) => line.itemId === row.itemId);
+                return [
                 itemName(row),
                 formatNumber(row.quantityIn),
                 formatNumber(row.quantityOut),
                 formatNumber(row.quantity),
-                formatMoney(row.averageValue),
+                formatMoney(valuation?.unitValue ?? row.averageValue),
                 Number(row.quantity) < 0 ? (
                   <span style={{ color: "#b91c1c", fontWeight: 700 }}>
                     رصيد سالب
@@ -328,7 +337,7 @@ export default function PartyTabs({ partyId }: Props) {
                 ) : (
                   "طبيعي"
                 ),
-              ])}
+              ];})}
             />
 
             <h3 style={{ marginTop: "32px" }}>حركات المخزون</h3>

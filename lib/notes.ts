@@ -7,6 +7,7 @@ import {
 import { nextDocumentNumber } from "@/lib/document-numbering";
 import { audit } from "@/lib/audit";
 import { postCogsForDeliveryNote, reverseCogsForDeliveryNote } from "@/lib/accounting";
+import { getVerifiedDataScope } from "@/lib/data-scope";
 
 export type NoteItemInput = {
   itemId: number;
@@ -340,14 +341,15 @@ export async function postNote(tx: Prisma.TransactionClient, noteId: number) {
   if (note.status === "POSTED") {
     return { note: await tx.deliveryReceiptNote.findUniqueOrThrow({ where: { id: note.id }, include: noteInclude }), trip: note.trip };
   }
-  if (!["DRAFT", "PENDING", "APPROVED"].includes(note.status)) {
-    throw new NoteWorkflowError("INVALID_STATUS", "السند ليس في حالة مسودة");
+  if (note.status !== "APPROVED") {
+    throw new NoteWorkflowError("INVALID_STATUS", "لا يؤثر السند على المخزون قبل اعتماده");
   }
   if (!note.items.length) {
     throw new NoteWorkflowError("INVALID_INPUT", "لا يمكن ترحيل سند بلا مواد");
   }
 
   try {
+    const stockReferenceType = note.revision > 1 ? `DELIVERY_RECEIPT_NOTE_R${note.revision}` : "DELIVERY_RECEIPT_NOTE";
     for (const row of note.items) {
       await applyStockMovement(tx, {
         itemId: row.itemId,
@@ -357,7 +359,7 @@ export async function postNote(tx: Prisma.TransactionClient, noteId: number) {
         quantityIn: note.noteType === "RECEIPT" ? Number(row.quantity) : 0,
         quantityOut: note.noteType === "DELIVERY" ? Number(row.quantity) : 0,
         movementDate: note.noteDate,
-        referenceType: "DELIVERY_RECEIPT_NOTE",
+        referenceType: stockReferenceType,
         referenceId: note.id,
         referenceNumber: note.noteNumber,
         projectId: note.projectId,
@@ -406,6 +408,8 @@ export async function postNote(tx: Prisma.TransactionClient, noteId: number) {
         notes: `أُنشئت تلقائيًا من السند ${note.noteNumber}`,
       },
     });
+  } else if (note.transportMethod === "COMPANY" && trip) {
+    trip = await tx.transportTrip.update({ where: { id: trip.id }, data: { tripDate: note.noteDate, partyId: note.partyId, truckId: note.truckId, driverId: note.driverId, source: note.source, loadingPoint: note.loadingPoint, unloadingPoint: note.unloadingPoint, status: "OPEN" } });
   }
 
   await postCogsForDeliveryNote(tx, note.id);
@@ -436,8 +440,9 @@ export async function cancelPostedNote(
     throw new NoteWorkflowError("INVALID_STATUS", "يمكن إلغاء السند المرحّل فقط");
   }
 
+  const stockReferenceType = note.revision > 1 ? `DELIVERY_RECEIPT_NOTE_R${note.revision}` : "DELIVERY_RECEIPT_NOTE";
   const movements = await tx.stockMovement.findMany({
-    where: { referenceType: "DELIVERY_RECEIPT_NOTE", referenceId: note.id },
+    where: { referenceType: stockReferenceType, referenceId: note.id },
     orderBy: { id: "desc" },
   });
   try {
@@ -483,14 +488,45 @@ export async function cancelPostedNote(
   return cancelled;
 }
 
-export async function changeNoteStatus(tx: Prisma.TransactionClient, noteId: number, action: "SUBMIT" | "APPROVE") {
+export async function amendPostedNote(tx: Prisma.TransactionClient, noteId: number, input: NoteInput, reason: unknown, userId?: string | number | null) {
+  const explanation = String(reason ?? "").trim();
+  if (explanation.length < 5) throw new NoteWorkflowError("INVALID_INPUT", "سبب تعديل السند المعتمد مطلوب");
+  const note = await tx.deliveryReceiptNote.findUnique({ where: { id: noteId }, include: { trip: true, salesInvoices: true, purchaseInvoices: true } });
+  if (!note) throw new NoteWorkflowError("NOT_FOUND", "السند غير موجود");
+  if (note.status !== "POSTED") throw new NoteWorkflowError("INVALID_STATUS", "التعديل الاستثنائي متاح للسند المرحل فقط");
+  if (note.salesInvoices.length || note.purchaseInvoices.length) throw new NoteWorkflowError("INVALID_STATUS", "لا يمكن تعديل سند تمت فوترته؛ يجب إصدار مستند تصحيحي لحماية الأثر المالي");
+  const stockReferenceType = note.revision > 1 ? `DELIVERY_RECEIPT_NOTE_R${note.revision}` : "DELIVERY_RECEIPT_NOTE";
+  const movements = await tx.stockMovement.findMany({ where: { referenceType: stockReferenceType, referenceId: note.id }, orderBy: { id: "desc" } });
+  try {
+    for (const movement of movements) await applyStockMovement(tx, { itemId: movement.itemId, partyId: movement.partyId, ownershipType: movement.ownershipType as StockOwnership, movementType: "AMENDMENT_REVERSAL", quantityIn: Number(movement.quantityOut), quantityOut: Number(movement.quantityIn), unitCost: Number(movement.unitCost), referenceType: `NOTE_AMENDMENT_REVERSAL_R${note.revision}`, referenceId: note.id, referenceNumber: note.noteNumber, notes: explanation });
+  } catch (error) { if (error instanceof InventoryError) throw new NoteWorkflowError("STOCK_ERROR", error.message); throw error; }
+  await reverseCogsForDeliveryNote(tx, note.id);
+  await tx.deliveryReceiptNote.update({ where: { id: note.id }, data: { status: "DRAFT", stockPostedAt: null, revision: { increment: 1 }, amendedAt: new Date(), amendedBy: userId == null ? "system" : String(userId), amendmentReason: explanation } });
+  const updated = await updateDraftNote(tx, note.id, input);
+  await audit(tx, { action: "AMEND", entityType: "DELIVERY_RECEIPT_NOTE", entityId: note.id, userId: userId == null ? undefined : String(userId), metadata: { reason: explanation, fromRevision: note.revision, toRevision: note.revision + 1 } });
+  return updated;
+}
+
+export async function changeNoteStatus(tx: Prisma.TransactionClient, noteId: number, action: "SUBMIT" | "APPROVE", userId?: string | number | null) {
   const note = await tx.deliveryReceiptNote.findUnique({ where: { id: noteId } });
   if (!note) throw new NoteWorkflowError("NOT_FOUND", "السند غير موجود");
-  const allowed = action === "SUBMIT" ? note.status === "DRAFT" : ["DRAFT", "PENDING"].includes(note.status);
+  const allowed = action === "SUBMIT" ? note.status === "DRAFT" : note.status === "PENDING";
   if (!allowed) throw new NoteWorkflowError("INVALID_STATUS", "حالة السند لا تسمح بهذه العملية");
+  const scope = await getVerifiedDataScope();
+  let request = await tx.unifiedApprovalRequest.findFirst({ where: { moduleKey: "NOTES", entityType: "DELIVERY_RECEIPT_NOTE", entityId: noteId } });
+  if (action === "SUBMIT") {
+    request = await tx.unifiedApprovalRequest.upsert({
+      where: { tenantId_companyId_moduleKey_entityType_entityId: { tenantId: scope.tenantId, companyId: scope.companyId, moduleKey: "NOTES", entityType: "DELIVERY_RECEIPT_NOTE", entityId: noteId } },
+      create: { requestNumber: await nextDocumentNumber(tx, "APR", new Date()), moduleKey: "NOTES", entityType: "DELIVERY_RECEIPT_NOTE", entityId: noteId, entityNumber: note.noteNumber, title: `اعتماد السند ${note.noteNumber}`, requestedBy: typeof userId === "number" ? userId : null },
+      update: { status: "PENDING", requestedBy: typeof userId === "number" ? userId : null },
+    });
+  } else if (request) {
+    await tx.unifiedApprovalRequest.update({ where: { id: request.id }, data: { status: "APPROVED" } });
+    if (typeof userId === "number") await tx.unifiedApprovalAction.create({ data: { requestId: request.id, action: "APPROVE", actorUserId: userId } });
+  }
   const status = action === "SUBMIT" ? "PENDING" : "APPROVED";
-  const updated = await tx.deliveryReceiptNote.update({ where: { id: noteId }, data: { status }, include: noteInclude });
-  await audit(tx, { action, entityType: "DELIVERY_RECEIPT_NOTE", entityId: noteId, metadata: { from: note.status, to: status } });
+  const updated = await tx.deliveryReceiptNote.update({ where: { id: noteId }, data: { status, ...(action === "APPROVE" ? { approvedAt: new Date(), approvedBy: userId == null ? "system" : String(userId) } : {}) }, include: noteInclude });
+  await audit(tx, { action, entityType: "DELIVERY_RECEIPT_NOTE", entityId: noteId, userId: userId == null ? undefined : String(userId), metadata: { from: note.status, to: status } });
   return updated;
 }
 

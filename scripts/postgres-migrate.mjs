@@ -1,1 +1,92 @@
-import"dotenv/config";import{createHash}from"node:crypto";import{execFileSync}from"node:child_process";import{readFileSync,writeFileSync,mkdtempSync,rmSync}from"node:fs";import{tmpdir}from"node:os";import{join,resolve}from"node:path";import Database from"better-sqlite3";import pg from"pg";const{Client}=pg,manifestOnly=process.argv.includes("--manifest-only"),sourceArg=process.env.SQLITE_SOURCE_PATH??"prisma/netaj.db",sourcePath=resolve(sourceArg.replace(/^file:/,"")),targetUrl=process.env.POSTGRES_DATABASE_URL,quote=value=>`"${String(value).replaceAll('"','""')}"`,schemaText=readFileSync("prisma/schema.prisma","utf8"),schemaHash=createHash("sha256").update(schemaText).digest("hex"),source=new Database(sourcePath,{readonly:true,fileMustExist:true});source.pragma("foreign_keys=ON");const integrity=source.pragma("integrity_check"),foreignKeys=source.pragma("foreign_key_check"),tables=source.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> '_prisma_migrations' ORDER BY name").all().map(row=>row.name),manifest={sourcePath,schemaHash,generatedAt:new Date().toISOString(),integrity,foreignKeyErrors:foreignKeys.length,tables:tables.map(name=>({name,rows:source.prepare(`SELECT COUNT(*) count FROM ${quote(name)}`).get().count,columns:source.prepare(`PRAGMA table_info(${quote(name)})`).all().map(row=>row.name)}))};if(manifestOnly){console.log(JSON.stringify(manifest,null,2));source.close();process.exit(0)}if(!targetUrl)throw new Error("POSTGRES_DATABASE_URL is required");if(process.env.ALLOW_POSTGRES_MIGRATION!=="1")throw new Error("Set ALLOW_POSTGRES_MIGRATION=1 after confirming the target is an empty non-production PostgreSQL database");if(foreignKeys.length||!integrity.every(row=>Object.values(row).includes("ok")))throw new Error("SQLite source integrity check failed");const client=new Client({connectionString:targetUrl,ssl:process.env.POSTGRES_SSL==="0"?false:process.env.POSTGRES_SSL==="1"?{rejectUnauthorized:process.env.POSTGRES_SSL_REJECT_UNAUTHORIZED!=="0"}:undefined});const temp=mkdtempSync(join(tmpdir(),"netaj-postgres-schema-")),postgresSchema=join(temp,"schema.prisma");async function main(){await client.connect();const existing=await client.query("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename NOT LIKE '_prisma%' LIMIT 1");if(existing.rowCount)throw new Error("Target PostgreSQL database is not empty; migration refused without modifying it");writeFileSync(postgresSchema,schemaText.replace('provider = "sqlite"','provider = "postgresql"'));execFileSync(process.platform==="win32"?"npx.cmd":"npx",["prisma","db","push","--schema",postgresSchema,"--skip-generate"],{stdio:"inherit",env:{...process.env,DATABASE_URL:targetUrl}});const targetColumns=await client.query("SELECT table_name,column_name,data_type FROM information_schema.columns WHERE table_schema='public'");const byTable=new Map();for(const row of targetColumns.rows){const cols=byTable.get(row.table_name)??new Map();cols.set(row.column_name,row.data_type);byTable.set(row.table_name,cols)}let pending=[];for(const table of tables){if(!byTable.has(table))continue;const rows=source.prepare(`SELECT * FROM ${quote(table)} ORDER BY rowid`).all();for(const row of rows)pending.push({table,row})}const initial=pending.length;await client.query("BEGIN");try{for(let pass=0;pending.length&&pass<=tables.length+5;pass++){const deferred=[];let inserted=0;for(const entry of pending){const types=byTable.get(entry.table),columns=Object.keys(entry.row).filter(column=>types.has(column)),values=columns.map(column=>normalize(entry.row[column],types.get(column))),params=values.map((_,index)=>`$${index+1}`).join(",");try{await client.query(`INSERT INTO ${quote(entry.table)} (${columns.map(quote).join(",")}) VALUES (${params})`,values);inserted++}catch(error){if(error?.code==="23503")deferred.push(entry);else throw error}}pending=deferred;if(!inserted&&pending.length)throw new Error(`Unresolved foreign-key dependencies for ${pending.length} rows; first table ${pending[0].table}`)}for(const table of tables){if(!byTable.get(table)?.has("id"))continue;await client.query(`SELECT setval(pg_get_serial_sequence($1,'id'),COALESCE((SELECT MAX("id") FROM ${quote(table)}),1),COALESCE((SELECT MAX("id") FROM ${quote(table)}),0)>0)`,[table])}const checks=[];for(const row of manifest.tables){if(!byTable.has(row.name))continue;const target=Number((await client.query(`SELECT COUNT(*) count FROM ${quote(row.name)}`)).rows[0].count);checks.push({table:row.name,source:Number(row.rows),target,match:target===Number(row.rows)})}if(checks.some(row=>!row.match))throw new Error("PostgreSQL row-count verification failed");const tenantViolations=await client.query(`SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND column_name IN ('tenantId','companyId')`),isolation=[];for(const table of new Set(tenantViolations.rows.map(row=>row.table_name))){const cols=byTable.get(table);if(!cols?.has("tenantId")||!cols?.has("companyId"))continue;const invalid=Number((await client.query(`SELECT COUNT(*) count FROM ${quote(table)} WHERE "tenantId" IS NULL OR "companyId" IS NULL`)).rows[0].count);isolation.push({table,invalid})}if(isolation.some(row=>row.invalid))throw new Error("Tenant/company verification failed");const reconciliations={journalDebit:Number((await client.query('SELECT COALESCE(SUM("totalDebit"),0) value FROM "JournalEntry"')).rows[0].value),journalCredit:Number((await client.query('SELECT COALESCE(SUM("totalCredit"),0) value FROM "JournalEntry"')).rows[0].value),companyStockQuantity:Number((await client.query('SELECT COALESCE(SUM("quantity"),0) value FROM "CompanyStock"')).rows[0].value),partyStockQuantity:Number((await client.query('SELECT COALESCE(SUM("quantity"),0) value FROM "PartyStockAccount"')).rows[0].value)};await client.query("COMMIT");console.log(JSON.stringify({status:"VERIFIED",schemaHash,rowsMigrated:initial,tables:checks.length,rowCounts:checks,tenantIsolation:isolation,reconciliations},null,2))}catch(error){await client.query("ROLLBACK");throw error}}function normalize(value,type){if(value===null||value===undefined)return null;if(type==="boolean")return Boolean(value);if(type.includes("timestamp")||type==="date")return value instanceof Date?value:new Date(value);if(type==="bigint"&&typeof value==="number")return String(value);return value}main().finally(async()=>{source.close();await client.end().catch(()=>undefined);rmSync(temp,{recursive:true,force:true})}).catch(error=>{console.error(error instanceof Error?error.message:error);process.exitCode=1});
+import "dotenv/config";
+import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import Database from "better-sqlite3";
+import pg from "pg";
+
+const { Client } = pg;
+const manifestOnly = process.argv.includes("--manifest-only");
+const sourcePath = resolve((process.env.SQLITE_SOURCE_PATH ?? "prisma/netaj.db").replace(/^file:/, ""));
+const targetUrl = process.env.POSTGRES_DATABASE_URL;
+const quote = (value) => `"${String(value).replaceAll('"', '""')}"`;
+const schemaText = readFileSync("prisma/schema.prisma", "utf8");
+const schemaHash = createHash("sha256").update(schemaText).digest("hex");
+const source = new Database(sourcePath, { readonly: true, fileMustExist: true });
+source.pragma("foreign_keys=ON");
+const integrity = source.pragma("integrity_check");
+const foreignKeys = source.pragma("foreign_key_check");
+const tables = source.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> '_prisma_migrations' ORDER BY name").all().map((row) => row.name);
+const manifest = {
+  sourcePath, schemaHash, generatedAt: new Date().toISOString(), integrity, foreignKeyErrors: foreignKeys.length,
+  tables: tables.map((name) => ({ name, rows: source.prepare(`SELECT COUNT(*) count FROM ${quote(name)}`).get().count, columns: source.prepare(`PRAGMA table_info(${quote(name)})`).all().map((row) => row.name) })),
+};
+
+if (manifestOnly) {
+  // A forced process.exit() truncates stdout when the schema manifest exceeds
+  // the pipe buffer. Let Node flush the complete JSON before it exits.
+  process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
+  source.close();
+} else {
+  await migrate();
+}
+
+async function migrate() {
+  if (!targetUrl) throw new Error("POSTGRES_DATABASE_URL is required");
+  if (process.env.ALLOW_POSTGRES_MIGRATION !== "1") throw new Error("Set ALLOW_POSTGRES_MIGRATION=1 after confirming the target is an empty non-production PostgreSQL database");
+  if (foreignKeys.length || !integrity.every((row) => Object.values(row).includes("ok"))) throw new Error("SQLite source integrity check failed");
+  const client = new Client({ connectionString: targetUrl, ssl: process.env.POSTGRES_SSL === "0" ? false : process.env.POSTGRES_SSL === "1" ? { rejectUnauthorized: process.env.POSTGRES_SSL_REJECT_UNAUTHORIZED !== "0" } : undefined });
+  const temp = mkdtempSync(join(tmpdir(), "netaj-postgres-schema-")), postgresSchema = join(temp, "schema.prisma");
+  try {
+    await client.connect();
+    const existing = await client.query("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename NOT LIKE '_prisma%' LIMIT 1");
+    if (existing.rowCount) throw new Error("Target PostgreSQL database is not empty; migration refused without modifying it");
+    writeFileSync(postgresSchema, schemaText.replace('provider = "sqlite"', 'provider = "postgresql"'));
+    execFileSync(process.platform === "win32" ? "npx.cmd" : "npx", ["prisma", "db", "push", "--schema", postgresSchema, "--skip-generate"], { stdio: "inherit", env: { ...process.env, DATABASE_URL: targetUrl } });
+    const targetColumns = await client.query("SELECT table_name,column_name,data_type FROM information_schema.columns WHERE table_schema='public'");
+    const byTable = new Map();
+    for (const row of targetColumns.rows) { const columns = byTable.get(row.table_name) ?? new Map(); columns.set(row.column_name, row.data_type); byTable.set(row.table_name, columns); }
+    let pending = [];
+    for (const table of tables) if (byTable.has(table)) for (const row of source.prepare(`SELECT * FROM ${quote(table)} ORDER BY rowid`).all()) pending.push({ table, row });
+    const initial = pending.length;
+    await client.query("BEGIN");
+    try {
+      for (let pass = 0; pending.length && pass <= tables.length + 5; pass += 1) {
+        const deferred = []; let inserted = 0;
+        for (const entry of pending) {
+          const types = byTable.get(entry.table), columns = Object.keys(entry.row).filter((column) => types.has(column));
+          const values = columns.map((column) => normalize(entry.row[column], types.get(column)));
+          try { await client.query(`INSERT INTO ${quote(entry.table)} (${columns.map(quote).join(",")}) VALUES (${values.map((_, index) => `$${index + 1}`).join(",")})`, values); inserted += 1; }
+          catch (error) { if (error?.code === "23503") deferred.push(entry); else throw error; }
+        }
+        pending = deferred;
+        if (!inserted && pending.length) throw new Error(`Unresolved foreign-key dependencies for ${pending.length} rows; first table ${pending[0].table}`);
+      }
+      for (const table of tables) if (byTable.get(table)?.has("id")) await client.query(`SELECT setval(pg_get_serial_sequence($1,'id'),COALESCE((SELECT MAX("id") FROM ${quote(table)}),1),COALESCE((SELECT MAX("id") FROM ${quote(table)}),0)>0)`, [table]);
+      const checks = [];
+      for (const row of manifest.tables) if (byTable.has(row.name)) { const target = Number((await client.query(`SELECT COUNT(*) count FROM ${quote(row.name)}`)).rows[0].count); checks.push({ table: row.name, source: Number(row.rows), target, match: target === Number(row.rows) }); }
+      if (checks.some((row) => !row.match)) throw new Error("PostgreSQL row-count verification failed");
+      const scopedColumns = await client.query("SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND column_name IN ('tenantId','companyId')"), isolation = [];
+      for (const table of new Set(scopedColumns.rows.map((row) => row.table_name))) { const columns = byTable.get(table); if (!columns?.has("tenantId") || !columns?.has("companyId")) continue; const invalid = Number((await client.query(`SELECT COUNT(*) count FROM ${quote(table)} WHERE "tenantId" IS NULL OR "companyId" IS NULL`)).rows[0].count); isolation.push({ table, invalid }); }
+      if (isolation.some((row) => row.invalid)) throw new Error("Tenant/company verification failed");
+      const reconciliations = {
+        journalDebit: Number((await client.query('SELECT COALESCE(SUM("totalDebit"),0) value FROM "JournalEntry"')).rows[0].value),
+        journalCredit: Number((await client.query('SELECT COALESCE(SUM("totalCredit"),0) value FROM "JournalEntry"')).rows[0].value),
+        companyStockQuantity: Number((await client.query('SELECT COALESCE(SUM("quantity"),0) value FROM "CompanyStock"')).rows[0].value),
+        partyStockQuantity: Number((await client.query('SELECT COALESCE(SUM("quantity"),0) value FROM "PartyStockAccount"')).rows[0].value),
+      };
+      await client.query("COMMIT");
+      process.stdout.write(`${JSON.stringify({ status: "VERIFIED", schemaHash, rowsMigrated: initial, tables: checks.length, rowCounts: checks, tenantIsolation: isolation, reconciliations }, null, 2)}\n`);
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+  } finally { source.close(); await client.end().catch(() => undefined); rmSync(temp, { recursive: true, force: true }); }
+}
+
+function normalize(value, type) {
+  if (value === null || value === undefined) return null;
+  if (type === "boolean") return Boolean(value);
+  if (type.includes("timestamp") || type === "date") return value instanceof Date ? value : new Date(value);
+  if (type === "bigint" && typeof value === "number") return String(value);
+  return value;
+}

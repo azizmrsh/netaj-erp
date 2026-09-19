@@ -94,6 +94,7 @@ type Operation =
   | "PARTY_OUT"
   | "COMPANY_TO_PARTY"
   | "PARTY_TO_COMPANY";
+type InventoryCount = { id:number;countNumber:string;countDate:string;frequency:string;ownershipType:string;partyId?:number|null;status:string;lines:Array<{id:number;systemQuantity:number;countedQuantity:number;variance:number;item:Item}> };
 
 const emptyFilters: Filters = { from: "", to: "", itemIds: [], partyIds: [] };
 const emptyMovement = {
@@ -114,13 +115,18 @@ export default function InventoryClient() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [tab, setTab] = useState<
-    "company" | "customers" | "statement" | "movements"
+    "company" | "customers" | "statement" | "movements" | "counts"
   >("company");
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [search, setSearch] = useState("");
   const [showMovement, setShowMovement] = useState(false);
   const [saving, setSaving] = useState(false);
   const [movement, setMovement] = useState(emptyMovement);
+  const [counts, setCounts] = useState<InventoryCount[]>([]);
+  const [showCount, setShowCount] = useState(false);
+  const [showValuation, setShowValuation] = useState(false);
+  const [countForm, setCountForm] = useState({ ownershipType:"COMPANY",partyId:"",itemId:"",countedQuantity:"",frequency:"DAILY",countDate:new Date().toISOString().slice(0,10),notes:"" });
+  const [valuationForm, setValuationForm] = useState({partyId:"",itemId:"",unitValue:"",effectiveAt:new Date().toISOString().slice(0,10),notes:""});
 
   useEffect(() => {
     let cancelled = false;
@@ -142,6 +148,19 @@ export default function InventoryClient() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => { void loadCounts(); }, []);
+
+  async function loadCounts() {
+    const response = await fetch("/api/inventory/controls?view=counts", { cache:"no-store" });
+    if (response.ok) setCounts(await response.json() as InventoryCount[]);
+  }
+
+  async function saveControl(payload:Record<string,unknown>, success:string) {
+    setSaving(true); setMessage("");
+    try { const response=await fetch("/api/inventory/controls",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});const result=await response.json() as {error?:string};if(!response.ok)throw new Error(result.error||"تعذر حفظ العملية");setMessage(success);setShowCount(false);setShowValuation(false);await Promise.all([loadInventory(),loadCounts()]); }
+    catch(error){setMessage(error instanceof Error?error.message:"تعذر حفظ العملية");}finally{setSaving(false);}
+  }
 
   async function loadInventory(nextFilters: Filters = filters) {
     setLoading(true);
@@ -281,6 +300,8 @@ export default function InventoryClient() {
           <button className={primaryButton} onClick={() => setShowMovement(true)}>
             + حركة مخزون
           </button>
+          <button className={primaryButton} onClick={() => setShowCount(true)}>+ محضر جرد</button>
+          <button className={secondaryButton} onClick={() => setShowValuation(true)}>قيمة مخزون عميل</button>
         </div>
       </div>
 
@@ -386,6 +407,7 @@ export default function InventoryClient() {
         <Tab active={tab === "customers"} onClick={() => setTab("customers")}>مخزون العملاء</Tab>
         <Tab active={tab === "statement"} onClick={() => setTab("statement")}>كشف الفترة</Tab>
         <Tab active={tab === "movements"} onClick={() => setTab("movements")}>سجل الحركات</Tab>
+        <Tab active={tab === "counts"} onClick={() => setTab("counts")}>الجرد والتسويات</Tab>
       </div>
 
       <section className="mt-3 overflow-hidden rounded-2xl border bg-white shadow-sm">
@@ -426,7 +448,7 @@ export default function InventoryClient() {
             ))}
             {!data?.statement.length && <EmptyRow columns={9} />}
           </DataTable>
-        ) : (
+        ) : tab === "movements" ? (
           <DataTable headers={["رقم الحركة", "التاريخ", "الملكية", "المادة", "النوع", "وارد", "صادر", "تكلفة الوحدة", "القيمة", "الرصيد", "المرجع", "ملاحظات"]}>
             {movementRows.map((row) => (
               <tr key={row.id} className={Number(row.balanceAfter) < 0 ? "bg-red-50" : ""}>
@@ -439,6 +461,11 @@ export default function InventoryClient() {
               </tr>
             ))}
             {!movementRows.length && <EmptyRow columns={12} />}
+          </DataTable>
+        ) : (
+          <DataTable headers={["رقم الجرد","التاريخ","الدورية","الملكية","المادة","رصيد النظام","الفعلي","الفرق","الحالة",""]}>
+            {counts.flatMap((count)=>count.lines.map((line,index)=><tr key={`${count.id}-${line.id}`} className={Number(line.variance)!==0?"bg-amber-50":""}><Cell>{index===0?count.countNumber:""}</Cell><Cell>{index===0?date(count.countDate):""}</Cell><Cell>{count.frequency}</Cell><Cell>{count.ownershipType==="COMPANY"?"الشركة":"عميل"}</Cell><Cell>{line.item.code} — {line.item.nameAr}</Cell><Cell>{number(line.systemQuantity)}</Cell><Cell>{number(line.countedQuantity)}</Cell><Cell danger={Number(line.variance)<0}>{number(line.variance)}</Cell><Cell>{count.status}</Cell><Cell>{index===0&&count.status==="DRAFT"?<button className={primaryButton} onClick={()=>void saveControl({action:"APPROVE_COUNT",id:count.id},"تم اعتماد الجرد وتسجيل التسويات")}>اعتماد التسوية</button>:"-"}</Cell></tr>))}
+            {!counts.length&&<EmptyRow columns={10}/>}
           </DataTable>
         )}
       </section>
@@ -480,6 +507,8 @@ export default function InventoryClient() {
           </form>
         </div>
       )}
+      {showCount&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><form onSubmit={(event)=>{event.preventDefault();void saveControl({action:"CREATE_COUNT",countDate:countForm.countDate,frequency:countForm.frequency,ownershipType:countForm.ownershipType,partyId:countForm.ownershipType==="PARTY"?Number(countForm.partyId):null,notes:countForm.notes,lines:[{itemId:Number(countForm.itemId),countedQuantity:Number(countForm.countedQuantity)}]},"تم إنشاء محضر الجرد للمراجعة والاعتماد");}} className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl"><h2 className="text-xl font-bold">محضر جرد جديد</h2><div className="mt-5 grid gap-4 md:grid-cols-2"><Field label="الملكية"><select className={inputClass} value={countForm.ownershipType} onChange={e=>setCountForm({...countForm,ownershipType:e.target.value})}><option value="COMPANY">مخزون الشركة</option><option value="PARTY">مخزون عميل</option></select></Field>{countForm.ownershipType==="PARTY"&&<Field label="العميل"><select required className={inputClass} value={countForm.partyId} onChange={e=>setCountForm({...countForm,partyId:e.target.value})}><option value="">اختر</option>{data?.filterOptions.parties.map(row=><option key={row.id} value={row.id}>{row.nameAr}</option>)}</select></Field>}<Field label="المادة"><select required className={inputClass} value={countForm.itemId} onChange={e=>setCountForm({...countForm,itemId:e.target.value})}><option value="">اختر</option>{data?.filterOptions.items.map(row=><option key={row.id} value={row.id}>{row.code} — {row.nameAr}</option>)}</select></Field><Field label="الكمية الفعلية"><input required type="number" step="any" className={inputClass} value={countForm.countedQuantity} onChange={e=>setCountForm({...countForm,countedQuantity:e.target.value})}/></Field><Field label="الدورية"><select className={inputClass} value={countForm.frequency} onChange={e=>setCountForm({...countForm,frequency:e.target.value})}><option value="DAILY">يومي</option><option value="WEEKLY">أسبوعي</option><option value="MONTHLY">شهري</option><option value="AD_HOC">مفاجئ</option></select></Field><Field label="التاريخ"><input required type="date" className={inputClass} value={countForm.countDate} onChange={e=>setCountForm({...countForm,countDate:e.target.value})}/></Field></div><div className="mt-6 flex justify-end gap-2"><button type="button" className={secondaryButton} onClick={()=>setShowCount(false)}>إلغاء</button><button disabled={saving} className={primaryButton}>حفظ للمراجعة</button></div></form></div>}
+      {showValuation&&<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4"><form onSubmit={(event)=>{event.preventDefault();void saveControl({action:"SET_VALUATION",partyId:Number(valuationForm.partyId),itemId:Number(valuationForm.itemId),unitValue:Number(valuationForm.unitValue),effectiveAt:valuationForm.effectiveAt,notes:valuationForm.notes},"تم حفظ القيمة التقديرية بتاريخ السريان دون تغيير الحركات القديمة");}} className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-xl"><h2 className="text-xl font-bold">قيمة تقديرية لمخزون عميل</h2><p className="mt-2 text-sm text-slate-500">تطبق من تاريخ السريان ولا تعيد تقييم الحركات التاريخية.</p><div className="mt-5 grid gap-4 md:grid-cols-2"><Field label="العميل"><select required className={inputClass} value={valuationForm.partyId} onChange={e=>setValuationForm({...valuationForm,partyId:e.target.value})}><option value="">اختر</option>{data?.filterOptions.parties.map(row=><option key={row.id} value={row.id}>{row.nameAr}</option>)}</select></Field><Field label="المادة"><select required className={inputClass} value={valuationForm.itemId} onChange={e=>setValuationForm({...valuationForm,itemId:e.target.value})}><option value="">اختر</option>{data?.filterOptions.items.map(row=><option key={row.id} value={row.id}>{row.code} — {row.nameAr}</option>)}</select></Field><Field label="قيمة الوحدة"><input required min="0" type="number" step="any" className={inputClass} value={valuationForm.unitValue} onChange={e=>setValuationForm({...valuationForm,unitValue:e.target.value})}/></Field><Field label="تاريخ السريان"><input required type="date" className={inputClass} value={valuationForm.effectiveAt} onChange={e=>setValuationForm({...valuationForm,effectiveAt:e.target.value})}/></Field></div><div className="mt-6 flex justify-end gap-2"><button type="button" className={secondaryButton} onClick={()=>setShowValuation(false)}>إلغاء</button><button disabled={saving} className={primaryButton}>حفظ القيمة</button></div></form></div>}
     </main>
   );
 }

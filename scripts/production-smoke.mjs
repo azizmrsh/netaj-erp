@@ -102,6 +102,7 @@ const routes = [
   "/api/parties",
   "/api/parties/1",
   "/api/inventory",
+  "/api/inventory/controls?view=counts",
   "/api/notes",
   "/api/transport",
   "/api/transport/trucks",
@@ -126,6 +127,7 @@ const routes = [
   "/api/finance/budgets",
   "/api/finance/reports?report=trial-balance",
   "/api/factory",
+  "/api/factory/products",
   "/api/factory/transactions",
   "/api/factory/fees",
   "/api/factory/fuel",
@@ -652,6 +654,14 @@ try {
     }),
   });
   assert.equal(note.response.status, 201);
+  const submittedNote = await jsonRequest(`/api/notes/${note.body.id}`, {
+    method: "PATCH", headers: movementHeaders, body: JSON.stringify({ action: "SUBMIT" }),
+  });
+  assert.equal(submittedNote.response.status, 200);
+  const approvedNote = await jsonRequest(`/api/notes/${note.body.id}`, {
+    method: "PATCH", headers: movementHeaders, body: JSON.stringify({ action: "APPROVE" }),
+  });
+  assert.equal(approvedNote.response.status, 200);
   const postedNote = await jsonRequest(`/api/notes/${note.body.id}`, {
     method: "PATCH", headers: movementHeaders, body: JSON.stringify({ action: "POST" }),
   });
@@ -694,6 +704,12 @@ try {
     assert.equal(result.response.status, 200);
     return result.body;
   };
+  const approveNote = async (id) => {
+    for (const action of ["SUBMIT", "APPROVE"]) {
+      const result = await jsonRequest(`/api/notes/${id}`, { method: "PATCH", headers: movementHeaders, body: JSON.stringify({ action }) });
+      assert.equal(result.response.status, 200, `Note ${action} failed: ${JSON.stringify(result.body)}`);
+    }
+  };
   const convert = async (id, targetType, extra = {}) => {
     const result = await jsonRequest(`/api/workflows/${id}/convert`, { method: "POST", headers: movementHeaders, body: JSON.stringify({ targetType, ...extra }) });
     assert.ok([200, 201].includes(result.response.status));
@@ -712,6 +728,7 @@ try {
   const pi = await convert(quote.body.id, "PROFORMA_INVOICE"); await approve(pi.document.id);
   const order = await convert(pi.document.id, "SALES_ORDER"); await approve(order.document.id);
   const delivery = await convert(order.document.id, "DELIVERY_NOTE", { transportMethod: "COMPANY", truckId: truck.body.id, driverId: driver.body.id });
+  await approveNote(delivery.note.id);
   const deliveryPost = await jsonRequest(`/api/notes/${delivery.note.id}`, { method: "PATCH", headers: movementHeaders, body: JSON.stringify({ action: "POST" }) });
   assert.equal(deliveryPost.response.status, 200);
   const salesInvoice = await jsonRequest(`/api/notes/${delivery.note.id}/invoice`, { method: "POST", headers: movementHeaders, body: "{}" });
@@ -724,6 +741,7 @@ try {
   assert.equal(purchaseRequest.response.status, 201); await approve(purchaseRequest.body.id);
   const purchaseOrder = await convert(purchaseRequest.body.id, "PURCHASE_ORDER"); await approve(purchaseOrder.document.id);
   const receipt = await convert(purchaseOrder.document.id, "RECEIPT_NOTE", { transportMethod: "EXTERNAL" });
+  await approveNote(receipt.note.id);
   await jsonRequest(`/api/notes/${receipt.note.id}`, { method: "PATCH", headers: movementHeaders, body: JSON.stringify({ action: "POST" }) });
   const supplierInvoice = await jsonRequest(`/api/notes/${receipt.note.id}/invoice`, { method: "POST", headers: movementHeaders, body: JSON.stringify({ supplierInvoiceNumber: `SUP-${suffix}` }) });
   assert.equal(supplierInvoice.response.status, 201);

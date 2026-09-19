@@ -8,8 +8,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   try {
     const { id } = await context.params, body = await request.json(), action = String(body.action ?? "").toUpperCase();
     if (!Number.isInteger(Number(id)) || !["CLOSE", "REOPEN"].includes(action)) return NextResponse.json({ error: "الطلب غير صحيح" }, { status: 400 });
-    const auth = await authorizeRequest(request, { moduleKey: "ACCOUNTING", action: action === "REOPEN" ? "MANAGE" : "APPROVE" });
-    const row = await prisma.$transaction((tx) => action === "CLOSE" ? closeFiscalPeriod(tx, Number(id), auth.userId) : reopenFiscalPeriod(tx, Number(id), body.reason, auth.userId));
+    const overrideWarnings = body.overrideWarnings === true;
+    const auth = await authorizeRequest(request, { moduleKey: "ACCOUNTING", action: action === "REOPEN" || overrideWarnings ? "MANAGE" : "APPROVE" });
+    const row = await prisma.$transaction((tx) => action === "CLOSE" ? closeFiscalPeriod(tx, Number(id), auth.userId, { overrideWarnings, reason: body.reason }) : reopenFiscalPeriod(tx, Number(id), body.reason, auth.userId));
     return NextResponse.json(row);
   } catch (error) {
     if (error instanceof AuthError) { const response = authErrorResponse(error); return NextResponse.json({ error: response.message, code: response.code }, { status: response.status }); }

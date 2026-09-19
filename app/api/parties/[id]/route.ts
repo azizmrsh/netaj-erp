@@ -4,6 +4,7 @@ import { authorizeRequest, authErrorResponse } from "@/lib/api-auth";
 import { AuthError } from "@/lib/auth";
 import { customFieldsForEntity, saveCustomFieldValues } from "@/lib/configuration";
 import { audit } from "@/lib/audit";
+import { customerFinancialExposure } from "@/lib/operational-controls";
 
 export async function GET(
   request: Request,
@@ -50,6 +51,7 @@ export async function GET(
       factoryTransactions,
       factoryFeeRates,
       customFields,
+      financialExposure,
     ] =
       await Promise.all([
         inventoryAccess ? prisma.partyStockAccount.findMany({
@@ -106,6 +108,7 @@ export async function GET(
         factoryAccess ? prisma.factoryTransaction.findMany({ where: { partyId }, include: { item: true }, orderBy: [{ transactionDate: "desc" }, { id: "desc" }] }) : [],
         factoryAccess ? prisma.factoryFeeRate.findMany({ where: { partyId, isActive: true }, include: { item: true }, orderBy: { itemId: "asc" } }) : [],
         prisma.$transaction((tx) => customFieldsForEntity(tx, "PARTY", partyId)),
+        inventoryAccess && accountingAccess ? prisma.$transaction((tx) => customerFinancialExposure(tx, partyId)) : null,
       ]);
 
     return NextResponse.json({
@@ -122,6 +125,7 @@ export async function GET(
       factoryTransactions,
       factoryFeeRates,
       customFields,
+      financialExposure,
     });
   } catch (error) {
     console.error(error);

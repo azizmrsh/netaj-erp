@@ -6,6 +6,7 @@ import {
   createBalancedJournal,
   ensureAccountingFoundation,
   reverseJournalEntry,
+  type JournalLineInput,
 } from "@/lib/accounting";
 import { nextDocumentNumber } from "@/lib/document-numbering";
 import { exchangeRateAt, functionalAmount } from "@/lib/currency";
@@ -236,21 +237,53 @@ export async function createAndPostExpense(tx: Tx, input: Record<string, unknown
   await assertOpenAccountingPeriod(tx, expenseDate);
   const [category, bank] = await Promise.all([tx.expenseCategory.findUnique({ where: { id: categoryId } }), tx.bankAccount.findUnique({ where: { id: bankAccountId } })]);
   if (!category || !bank) throw new FinanceError("NOT_FOUND", "التصنيف أو الحساب البنكي غير موجود");
+  const requestedAllocations = Array.isArray(input.allocations) ? input.allocations : [];
+  const legacyCenter = clean(input.costCenter) ?? "ADMIN";
+  const allocationInput = requestedAllocations.length
+    ? requestedAllocations.map((value) => {
+        const row = value as Record<string, unknown>;
+        return { costCenterId: Number(row.costCenterId), percentage: new Prisma.Decimal(String(row.percentage ?? 0)) };
+      })
+    : [{ code: legacyCenter, percentage: new Prisma.Decimal(100) }];
+  if (allocationInput.some((row) => !row.percentage.gt(0)) || !allocationInput.reduce((sum, row) => sum.plus(row.percentage), new Prisma.Decimal(0)).equals(100)) {
+    throw new FinanceError("INVALID_INPUT", "يجب أن يكون مجموع توزيع المصروف 100٪ بالضبط");
+  }
+  const resolvedCenters = [] as { id: number; code: string; percentage: Prisma.Decimal }[];
+  for (const row of allocationInput) {
+    const center = "costCenterId" in row
+      ? await tx.costCenter.findUnique({ where: { id: row.costCenterId } })
+      : await tx.costCenter.findUnique({ where: { code: row.code } });
+    if (!center?.isActive || resolvedCenters.some((value) => value.id === center.id)) throw new FinanceError("INVALID_INPUT", "مركز تكلفة غير صالح أو مكرر");
+    resolvedCenters.push({ id: center.id, code: center.code, percentage: row.percentage });
+  }
   const fx = await exchangeRateAt(tx, bank.currency, expenseDate), functionalBeforeVat = functionalAmount(beforeVat, fx.rate), functionalVat = functionalAmount(vat, fx.rate), functionalTotal = functionalAmount(total, fx.rate);
+  const distributed = resolvedCenters.map((row, index) => {
+    const isLast = index === resolvedCenters.length - 1;
+    const priorBefore = resolvedCenters.slice(0, index).reduce((sum, item) => sum.plus(beforeVat.mul(item.percentage).div(100).toDecimalPlaces(2)), new Prisma.Decimal(0));
+    const priorVat = resolvedCenters.slice(0, index).reduce((sum, item) => sum.plus(vat.mul(item.percentage).div(100).toDecimalPlaces(2)), new Prisma.Decimal(0));
+    const amountBeforeVat = isLast ? beforeVat.minus(priorBefore) : beforeVat.mul(row.percentage).div(100).toDecimalPlaces(2);
+    const vatAmount = isLast ? vat.minus(priorVat) : vat.mul(row.percentage).div(100).toDecimalPlaces(2);
+    return { ...row, amountBeforeVat, vatAmount, totalAmount: amountBeforeVat.plus(vatAmount) };
+  });
   const voucherNumber = await nextDocumentNumber(tx, "PV", expenseDate);
   const expense = await tx.expense.create({ data: { voucherNumber, expenseDate, expenseType: category.code, categoryId, description: clean(input.description),
     beneficiary: clean(input.beneficiary), amountBeforeVat: beforeVat, vatAmount: vat, totalAmount: total,
     currency: bank.currency, exchangeRate: fx.rate, rateDate: fx.rateDate, functionalAmountBeforeVat: functionalBeforeVat, functionalVatAmount: functionalVat, functionalTotalAmount: functionalTotal, paymentMethod: clean(input.paymentMethod),
-    bankAccountId, cashBankAccount: bank.name, costCenter: clean(input.costCenter), project: clean(input.project),
-    responsibleEmployee: clean(input.responsibleEmployee), referenceNumber: clean(input.referenceNumber), notes: clean(input.notes), status: "POSTED", postedAt: new Date() } });
-  const dimension = { costCenter: clean(input.costCenter), projectCode: clean(input.project) };
-  const lines = [{ accountId: category.accountId, debit: functionalBeforeVat, transactionDebit: beforeVat, ...dimension }, ...(vat.isZero() ? [] : [{ mappingKey: "INPUT_VAT", debit: functionalVat, transactionDebit: vat, ...dimension }]), { accountId: bank.ledgerAccountId, credit: functionalTotal, transactionCredit: total, ...dimension }];
+    bankAccountId, cashBankAccount: bank.name, costCenter: resolvedCenters.length === 1 ? resolvedCenters[0].code : "MULTI", project: clean(input.project),
+    responsibleEmployee: clean(input.responsibleEmployee), referenceNumber: clean(input.referenceNumber), notes: clean(input.notes), status: "POSTED", postedAt: new Date(),
+    allocations: { create: distributed.map((row) => ({ costCenterId: row.id, percentage: row.percentage, amountBeforeVat: row.amountBeforeVat, vatAmount: row.vatAmount, totalAmount: row.totalAmount })) } } });
+  const lines: JournalLineInput[] = distributed.flatMap((row) => {
+    const allocatedBefore = functionalAmount(row.amountBeforeVat, fx.rate), allocatedVat = functionalAmount(row.vatAmount, fx.rate);
+    const dimension = { costCenter: row.code, costCenterId: row.id, projectCode: clean(input.project) };
+    return [{ accountId: category.accountId, debit: allocatedBefore, transactionDebit: row.amountBeforeVat, ...dimension }, ...(row.vatAmount.isZero() ? [] : [{ mappingKey: "INPUT_VAT", debit: allocatedVat, transactionDebit: row.vatAmount, ...dimension }])];
+  });
+  lines.push({ accountId: bank.ledgerAccountId, credit: functionalTotal, transactionCredit: total, costCenter: "MULTI", costCenterId: null, projectCode: clean(input.project) });
   const journal = await createBalancedJournal(tx, { entryDate: expenseDate, description: `مصروف ${voucherNumber}`, referenceType: "EXPENSE", referenceId: expense.id, referenceNumber: voucherNumber,
     transactionCurrencyCode: bank.currency, functionalCurrencyCode: fx.company.baseCurrencyCode, exchangeRate: fx.rate, rateDate: fx.rateDate, lines });
   await tx.expense.update({ where: { id: expense.id }, data: { journalEntryId: journal.id } });
   await recordBankMovement(tx, { bankAccountId, date: expenseDate, type: "EXPENSE", amountOut: total, referenceType: "EXPENSE", referenceId: expense.id, referenceNumber: voucherNumber, description: expense.description });
   await audit(tx, { action: "POST", entityType: "EXPENSE", entityId: expense.id, metadata: { journalId: journal.id } });
-  return tx.expense.findUniqueOrThrow({ where: { id: expense.id }, include: { category: true, bankAccount: true, journalEntry: true } });
+  return tx.expense.findUniqueOrThrow({ where: { id: expense.id }, include: { category: true, bankAccount: true, journalEntry: { include: { lines: true } }, allocations: { include: { costCenter: true } } } });
 }
 
 export async function createAndPostRevenue(tx: Tx, input: Record<string, unknown>) {

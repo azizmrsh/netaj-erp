@@ -12,7 +12,7 @@ import {
   type ImportTargetDefinition,
 } from "@/lib/import-definitions";
 import { applyStockMovement } from "@/lib/inventory";
-import { cancelPostedNote, createNote, postNote } from "@/lib/notes";
+import { cancelPostedNote, changeNoteStatus, createNote, postNote } from "@/lib/notes";
 import { createBalancedJournal, ensureAccountingFoundation } from "@/lib/accounting";
 import { recordBankMovement } from "@/lib/finance";
 
@@ -651,7 +651,12 @@ async function executeNotes(tx: Prisma.TransactionClient, batch: BatchForExecuti
       truckId: truck?.id ?? null, driverId: driver?.id ?? null, loadingPoint: nullable(first.loadingPoint), unloadingPoint: nullable(first.unloadingPoint),
       notes: [nullable(first.notes), `رقم السند القديم: ${legacyNumber}`].filter(Boolean).join(" · "), items,
     });
-    const finalNote = batch.importMode === "FULL" ? (await postNote(tx, createdNote.id)).note : createdNote;
+    let finalNote = createdNote;
+    if (batch.importMode === "FULL") {
+      await changeNoteStatus(tx, createdNote.id, "SUBMIT", batch.createdBy);
+      await changeNoteStatus(tx, createdNote.id, "APPROVE", batch.createdBy);
+      finalNote = (await postNote(tx, createdNote.id)).note;
+    }
     for (const row of group.rows) await linkImportedRow(tx, batch, row, "DELIVERY_RECEIPT_NOTE", finalNote.id, true, legacyNumber);
     created += group.rows.length;
   }

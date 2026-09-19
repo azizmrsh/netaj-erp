@@ -4,6 +4,7 @@ import { assertOpenAccountingPeriod, createBalancedJournal, postSalesInvoiceJour
 import { createAndPostExpense, ensureFinanceFoundation } from "@/lib/finance";
 import { applyStockMovement } from "@/lib/inventory";
 import { nextDocumentNumber } from "@/lib/document-numbering";
+import { getVerifiedDataScope } from "@/lib/data-scope";
 
 type Tx = Prisma.TransactionClient;
 export class FactoryError extends Error { constructor(public code: "INVALID_INPUT"|"NOT_FOUND"|"INVALID_STATUS", message:string){super(message);this.name="FactoryError";} }
@@ -19,6 +20,39 @@ export async function upsertFactoryFeeRate(tx:Tx,input:Record<string,unknown>){
   if(!party?.isCustomer||!item?.isActive)throw new FactoryError("NOT_FOUND","العميل أو المادة غير موجود");
   const row=await tx.factoryFeeRate.upsert({where:{partyId_itemId:{partyId,itemId}},create:{partyId,itemId,feePerTon,notes:clean(input.notes)},update:{feePerTon,isActive:true,notes:clean(input.notes)},include:{party:true,item:true}});
   await audit(tx,{action:"UPSERT",entityType:"FACTORY_FEE_RATE",entityId:row.id,metadata:{partyId,itemId,feePerTon:String(feePerTon)}});return row;
+}
+
+export async function upsertFactoryProductSetting(tx:Tx,input:Record<string,unknown>){
+  const productItemId=Number(input.productItemId),rawItemId=Number(input.rawItemId),fuelItemId=input.fuelItemId?Number(input.fuelItemId):null;
+  const defaultFuelPercentage=amount(input.defaultFuelPercentage??0,"نسبة الوقود",true);
+  if(defaultFuelPercentage.gt(100)||productItemId===rawItemId)throw new FactoryError("INVALID_INPUT","إعداد مكونات المنتج غير صحيح");
+  const ids=[productItemId,rawItemId,...(fuelItemId?[fuelItemId]:[])],items=await tx.item.count({where:{id:{in:ids},isActive:true}});
+  if(items!==new Set(ids).size)throw new FactoryError("NOT_FOUND","إحدى مواد إعداد المنتج غير موجودة");
+  const {companyId}=await getVerifiedDataScope();
+  const row=await tx.factoryProductSetting.upsert({where:{companyId_productItemId:{companyId,productItemId}},create:{productItemId,rawItemId,fuelItemId,defaultFuelPercentage},update:{rawItemId,fuelItemId,defaultFuelPercentage,isActive:true}});
+  await audit(tx,{action:"UPSERT",entityType:"FACTORY_PRODUCT_SETTING",entityId:row.id,metadata:{productItemId,rawItemId,fuelItemId,defaultFuelPercentage:String(defaultFuelPercentage)}});
+  return row;
+}
+
+export async function createBlendedFactoryProduction(tx:Tx,input:Record<string,unknown>){
+  await ensureFactoryFoundation(tx);
+  const transactionDate=date(input.transactionDate),productItemId=Number(input.productItemId),quantity=amount(input.quantity,"كمية المنتج");
+  const partyId=input.partyId?Number(input.partyId):null,ownershipType=String(input.ownershipType??(partyId?"PARTY":"COMPANY")).toUpperCase();
+  if(!["COMPANY","PARTY"].includes(ownershipType)||(ownershipType==="PARTY"&&!partyId))throw new FactoryError("INVALID_INPUT","ملكية عملية الإنتاج غير صحيحة");
+  const scope=await getVerifiedDataScope();
+  const setting=await tx.factoryProductSetting.findUnique({where:{companyId_productItemId:{companyId:scope.companyId,productItemId}}});
+  if(!setting?.isActive)throw new FactoryError("NOT_FOUND","إعداد مكونات المنتج غير موجود");
+  const fuelPercentage=input.fuelPercentage===undefined?new Prisma.Decimal(setting.defaultFuelPercentage):amount(input.fuelPercentage,"نسبة الوقود",true);
+  if(fuelPercentage.gt(100)||(fuelPercentage.gt(0)&&!setting.fuelItemId))throw new FactoryError("INVALID_INPUT","نسبة الوقود أو مادة الوقود غير مهيأة");
+  const fuelQuantity=quantity.mul(fuelPercentage).div(100).toDecimalPlaces(4),rawQuantity=quantity.minus(fuelQuantity).toDecimalPlaces(4);
+  const transactionNumber=await nextDocumentNumber(tx,"FT",transactionDate);
+  const rawMovement=rawQuantity.gt(0)?await applyStockMovement(tx,{movementDate:transactionDate,itemId:setting.rawItemId,partyId,ownershipType:ownershipType as "COMPANY"|"PARTY",movementType:"PRODUCTION_CONSUMPTION",quantityOut:Number(rawQuantity),referenceType:"FACTORY_PRODUCTION",referenceNumber:transactionNumber,notes:clean(input.notes)}):null;
+  let fuelMovement=null;
+  if(fuelQuantity.gt(0)&&setting.fuelItemId)fuelMovement=await createFactoryFuelMovement(tx,{movementDate:transactionDate,itemId:setting.fuelItemId,movementType:"PRODUCTION_CONSUMPTION",quantity:fuelQuantity,productionItemId:productItemId,referenceType:"FACTORY_PRODUCTION",referenceNumber:transactionNumber,notes:input.notes});
+  const outputMovement=await applyStockMovement(tx,{movementDate:transactionDate,itemId:productItemId,partyId,ownershipType:ownershipType as "COMPANY"|"PARTY",movementType:"PRODUCTION_OUTPUT",quantityIn:Number(quantity),referenceType:"FACTORY_PRODUCTION",referenceNumber:transactionNumber,notes:clean(input.notes)});
+  const transaction=await tx.factoryTransaction.create({data:{transactionNumber,transactionDate,partyId,itemId:productItemId,transactionType:"BLENDED_PRODUCTION",quantity,rawItemId:setting.rawItemId,productItemId,fuelItemId:setting.fuelItemId,fuelPercentage,rawQuantity,fuelQuantity,referenceType:"FACTORY_PRODUCTION",referenceNumber:transactionNumber,description:clean(input.description),notes:clean(input.notes),postedAt:new Date()}});
+  await audit(tx,{action:"POST",entityType:"FACTORY_TRANSACTION",entityId:transaction.id,metadata:{transactionNumber,ownershipType,rawMovementId:rawMovement?.movement.id??null,fuelMovementId:fuelMovement?.id??null,outputMovementId:outputMovement.movement.id,fuelPercentage:String(fuelPercentage)}});
+  return {transaction,rawMovement,fuelMovement,outputMovement};
 }
 
 export async function createFactoryProduction(tx:Tx,input:Record<string,unknown>){

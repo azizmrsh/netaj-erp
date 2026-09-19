@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
-import { createNote, postNote, cancelPostedNote, NoteWorkflowError } from "../lib/notes.ts";
+import { amendPostedNote, createNote, postNote, cancelPostedNote, changeNoteStatus, NoteWorkflowError } from "../lib/notes.ts";
 
 const directory = mkdtempSync(join(tmpdir(), "netaj-notes-test-"));
 const databasePath = join(directory, "notes.test.db");
@@ -34,10 +34,22 @@ function input(overrides = {}) {
   return { noteType: "RECEIPT", noteDate: new Date("2026-09-19"), partyId, stockOwnership: "PARTY", transportMethod: "CUSTOMER", items: [{ itemId, quantity: 10, weight: 9 }], ...overrides };
 }
 
+async function approveAndPost(noteId) {
+  await prisma.$transaction((tx) => changeNoteStatus(tx, noteId, "SUBMIT", 1001));
+  await prisma.$transaction((tx) => changeNoteStatus(tx, noteId, "APPROVE", 1002));
+  return prisma.$transaction((tx) => postNote(tx, noteId));
+}
+
+test("السند غير المعتمد لا يؤثر على المخزون", async () => {
+  const note = await prisma.$transaction((tx) => createNote(tx, input()));
+  await assert.rejects(prisma.$transaction((tx) => postNote(tx, note.id)), (error) => error instanceof NoteWorkflowError && error.code === "INVALID_STATUS");
+  assert.equal(await prisma.stockMovement.count({ where: { referenceId: note.id } }), 0);
+});
+
 test("ترحيل سند استلام عميل ينشئ حركة ورصيدًا صحيحًا", async () => {
   const note = await prisma.$transaction((tx) => createNote(tx, input()));
   assert.match(note.noteNumber, /^GRN-2026-\d{6}$/);
-  await prisma.$transaction((tx) => postNote(tx, note.id));
+  await approveAndPost(note.id);
   const [account, movement] = await Promise.all([
     prisma.partyStockAccount.findUnique({ where: { partyId_itemId: { partyId, itemId } } }),
     prisma.stockMovement.findFirst({ where: { referenceType: "DELIVERY_RECEIPT_NOTE", referenceId: note.id } }),
@@ -49,7 +61,7 @@ test("ترحيل سند استلام عميل ينشئ حركة ورصيدًا �
 
 test("سند تسليم عميل يسمح بالرصيد السالب ويظهر في كشفه", async () => {
   const note = await prisma.$transaction((tx) => createNote(tx, input({ noteType: "DELIVERY", items: [{ itemId, quantity: 4 }] })));
-  await prisma.$transaction((tx) => postNote(tx, note.id));
+  await approveAndPost(note.id);
   const account = await prisma.partyStockAccount.findUnique({ where: { partyId_itemId: { partyId, itemId } } });
   const statement = await prisma.stockMovement.findMany({ where: { partyId, itemId } });
   assert.equal(Number(account.quantity), -4);
@@ -59,14 +71,16 @@ test("سند تسليم عميل يسمح بالرصيد السالب ويظهر
 
 test("سند تسليم الشركة يرفض العجز ويرجع المعاملة كاملة", async () => {
   const note = await prisma.$transaction((tx) => createNote(tx, input({ noteType: "DELIVERY", stockOwnership: "COMPANY", items: [{ itemId, quantity: 2 }] })));
+  await prisma.$transaction((tx) => changeNoteStatus(tx, note.id, "SUBMIT", 1001));
+  await prisma.$transaction((tx) => changeNoteStatus(tx, note.id, "APPROVE", 1002));
   await assert.rejects(prisma.$transaction((tx) => postNote(tx, note.id)), (error) => error instanceof NoteWorkflowError && error.code === "STOCK_ERROR");
-  assert.equal((await prisma.deliveryReceiptNote.findUnique({ where: { id: note.id } })).status, "DRAFT");
+  assert.equal((await prisma.deliveryReceiptNote.findUnique({ where: { id: note.id } })).status, "APPROVED");
   assert.equal(await prisma.stockMovement.count({ where: { referenceId: note.id } }), 0);
 });
 
 test("النقل بسيارات الشركة ينشئ رحلة واحدة تلقائيًا عند الترحيل", async () => {
   const note = await prisma.$transaction((tx) => createNote(tx, input({ transportMethod: "COMPANY", truckId, driverId })));
-  const result = await prisma.$transaction((tx) => postNote(tx, note.id));
+  const result = await approveAndPost(note.id);
   assert.match(result.trip.tripNumber, /^TR-2026-\d{6}$/);
   assert.equal(result.trip.noteId, note.id);
   assert.equal(result.trip.truckId, truckId);
@@ -77,7 +91,7 @@ test("النقل بسيارات الشركة ينشئ رحلة واحدة تلق
 
 test("إلغاء السند يعكس المخزون ويلغي الرحلة المرتبطة", async () => {
   const note = await prisma.$transaction((tx) => createNote(tx, input({ transportMethod: "COMPANY", truckId, driverId })));
-  await prisma.$transaction((tx) => postNote(tx, note.id));
+  await approveAndPost(note.id);
   const cancelled = await prisma.$transaction((tx) => cancelPostedNote(tx, note.id, "اختبار العكس"));
   const account = await prisma.partyStockAccount.findUnique({ where: { partyId_itemId: { partyId, itemId } } });
   const trip = await prisma.transportTrip.findUnique({ where: { noteId: note.id } });
@@ -89,7 +103,20 @@ test("إلغاء السند يعكس المخزون ويلغي الرحلة ال
 
 test("النقل الخارجي لا ينشئ رحلة للشركة", async () => {
   const note = await prisma.$transaction((tx) => createNote(tx, input({ transportMethod: "EXTERNAL", carrierName: "ناقل خارجي" })));
-  const result = await prisma.$transaction((tx) => postNote(tx, note.id));
+  const result = await approveAndPost(note.id);
   assert.equal(result.trip, null);
   assert.equal(await prisma.transportTrip.count({ where: { noteId: note.id } }), 0);
+});
+
+test("تعديل السند المرحل يعكس أثره ويحفظ نسخة جديدة تحتاج إعادة اعتماد", async () => {
+  const note = await prisma.$transaction((tx) => createNote(tx, input()));
+  await approveAndPost(note.id);
+  const amended = await prisma.$transaction((tx) => amendPostedNote(tx, note.id, input({ items: [{ itemId, quantity: 7 }] }), "تصحيح وزن معتمد", 1003));
+  assert.equal(amended.status, "DRAFT");
+  assert.equal(amended.revision, 2);
+  assert.equal(Number((await prisma.partyStockAccount.findUniqueOrThrow({ where: { partyId_itemId: { partyId, itemId } } })).quantity), 0);
+  await approveAndPost(note.id);
+  assert.equal(Number((await prisma.partyStockAccount.findUniqueOrThrow({ where: { partyId_itemId: { partyId, itemId } } })).quantity), 7);
+  assert.equal(await prisma.stockMovement.count({ where: { referenceType: "DELIVERY_RECEIPT_NOTE_R2", referenceId: note.id } }), 1);
+  assert.equal(await prisma.auditLog.count({ where: { entityType: "DELIVERY_RECEIPT_NOTE", entityId: note.id, action: "AMEND" } }), 1);
 });

@@ -278,7 +278,7 @@ export async function convertBusinessDocument(tx: Prisma.TransactionClient, id: 
 
 export async function createFinalInvoiceFromNote(tx: Prisma.TransactionClient, noteId: number, options: Record<string, unknown> = {}) {
   const note = await tx.deliveryReceiptNote.findUnique({
-    where: { id: noteId }, include: { sourceDocument: { include: { lines: true } } },
+    where: { id: noteId }, include: { sourceDocument: { include: { lines: true } }, trip: true },
   });
   if (!note) throw new WorkflowError("NOT_FOUND", "السند غير موجود");
   if (note.status !== "POSTED") throw new WorkflowError("INVALID_STATUS", "يجب ترحيل السند للمخزون قبل إنشاء الفاتورة");
@@ -291,17 +291,23 @@ export async function createFinalInvoiceFromNote(tx: Prisma.TransactionClient, n
   if (order.documentType === "SALES_ORDER") {
     const existing = await tx.sale.findUnique({ where: { deliveryNoteId: note.id }, include: { items: true } });
     if (existing) return { invoice: existing, journal: await postSalesInvoiceJournal(tx, existing.id), created: false };
+    const transportMode = String(options.transportMode ?? "NONE").toUpperCase();
+    if (!["NONE", "SEPARATE", "INCLUDED"].includes(transportMode)) throw new WorkflowError("INVALID_INPUT", "طريقة احتساب النقل غير صحيحة");
+    const includedTransportRevenue = transportMode === "INCLUDED" ? new Prisma.Decimal(String(options.includedTransportRevenue ?? 0)).toDecimalPlaces(2) : new Prisma.Decimal(0);
+    if (includedTransportRevenue.isNegative() || includedTransportRevenue.gt(calculated.subtotal)) throw new WorkflowError("INVALID_INPUT", "قيمة النقل المضمنة غير صحيحة");
     const invoiceNumber = await nextDocumentNumber(tx, "INV");
     const invoice = await tx.sale.create({ data: {
       invoiceNumber, invoiceDate: new Date(), partyId: note.partyId, sourceOrderId: order.id, deliveryNoteId: note.id,
       projectId: order.projectId, costCenterId: order.costCenterId, costCodeId: order.costCodeId,
       currency: order.currency,
+      transportMode, includedTransportRevenue,
       referenceNumber: note.referenceNumber, purchaseOrderNumber: order.referenceNumber, paymentMethod: clean(options.paymentMethod),
       dueDate: date(options.dueDate), ...calculated, status: "COMPLETED", notes: clean(options.notes) ?? order.notes,
       items: { create: invoiceLines.map((line) => ({ itemId: Number(line.itemId), description: line.description, materialGrade: line.materialGrade, quantity: line.quantity, unitPrice: line.unitPrice,
         discount: line.discount, vatRate: line.vatRate, vatAmount: line.vatAmount, totalAmount: line.totalAmount })) },
     }, include: { party: true, items: { include: { item: true } } } });
     const journal = await postSalesInvoiceJournal(tx, invoice.id);
+    if (note.trip && transportMode === "INCLUDED") await tx.transportTrip.update({ where: { id: note.trip.id }, data: { transportRevenue: includedTransportRevenue, netProfit: includedTransportRevenue.minus(note.trip.totalCost) } });
     await audit(tx, { action: "CREATE_INVOICE", entityType: "SALES_INVOICE", entityId: invoice.id, metadata: { noteId, orderId: order.id } });
     return { invoice, journal, created: true };
   }

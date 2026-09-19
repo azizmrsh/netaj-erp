@@ -7,9 +7,15 @@ import {
   noteInclude,
   parseNoteInput,
 } from "@/lib/notes";
+import { authorizeRequest, authErrorResponse } from "@/lib/api-auth";
+import { AuthError } from "@/lib/auth";
 
 function workflowError(error: unknown) {
   console.error(error);
+  if (error instanceof AuthError) {
+    const response = authErrorResponse(error);
+    return NextResponse.json({ error: response.message, code: response.code }, { status: response.status });
+  }
   if (error instanceof NoteWorkflowError) {
     return NextResponse.json(
       { error: error.message },
@@ -21,6 +27,7 @@ function workflowError(error: unknown) {
 
 export async function GET(request: Request) {
   try {
+    await authorizeRequest(request, { moduleKey: "NOTES", action: "READ" });
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status")?.toUpperCase();
     const noteType = searchParams.get("noteType")?.toUpperCase();
@@ -87,6 +94,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    await authorizeRequest(request, { moduleKey: "NOTES", action: "CREATE" });
     const input = parseNoteInput(await request.json());
     const note = await prisma.$transaction((tx) => createNote(tx, input));
     return NextResponse.json(note, { status: 201 });

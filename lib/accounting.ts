@@ -340,8 +340,10 @@ export async function postCogsForDeliveryNote(tx: TransactionClient, noteId: num
   if (!note) throw new AccountingError("سند التسليم غير موجود");
   if (note.noteType !== "DELIVERY" || note.stockOwnership !== "COMPANY") return null;
   await assertOpenAccountingPeriod(tx, note.noteDate);
+  const stockReferenceType = note.revision > 1 ? `DELIVERY_RECEIPT_NOTE_R${note.revision}` : "DELIVERY_RECEIPT_NOTE";
+  const journalReferenceType = note.revision > 1 ? `COGS_DELIVERY_NOTE_R${note.revision}` : "COGS_DELIVERY_NOTE";
   const movements = await tx.stockMovement.findMany({
-    where: { referenceType: "DELIVERY_RECEIPT_NOTE", referenceId: noteId, ownershipType: "COMPANY" },
+    where: { referenceType: stockReferenceType, referenceId: noteId, ownershipType: "COMPANY" },
   });
   const value = movements.reduce(
     (sum, movement) => sum.plus(movement.totalValue),
@@ -351,7 +353,7 @@ export async function postCogsForDeliveryNote(tx: TransactionClient, noteId: num
   return createBalancedJournal(tx, {
     entryDate: note.noteDate,
     description: `تكلفة بضاعة السند ${note.noteNumber}`,
-    referenceType: "COGS_DELIVERY_NOTE",
+    referenceType: journalReferenceType,
     referenceId: note.id,
     referenceNumber: note.noteNumber,
     lines: [
@@ -362,12 +364,16 @@ export async function postCogsForDeliveryNote(tx: TransactionClient, noteId: num
 }
 
 export async function reverseCogsForDeliveryNote(tx: TransactionClient, noteId: number) {
+  const note = await tx.deliveryReceiptNote.findUnique({ where: { id: noteId }, select: { revision: true } });
+  if (!note) return null;
+  const journalReferenceType = note.revision > 1 ? `COGS_DELIVERY_NOTE_R${note.revision}` : "COGS_DELIVERY_NOTE";
+  const reversalReferenceType = note.revision > 1 ? `COGS_REVERSAL_R${note.revision}` : "COGS_REVERSAL";
   const original = await tx.journalEntry.findFirst({
-    where: { referenceType: "COGS_DELIVERY_NOTE", referenceId: noteId },
+    where: { referenceType: journalReferenceType, referenceId: noteId },
     include: { lines: true },
   });
   if (!original) return null;
-  const existing = await tx.journalEntry.findFirst({ where: { referenceType: "COGS_REVERSAL", referenceId: noteId } });
+  const existing = await tx.journalEntry.findFirst({ where: { referenceType: reversalReferenceType, referenceId: noteId } });
   if (existing) return existing;
   const entryNumber = await nextDocumentNumber(tx, "JE", new Date());
   const reversal = await tx.journalEntry.create({
@@ -375,7 +381,7 @@ export async function reverseCogsForDeliveryNote(tx: TransactionClient, noteId: 
       entryNumber,
       entryDate: new Date(),
       description: `عكس ${original.description ?? original.entryNumber}`,
-      referenceType: "COGS_REVERSAL",
+      referenceType: reversalReferenceType,
       referenceId: noteId,
       referenceNumber: original.referenceNumber,
       status: "POSTED",

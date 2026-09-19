@@ -7,7 +7,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { applyStockMovement } from "../lib/inventory.ts";
 import { changeWorkflowStatus, convertBusinessDocument, createBusinessDocument, createFinalInvoiceFromNote, parseWorkflowInput, updateBusinessDocument } from "../lib/workflows.ts";
-import { cancelPostedNote, createNote, postNote } from "../lib/notes.ts";
+import { cancelPostedNote, changeNoteStatus, createNote, postNote } from "../lib/notes.ts";
 
 const directory=mkdtempSync(join(tmpdir(),"netaj-workflow-test-"));const databasePath=join(directory,"workflow.db");copyFileSync("prisma/netaj.db",databasePath);
 const prisma=new PrismaClient({adapter:new PrismaBetterSqlite3({url:`file:${databasePath}`})});
@@ -16,6 +16,7 @@ before(async()=>{const suffix=Date.now().toString(36).toUpperCase();await prisma
 after(async()=>{await prisma.$disconnect();rmSync(directory,{recursive:true,force:true})});
 const body=(documentType)=>({documentType,documentDate:"2026-09-19",partyId,currency:"SAR",referenceNumber:"E2E-REF",paymentTerms:"30 days",items:[{itemId,quantity:5,unitPrice:100,discount:25,vatRate:15,description:"بند متكامل",materialGrade:"A"}]});
 async function approve(id){return prisma.$transaction(tx=>changeWorkflowStatus(tx,id,"APPROVE"))}
+async function approveNote(id){await prisma.$transaction(tx=>changeNoteStatus(tx,id,"SUBMIT",1001));await prisma.$transaction(tx=>changeNoteStatus(tx,id,"APPROVE",1002));}
 
 test("تحرير المسودة يدعم العملات المهيأة ويعيد حساب البنود ويحفظ التدقيق",async()=>{
   const draft=await prisma.$transaction(tx=>createBusinessDocument(tx,parseWorkflowInput({...body("QUOTATION"),currency:"EUR"})));
@@ -30,7 +31,7 @@ test("Scenario A: QT -> PI -> SO -> DN -> Stock -> Trip -> Invoice -> Journal د
   const quote=await prisma.$transaction(tx=>createBusinessDocument(tx,parseWorkflowInput(body("QUOTATION"))));assert.match(quote.documentNumber,/^QT-2026-\d{6}$/);await approve(quote.id);
   const piResult=await prisma.$transaction(tx=>convertBusinessDocument(tx,quote.id,"PROFORMA_INVOICE"));assert.equal(piResult.created,true);await approve(piResult.document.id);
   const orderResult=await prisma.$transaction(tx=>convertBusinessDocument(tx,piResult.document.id,"SALES_ORDER"));await approve(orderResult.document.id);
-  const noteResult=await prisma.$transaction(tx=>convertBusinessDocument(tx,orderResult.document.id,"DELIVERY_NOTE",{transportMethod:"COMPANY",truckId,driverId}));assert.equal(noteResult.created,true);
+  const noteResult=await prisma.$transaction(tx=>convertBusinessDocument(tx,orderResult.document.id,"DELIVERY_NOTE",{transportMethod:"COMPANY",truckId,driverId}));assert.equal(noteResult.created,true);await approveNote(noteResult.note.id);
   const posted=await prisma.$transaction(tx=>postNote(tx,noteResult.note.id));assert.ok(posted.trip);assert.equal((await prisma.companyStock.findUnique({where:{itemId}})).quantity.toString(),"95");
   const final=await prisma.$transaction(tx=>createFinalInvoiceFromNote(tx,noteResult.note.id));assert.equal(final.created,true);assert.equal(final.journal.totalDebit.toString(),final.journal.totalCredit.toString());assert.equal(final.journal.lines.length,3);
   const again=await prisma.$transaction(tx=>createFinalInvoiceFromNote(tx,noteResult.note.id));assert.equal(again.created,false);
@@ -45,7 +46,7 @@ test("Scenario A: QT -> PI -> SO -> DN -> Stock -> Trip -> Invoice -> Journal د
 test("Scenario B: PR -> PO -> GRN -> Stock -> Supplier Invoice -> Journal",async()=>{
   const request=await prisma.$transaction(tx=>createBusinessDocument(tx,parseWorkflowInput(body("PURCHASE_REQUEST"))));assert.match(request.documentNumber,/^PR-2026-\d{6}$/);await approve(request.id);
   const orderResult=await prisma.$transaction(tx=>convertBusinessDocument(tx,request.id,"PURCHASE_ORDER"));await approve(orderResult.document.id);
-  const noteResult=await prisma.$transaction(tx=>convertBusinessDocument(tx,orderResult.document.id,"RECEIPT_NOTE",{transportMethod:"EXTERNAL"}));await prisma.$transaction(tx=>postNote(tx,noteResult.note.id));
+  const noteResult=await prisma.$transaction(tx=>convertBusinessDocument(tx,orderResult.document.id,"RECEIPT_NOTE",{transportMethod:"EXTERNAL"}));await approveNote(noteResult.note.id);await prisma.$transaction(tx=>postNote(tx,noteResult.note.id));
   const final=await prisma.$transaction(tx=>createFinalInvoiceFromNote(tx,noteResult.note.id,{supplierInvoiceNumber:"SUP-E2E"}));assert.equal(final.created,true);assert.equal(final.journal.totalDebit.toString(),final.journal.totalCredit.toString());assert.equal(await prisma.purchase.count({where:{receiptNoteId:noteResult.note.id}}),1);assert.equal(await prisma.stockMovement.count({where:{referenceType:"DELIVERY_RECEIPT_NOTE",referenceId:noteResult.note.id}}),1);
 });
 
@@ -63,7 +64,7 @@ test("الترقيم والتدقيق لا يتكرران، والقيود مت�
 });
 
 test("إلغاء تسليم مخزون الشركة يعكس المخزون وقيد COGS مع حفظ التاريخ",async()=>{
-  const note=await prisma.$transaction(tx=>createNote(tx,{noteType:"DELIVERY",noteDate:new Date("2026-09-19"),partyId,stockOwnership:"COMPANY",transportMethod:"CUSTOMER",items:[{itemId,quantity:1}]}));
+  const note=await prisma.$transaction(tx=>createNote(tx,{noteType:"DELIVERY",noteDate:new Date("2026-09-19"),partyId,stockOwnership:"COMPANY",transportMethod:"CUSTOMER",items:[{itemId,quantity:1}]}));await approveNote(note.id);
   await prisma.$transaction(tx=>postNote(tx,note.id));
   const cogs=await prisma.journalEntry.findFirst({where:{referenceType:"COGS_DELIVERY_NOTE",referenceId:note.id}});assert.ok(cogs);
   await prisma.$transaction(tx=>cancelPostedNote(tx,note.id,"اختبار عكس COGS"));

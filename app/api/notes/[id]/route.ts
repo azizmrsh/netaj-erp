@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
   cancelPostedNote,
+  amendPostedNote,
   changeNoteStatus,
   NoteWorkflowError,
   noteInclude,
@@ -60,7 +61,7 @@ export async function PATCH(
     const idNumber = noteId(id);
     const body = (await request.json()) as Record<string, unknown>;
     const action = String(body.action ?? "UPDATE").toUpperCase();
-    const auth = await authorizeRequest(request, { moduleKey: "NOTES", action: action === "POST" ? "POST" : action === "CANCEL" ? "CANCEL" : action === "APPROVE" ? "APPROVE" : "UPDATE" });
+    const auth = await authorizeRequest(request, { moduleKey: "NOTES", action: action === "POST" ? "POST" : action === "CANCEL" ? "CANCEL" : action === "APPROVE" ? "APPROVE" : action === "AMEND" ? "MANAGE" : "UPDATE" });
 
     if (action === "POST") {
       const result = await prisma.$transaction(async (tx) => {
@@ -72,7 +73,7 @@ export async function PATCH(
     }
     if (action === "SUBMIT" || action === "APPROVE") {
       const note = await prisma.$transaction((tx) =>
-        changeNoteStatus(tx, idNumber, action)
+        changeNoteStatus(tx, idNumber, action, auth.userId)
       );
       return NextResponse.json(note);
     }
@@ -80,6 +81,10 @@ export async function PATCH(
       const note = await prisma.$transaction((tx) =>
         cancelPostedNote(tx, idNumber, String(body.reason ?? "").trim() || null)
       );
+      return NextResponse.json(note);
+    }
+    if (action === "AMEND") {
+      const note = await prisma.$transaction((tx) => amendPostedNote(tx, idNumber, parseNoteInput(body), body.reason, auth.userId));
       return NextResponse.json(note);
     }
     const note = await prisma.$transaction((tx) =>

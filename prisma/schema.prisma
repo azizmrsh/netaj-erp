@@ -53,6 +53,7 @@ model Party {
   financialVouchers    FinancialVoucher[]
   factoryTransactions  FactoryTransaction[]
   factoryFeeRates      FactoryFeeRate[]
+  stockValuationRates  PartyStockValuationRate[]
   creditDebitNotes     CreditDebitNote[]
   projects             Project[]
   subcontractContracts SubcontractorContract[]
@@ -195,6 +196,8 @@ model Item {
   externalTrades       ExternalTrade[]
   externalLinkedCosts  ExternalLinkedCost[]
   factoryTargets       FactoryProductionTarget[]
+  stockValuationRates  PartyStockValuationRate[]
+  inventoryCountLines  InventoryCountLine[]
   projectBoqItems      ProjectBoqItem[]
   projectProgress      ProjectProgress[]
   projectBilling       Project[]                 @relation("ProjectBillingItem")
@@ -254,6 +257,28 @@ model PartyStockAccount {
 
   @@unique([partyId, itemId])
   @@index([tenantId, companyId])
+}
+
+// Effective-dated estimated value for customer-owned stock. Historical
+// movements retain their original value; changing this table never rewrites them.
+model PartyStockValuationRate {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int      @default(1)
+  companyId   Int      @default(1)
+  partyId     Int
+  itemId      Int
+  effectiveAt DateTime
+  unitValue   Decimal
+  currency    String   @default("SAR")
+  notes       String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+
+  party Party @relation(fields: [partyId], references: [id])
+  item  Item  @relation(fields: [itemId], references: [id])
+
+  @@unique([partyId, itemId, effectiveAt])
+  @@index([tenantId, companyId, effectiveAt])
 }
 
 // ======================================================
@@ -392,8 +417,14 @@ model DeliveryReceiptNote {
 
   status String @default("DRAFT")
 
-  stockPostedAt DateTime?
-  cancelledAt   DateTime?
+  stockPostedAt   DateTime?
+  cancelledAt     DateTime?
+  approvedAt      DateTime?
+  approvedBy      String?
+  revision        Int       @default(1)
+  amendedAt       DateTime?
+  amendedBy       String?
+  amendmentReason String?
 
   notes String?
 
@@ -497,9 +528,10 @@ model Truck {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  documents     TruckDocument[]
-  trips         TransportTrip[]
-  deliveryNotes DeliveryReceiptNote[]
+  documents         TruckDocument[]
+  trips             TransportTrip[]
+  deliveryNotes     DeliveryReceiptNote[]
+  operatingExpenses Expense[]
 
   @@index([tenantId, companyId])
 }
@@ -1074,17 +1106,19 @@ model Sale {
   costCenterId         Int?
   costCodeId           Int?
 
-  referenceNumber       String?
-  purchaseOrderNumber   String?
-  paymentMethod         String?
-  dueDate               DateTime?
-  currency              String    @default("SAR")
-  exchangeRate          Decimal   @default(1)
-  rateDate              DateTime?
-  functionalSubtotal    Decimal   @default(0)
-  functionalDiscount    Decimal   @default(0)
-  functionalVatAmount   Decimal   @default(0)
-  functionalTotalAmount Decimal   @default(0)
+  referenceNumber          String?
+  purchaseOrderNumber      String?
+  paymentMethod            String?
+  transportMode            String    @default("NONE")
+  includedTransportRevenue Decimal   @default(0)
+  dueDate                  DateTime?
+  currency                 String    @default("SAR")
+  exchangeRate             Decimal   @default(1)
+  rateDate                 DateTime?
+  functionalSubtotal       Decimal   @default(0)
+  functionalDiscount       Decimal   @default(0)
+  functionalVatAmount      Decimal   @default(0)
+  functionalTotalAmount    Decimal   @default(0)
 
   subtotal    Decimal @default(0)
   discount    Decimal @default(0)
@@ -1251,6 +1285,12 @@ model FactoryTransaction {
   transactionType String
 
   quantity               Decimal @default(0)
+  rawItemId              Int?
+  productItemId          Int?
+  fuelItemId             Int?
+  fuelPercentage         Decimal @default(0)
+  rawQuantity            Decimal @default(0)
+  fuelQuantity           Decimal @default(0)
   manufacturingFeePerTon Decimal @default(0)
   manufacturingFeeTotal  Decimal @default(0)
   vatRate                Decimal @default(15)
@@ -1279,6 +1319,22 @@ model FactoryTransaction {
   @@index([transactionDate])
   @@index([partyId])
   @@index([itemId])
+  @@index([tenantId, companyId])
+}
+
+model FactoryProductSetting {
+  id                    Int      @id @default(autoincrement())
+  tenantId              Int      @default(1)
+  companyId             Int      @default(1)
+  productItemId         Int
+  rawItemId             Int
+  fuelItemId            Int?
+  defaultFuelPercentage Decimal  @default(0)
+  isActive              Boolean  @default(true)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@unique([companyId, productItemId])
   @@index([tenantId, companyId])
 }
 
@@ -1642,17 +1698,17 @@ model Attachment {
 }
 
 model AuditLog {
-  id         Int      @id @default(autoincrement())
-  tenantId   Int      @default(1)
-  companyId  Int      @default(1)
-  action     String
-  entityType String
-  entityId   Int?
-  userId     String?
-  metadata   String?
+  id           Int      @id @default(autoincrement())
+  tenantId     Int      @default(1)
+  companyId    Int      @default(1)
+  action       String
+  entityType   String
+  entityId     Int?
+  userId       String?
+  metadata     String?
   previousHash String?
   entryHash    String?
-  createdAt  DateTime @default(now())
+  createdAt    DateTime @default(now())
 
   @@index([entityType, entityId])
   @@index([createdAt])
@@ -1748,6 +1804,7 @@ model Expense {
   projectId           Int?
   costCenterId        Int?
   costCodeId          Int?
+  truckId             Int?
 
   categoryId     Int?
   bankAccountId  Int?
@@ -1770,6 +1827,8 @@ model Expense {
   projectRecord      Project?            @relation(fields: [projectId], references: [id])
   projectCostCenter  CostCenter?         @relation(fields: [costCenterId], references: [id])
   costCode           CostCode?           @relation(fields: [costCodeId], references: [id])
+  truck              Truck?              @relation(fields: [truckId], references: [id])
+  allocations        ExpenseAllocation[]
 
   @@index([expenseDate])
   @@index([expenseType])
@@ -1850,9 +1909,70 @@ model CostCenter {
   projectPayrollLines   PayrollLine[]
   projectDocuments      BusinessDocument[]
   projectNotes          DeliveryReceiptNote[]
+  expenseAllocations    ExpenseAllocation[]
 
   @@index([companyId])
   @@index([tenantId, companyId])
+}
+
+model ExpenseAllocation {
+  id              Int      @id @default(autoincrement())
+  tenantId        Int      @default(1)
+  companyId       Int      @default(1)
+  expenseId       Int
+  costCenterId    Int
+  percentage      Decimal
+  amountBeforeVat Decimal
+  vatAmount       Decimal  @default(0)
+  totalAmount     Decimal
+  createdAt       DateTime @default(now())
+
+  expense    Expense    @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  costCenter CostCenter @relation(fields: [costCenterId], references: [id])
+
+  @@unique([expenseId, costCenterId])
+  @@index([tenantId, companyId, costCenterId])
+}
+
+model InventoryCount {
+  id            Int                  @id @default(autoincrement())
+  tenantId      Int                  @default(1)
+  companyId     Int                  @default(1)
+  countNumber   String
+  countDate     DateTime
+  frequency     String
+  ownershipType String               @default("COMPANY")
+  partyId       Int?
+  status        String               @default("DRAFT")
+  approvedAt    DateTime?
+  approvedBy    String?
+  notes         String?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  lines         InventoryCountLine[]
+
+  @@unique([tenantId, companyId, countNumber])
+  @@index([tenantId, companyId, countDate, status])
+}
+
+model InventoryCountLine {
+  id                   Int     @id @default(autoincrement())
+  tenantId             Int     @default(1)
+  companyId            Int     @default(1)
+  inventoryCountId     Int
+  itemId               Int
+  systemQuantity       Decimal
+  countedQuantity      Decimal
+  variance             Decimal
+  unitCost             Decimal @default(0)
+  adjustmentMovementId Int?
+  notes                String?
+
+  inventoryCount InventoryCount @relation(fields: [inventoryCountId], references: [id], onDelete: Cascade)
+  item           Item           @relation(fields: [itemId], references: [id])
+
+  @@unique([inventoryCountId, itemId])
+  @@index([tenantId, companyId, itemId])
 }
 
 model ExpenseCategory {
@@ -2318,7 +2438,7 @@ model Company {
   sessions               AuthSession[]
   importBatches          ImportBatch[]
   legacySourceSystems    LegacySourceSystem[]
-  migrationCertificates MigrationCertificate[]
+  migrationCertificates  MigrationCertificate[]
   importTemplates        ImportTemplate[]
   customFieldDefinitions CustomFieldDefinition[]
   customFieldValues      CustomFieldValue[]
@@ -2369,49 +2489,49 @@ model Company {
 // ============================================================
 
 model ImportBatch {
-  id                Int       @id @default(autoincrement())
-  tenantId          Int       @default(1)
-  companyId         Int       @default(1)
-  batchNumber       String    @unique
-  targetType        String
-  importMode        String    @default("FULL")
-  duplicateStrategy String    @default("SKIP")
-  sourceSystemId    Int?
-  legacySystem      String    @default("GENERIC")
-  sourceFile        String
-  fileHash          String
-  status            String    @default("PREVIEW")
-  cutoverDate       DateTime?
-  mappingJson       String    @default("{}")
-  sheetsJson        String    @default("[]")
-  summaryJson       String    @default("{}")
-  impactJson        String    @default("{}")
-  reconciliationJson String  @default("{}")
-  totalRows         Int       @default(0)
-  validRows         Int       @default(0)
-  invalidRows       Int       @default(0)
-  duplicateRows     Int       @default(0)
-  warningRows       Int       @default(0)
-  createdRows       Int       @default(0)
-  updatedRows       Int       @default(0)
-  skippedRows       Int       @default(0)
-  createdBy         String?
-  dryRunAt          DateTime?
-  approvedAt        DateTime?
-  approvedBy        String?
-  executedAt        DateTime?
-  rolledBackAt      DateTime?
-  rollbackStatus    String    @default("AVAILABLE")
+  id                    Int       @id @default(autoincrement())
+  tenantId              Int       @default(1)
+  companyId             Int       @default(1)
+  batchNumber           String    @unique
+  targetType            String
+  importMode            String    @default("FULL")
+  duplicateStrategy     String    @default("SKIP")
+  sourceSystemId        Int?
+  legacySystem          String    @default("GENERIC")
+  sourceFile            String
+  fileHash              String
+  status                String    @default("PREVIEW")
+  cutoverDate           DateTime?
+  mappingJson           String    @default("{}")
+  sheetsJson            String    @default("[]")
+  summaryJson           String    @default("{}")
+  impactJson            String    @default("{}")
+  reconciliationJson    String    @default("{}")
+  totalRows             Int       @default(0)
+  validRows             Int       @default(0)
+  invalidRows           Int       @default(0)
+  duplicateRows         Int       @default(0)
+  warningRows           Int       @default(0)
+  createdRows           Int       @default(0)
+  updatedRows           Int       @default(0)
+  skippedRows           Int       @default(0)
+  createdBy             String?
+  dryRunAt              DateTime?
+  approvedAt            DateTime?
+  approvedBy            String?
+  executedAt            DateTime?
+  rolledBackAt          DateTime?
+  rollbackStatus        String    @default("AVAILABLE")
   rollbackBlockedReason String?
-  failureReason     String?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  failureReason         String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
-  company Company            @relation(fields: [companyId], references: [id])
-  sourceSystem LegacySourceSystem? @relation(fields: [sourceSystemId], references: [id])
-  rows    ImportRow[]
-  links   LegacyRecordLink[]
-  referenceSnapshots   LegacyReferenceSnapshot[]
+  company               Company                   @relation(fields: [companyId], references: [id])
+  sourceSystem          LegacySourceSystem?       @relation(fields: [sourceSystemId], references: [id])
+  rows                  ImportRow[]
+  links                 LegacyRecordLink[]
+  referenceSnapshots    LegacyReferenceSnapshot[]
   migrationCertificates MigrationCertificate[]
 
   @@index([tenantId, companyId, createdAt])
@@ -2440,8 +2560,8 @@ model ImportRow {
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
-  batch ImportBatch       @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
-  link  LegacyRecordLink?
+  batch             ImportBatch              @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  link              LegacyRecordLink?
   referenceSnapshot LegacyReferenceSnapshot?
 
   @@unique([importBatchId, sourceSheet, sourceRow])
@@ -2478,20 +2598,20 @@ model LegacyRecordLink {
 }
 
 model ImportTemplate {
-  id          Int      @id @default(autoincrement())
-  tenantId    Int      @default(1)
-  companyId   Int      @default(1)
-  targetType  String
-  sourceSystemId Int?
+  id                Int      @id @default(autoincrement())
+  tenantId          Int      @default(1)
+  companyId         Int      @default(1)
+  targetType        String
+  sourceSystemId    Int?
   headerFingerprint String?
-  name        String
-  mappingJson String   @default("{}")
-  isDefault   Boolean  @default(false)
-  createdBy   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  name              String
+  mappingJson       String   @default("{}")
+  isDefault         Boolean  @default(false)
+  createdBy         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  company Company @relation(fields: [companyId], references: [id])
+  company      Company             @relation(fields: [companyId], references: [id])
   sourceSystem LegacySourceSystem? @relation(fields: [sourceSystemId], references: [id])
 
   @@unique([tenantId, companyId, targetType, name])
@@ -2500,40 +2620,40 @@ model ImportTemplate {
 }
 
 model LegacySourceSystem {
-  id              Int      @id @default(autoincrement())
-  tenantId        Int      @default(1)
-  companyId       Int      @default(1)
-  code            String
-  name            String
-  vendor          String?
-  version         String?
-  description     String?
-  detectionJson   String   @default("{}")
-  isActive        Boolean  @default(true)
-  createdBy       String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id            Int      @id @default(autoincrement())
+  tenantId      Int      @default(1)
+  companyId     Int      @default(1)
+  code          String
+  name          String
+  vendor        String?
+  version       String?
+  description   String?
+  detectionJson String   @default("{}")
+  isActive      Boolean  @default(true)
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  company         Company          @relation(fields: [companyId], references: [id])
-  batches         ImportBatch[]
-  templates       ImportTemplate[]
+  company   Company          @relation(fields: [companyId], references: [id])
+  batches   ImportBatch[]
+  templates ImportTemplate[]
 
   @@unique([tenantId, companyId, code])
   @@index([tenantId, companyId, isActive])
 }
 
 model LegacyReferenceSnapshot {
-  id             Int      @id @default(autoincrement())
-  tenantId       Int      @default(1)
-  companyId      Int      @default(1)
-  importBatchId  Int
-  importRowId    Int      @unique
-  reportType     String
-  snapshotDate   DateTime?
-  legacyCode     String?
-  dataJson       String
-  importedBy     String?
-  importedAt     DateTime @default(now())
+  id            Int       @id @default(autoincrement())
+  tenantId      Int       @default(1)
+  companyId     Int       @default(1)
+  importBatchId Int
+  importRowId   Int       @unique
+  reportType    String
+  snapshotDate  DateTime?
+  legacyCode    String?
+  dataJson      String
+  importedBy    String?
+  importedAt    DateTime  @default(now())
 
   batch ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
   row   ImportRow   @relation(fields: [importRowId], references: [id], onDelete: Cascade)
@@ -2929,17 +3049,20 @@ model FiscalYear {
 }
 
 model FiscalPeriod {
-  id           Int       @id @default(autoincrement())
-  fiscalYearId Int
-  periodNumber Int
-  name         String
-  startDate    DateTime
-  endDate      DateTime
-  status       String    @default("OPEN")
-  closedAt     DateTime?
-  closedBy     String?
-  reopenedAt   DateTime?
-  createdAt    DateTime  @default(now())
+  id                  Int       @id @default(autoincrement())
+  fiscalYearId        Int
+  periodNumber        Int
+  name                String
+  startDate           DateTime
+  endDate             DateTime
+  status              String    @default("OPEN")
+  closedAt            DateTime?
+  closedBy            String?
+  reopenedAt          DateTime?
+  closeWarningsJson   String    @default("[]")
+  closeOverrideReason String?
+  closeApprovedBy     String?
+  createdAt           DateTime  @default(now())
 
   fiscalYear     FiscalYear      @relation(fields: [fiscalYearId], references: [id])
   budgetLines    BudgetLine[]
@@ -4026,24 +4149,26 @@ model ManagedDocumentPermission {
 }
 
 model UnifiedApprovalRequest {
-  id            Int                     @id @default(autoincrement())
-  tenantId      Int                     @default(1)
-  companyId     Int                     @default(1)
-  requestNumber String
-  moduleKey     String
-  entityType    String
-  entityId      Int
-  entityNumber  String?
-  title         String
-  requestedBy   Int?
-  currentStep   Int                     @default(1)
-  status        String                  @default("PENDING")
-  amount        Decimal?
-  dueAt         DateTime?
-  createdAt     DateTime                @default(now())
-  updatedAt     DateTime                @updatedAt
-  company       Company                 @relation(fields: [companyId], references: [id])
-  actions       UnifiedApprovalAction[]
+  id               Int                     @id @default(autoincrement())
+  tenantId         Int                     @default(1)
+  companyId        Int                     @default(1)
+  requestNumber    String
+  moduleKey        String
+  entityType       String
+  entityId         Int
+  entityNumber     String?
+  title            String
+  requestedBy      Int?
+  currentStep      Int                     @default(1)
+  status           String                  @default("PENDING")
+  amount           Decimal?
+  dueAt            DateTime?
+  assignedUserId   Int?
+  assignedRoleCode String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  company          Company                 @relation(fields: [companyId], references: [id])
+  actions          UnifiedApprovalAction[]
 
   @@unique([tenantId, companyId, moduleKey, entityType, entityId])
   @@unique([tenantId, companyId, requestNumber])
@@ -4163,19 +4288,19 @@ model IntegrationConnection {
 }
 
 model WebhookEndpoint {
-  id             Int               @id @default(autoincrement())
-  tenantId       Int               @default(1)
-  companyId      Int               @default(1)
-  code           String
-  url            String
-  secretHash     String
+  id              Int               @id @default(autoincrement())
+  tenantId        Int               @default(1)
+  companyId       Int               @default(1)
+  code            String
+  url             String
+  secretHash      String
   encryptedSecret String?
-  eventTypesJson String
-  status         String            @default("ACTIVE")
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  company        Company           @relation(fields: [companyId], references: [id])
-  deliveries     WebhookDelivery[]
+  eventTypesJson  String
+  status          String            @default("ACTIVE")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  company         Company           @relation(fields: [companyId], references: [id])
+  deliveries      WebhookDelivery[]
 
   @@unique([tenantId, companyId, code])
 }
@@ -4205,17 +4330,17 @@ model WebhookDelivery {
 }
 
 model AssistantConversation {
-  id          Int                @id @default(autoincrement())
-  tenantId    Int                @default(1)
-  companyId   Int                @default(1)
+  id          Int                       @id @default(autoincrement())
+  tenantId    Int                       @default(1)
+  companyId   Int                       @default(1)
   userId      Int
   title       String?
-  locale      String             @default("ar")
-  status      String             @default("ACTIVE")
-  contextJson String             @default("{}")
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
-  company     Company            @relation(fields: [companyId], references: [id])
+  locale      String                    @default("ar")
+  status      String                    @default("ACTIVE")
+  contextJson String                    @default("{}")
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+  company     Company                   @relation(fields: [companyId], references: [id])
   messages    AssistantMessage[]
   proposals   AssistantActionProposal[]
 
@@ -4259,22 +4384,22 @@ model AssistantActionProposal {
 }
 
 model ControlAlert {
-  id           Int       @id @default(autoincrement())
-  tenantId     Int       @default(1)
-  companyId    Int       @default(1)
-  alertType    String
-  severity     String    @default("WARNING")
-  title        String
-  description  String
-  entityType   String?
-  entityId     Int?
-  fingerprint  String
-  status       String    @default("OPEN")
-  detectedAt   DateTime  @default(now())
-  resolvedAt   DateTime?
-  resolvedBy   String?
-  resolution   String?
-  company      Company   @relation(fields: [companyId], references: [id])
+  id          Int       @id @default(autoincrement())
+  tenantId    Int       @default(1)
+  companyId   Int       @default(1)
+  alertType   String
+  severity    String    @default("WARNING")
+  title       String
+  description String
+  entityType  String?
+  entityId    Int?
+  fingerprint String
+  status      String    @default("OPEN")
+  detectedAt  DateTime  @default(now())
+  resolvedAt  DateTime?
+  resolvedBy  String?
+  resolution  String?
+  company     Company   @relation(fields: [companyId], references: [id])
 
   @@unique([tenantId, companyId, fingerprint])
   @@index([tenantId, companyId, status, severity, detectedAt])
