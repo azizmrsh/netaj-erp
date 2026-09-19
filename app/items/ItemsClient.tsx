@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type Unit = {
   id: number;
@@ -76,15 +76,16 @@ export default function ItemsClient() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
+  const [page,setPage]=useState(1),[pagination,setPagination]=useState({page:1,pages:1,total:0});
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(emptyForm);
 
-  async function loadData() {
+  const loadData = useCallback(async function loadData() {
     try {
       const [itemsRes, unitsRes, categoriesRes] = await Promise.all([
-        fetch("/api/items", { cache: "no-store" }),
+        fetch(`/api/items?page=${page}&pageSize=50&q=${encodeURIComponent(search)}`, { cache: "no-store" }),
         fetch("/api/units", { cache: "no-store" }),
         fetch("/api/item-categories", { cache: "no-store" }),
       ]);
@@ -95,7 +96,8 @@ export default function ItemsClient() {
         categoriesRes.json(),
       ]);
 
-      setItems(Array.isArray(itemsData) ? itemsData : []);
+      setItems(Array.isArray(itemsData.items) ? itemsData.items : []);
+      if(itemsData.pagination)setPagination(itemsData.pagination);
       setUnits(Array.isArray(unitsData) ? unitsData : []);
       setCategories(Array.isArray(categoriesData) ? categoriesData : []);
     } catch {
@@ -103,58 +105,13 @@ export default function ItemsClient() {
     } finally {
       setLoading(false);
     }
-  }
+  },[page,search]);
 
   useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      fetch("/api/items", { cache: "no-store" }),
-      fetch("/api/units", { cache: "no-store" }),
-      fetch("/api/item-categories", { cache: "no-store" }),
-    ])
-      .then(async ([itemsRes, unitsRes, categoriesRes]) => {
-        const [itemsData, unitsData, categoriesData] = await Promise.all([
-          itemsRes.json(),
-          unitsRes.json(),
-          categoriesRes.json(),
-        ]);
-        if (!cancelled) {
-          setItems(Array.isArray(itemsData) ? itemsData : []);
-          setUnits(Array.isArray(unitsData) ? unitsData : []);
-          setCategories(Array.isArray(categoriesData) ? categoriesData : []);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setMessage("تعذر تحميل بيانات المواد");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    const timer=setTimeout(()=>void loadData(),250);return()=>clearTimeout(timer);
+  }, [loadData]);
 
-  const filteredItems = useMemo(() => {
-    const q = search.trim().toLowerCase();
-
-    if (!q) return items;
-
-    return items.filter((item) =>
-      [
-        item.code,
-        item.nameAr,
-        item.nameEn || "",
-        item.category?.nameAr || "",
-        item.unit?.nameAr || "",
-        item.specification || "",
-        item.manufacturer || "",
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(q)
-    );
-  }, [items, search]);
+  const filteredItems = items;
 
   function openNew() {
     setEditingId(null);
@@ -365,13 +322,13 @@ export default function ItemsClient() {
       <div style={toolbar}>
         <input
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {setSearch(e.target.value);setPage(1)}}
           placeholder="بحث بالكود أو الاسم أو التصنيف أو المواصفة..."
           style={searchInput}
         />
 
         <div style={{ color: "#475569" }}>
-          عدد المواد: <strong>{filteredItems.length}</strong>
+          عدد المواد: <strong>{pagination.total}</strong>
         </div>
       </div>
 
@@ -491,6 +448,7 @@ export default function ItemsClient() {
           </tbody>
         </table>
       </div>
+      <Pagination page={pagination.page} pages={pagination.pages} onChange={setPage}/>
 
       {formOpen && (
         <div style={overlay}>
@@ -689,6 +647,8 @@ export default function ItemsClient() {
     </main>
   );
 }
+
+function Pagination({page,pages,onChange}:{page:number;pages:number;onChange:(page:number)=>void}){if(pages<=1)return null;return <nav aria-label="صفحات المواد" className="mt-4 flex items-center justify-center gap-3"><button disabled={page<=1} onClick={()=>onChange(page-1)} className="rounded-xl border bg-white px-4 py-2 disabled:opacity-40">السابق</button><span className="text-sm text-slate-500">صفحة {page} من {pages}</span><button disabled={page>=pages} onClick={()=>onChange(page+1)} className="rounded-xl border bg-white px-4 py-2 disabled:opacity-40">التالي</button></nav>}
 
 function Field({
   label,

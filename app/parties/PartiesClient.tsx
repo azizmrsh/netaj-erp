@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type Party = {
   id: number;
@@ -52,36 +52,25 @@ export default function PartiesClient() {
   const [message, setMessage] = useState("");
   const [form, setForm] = useState(emptyForm);
   const [customFieldDefinitions, setCustomFieldDefinitions] = useState<CustomField[]>([]);
+  const [search,setSearch]=useState(""),[page,setPage]=useState(1),[pagination,setPagination]=useState({page:1,pages:1,total:0});
 
-  async function loadParties() {
+  const loadParties=useCallback(async function loadParties() {
     try {
-      const res = await fetch("/api/parties");
+      const res = await fetch(`/api/parties?page=${page}&pageSize=50&q=${encodeURIComponent(search)}`);
       const data = await res.json();
-      setParties(Array.isArray(data) ? data : []);
+      setParties(Array.isArray(data.parties) ? data.parties : []);
+      if(data.pagination)setPagination(data.pagination);
     } catch {
       setParties([]);
     } finally {
       setLoading(false);
     }
-  }
+  },[page,search]);
 
   useEffect(() => {
-    let cancelled = false;
-    Promise.all([fetch("/api/parties"), fetch("/api/custom-fields?entityType=PARTY")])
-      .then(async ([partyResponse, fieldResponse]) => [await partyResponse.json(), await fieldResponse.json()])
-      .then(([result, fieldResult]) => {
-        if (!cancelled) { setParties(Array.isArray(result) ? result : []); setCustomFieldDefinitions(Array.isArray(fieldResult) ? fieldResult : []); }
-      })
-      .catch(() => {
-        if (!cancelled) setParties([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    const controller=new AbortController();fetch("/api/custom-fields?entityType=PARTY",{signal:controller.signal}).then(response=>response.json()).then(result=>setCustomFieldDefinitions(Array.isArray(result)?result:[])).catch(()=>undefined);return()=>controller.abort();
   }, []);
+  useEffect(()=>{const timer=setTimeout(()=>void loadParties(),250);return()=>clearTimeout(timer)},[loadParties]);
 
   function updateField(name: string, value: string | boolean) {
     setForm((old) => ({
@@ -146,6 +135,8 @@ export default function PartiesClient() {
 
   return (
     <main dir="rtl" style={{ padding: "32px", fontFamily: "Arial, sans-serif" }}>
+      <div className="premium-panel mb-4 flex flex-wrap items-center gap-3 rounded-2xl border p-4"><input value={search} onChange={event=>{setSearch(event.target.value);setPage(1)}} placeholder="بحث بالاسم أو الرقم الموحد أو الضريبي أو الهاتف…" className="min-w-[240px] flex-1 rounded-xl border px-4 py-3"/><span className="text-sm text-slate-500">إجمالي النتائج: <b>{pagination.total}</b></span></div>
+
       <div
         style={{
           display: "flex",
@@ -470,9 +461,12 @@ export default function PartiesClient() {
           </div>
         )}
       </div>
+      <Pagination page={pagination.page} pages={pagination.pages} onChange={setPage}/>
     </main>
   );
 }
+
+function Pagination({page,pages,onChange}:{page:number;pages:number;onChange:(value:number)=>void}){if(pages<=1)return null;return <nav aria-label="صفحات العملاء والموردين" className="mt-4 flex items-center justify-center gap-3"><button disabled={page<=1} onClick={()=>onChange(page-1)} className="rounded-xl border bg-white px-4 py-2 disabled:opacity-40">السابق</button><span className="text-sm text-slate-500">صفحة {page} من {pages}</span><button disabled={page>=pages} onClick={()=>onChange(page+1)} className="rounded-xl border bg-white px-4 py-2 disabled:opacity-40">التالي</button></nav>}
 
 function Field({
   label,

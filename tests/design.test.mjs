@@ -36,8 +36,9 @@ test("المستند الصادر يحتفظ بقالب وبيانات وchecksu
 });
 
 test("الثيم يحفظ الهوية الآمنة والاتجاه المرئي دون المساس بمنطق الأعمال", async () => {
-  const theme = await prisma.$transaction((tx) => saveTheme(tx, { tenantId: 1, companyId: 1, themePreset: "MODERN", mode: "DARK", primaryColor: "#123456", secondaryColor: "#234567", accentColor: "#345678", logoUrl: "javascript:bad", fontArabic: "Tajawal", sidebarStyle: "SOFT", cardStyle: "ELEVATED", tableStyle: "BORDERED" }, "test"));
+  const theme = await prisma.$transaction((tx) => saveTheme(tx, { tenantId: 1, companyId: 1, themePreset: "MODERN", mode: "DARK", primaryColor: "#123456", secondaryColor: "#234567", accentColor: "#345678", backgroundColor: "#f8f5ee", sidebarColor: "#fffdf8", chartStyle: "DIMENSIONAL", logoUrl: "javascript:bad", fontArabic: "Tajawal", sidebarStyle: "SOFT", cardStyle: "ELEVATED", tableStyle: "BORDERED" }, "test"));
   assert.equal(theme.themePreset, "MODERN"); assert.equal(theme.mode, "DARK"); assert.equal(theme.logoUrl, null); assert.equal(theme.primaryColor, "#123456");
+  assert.equal(theme.backgroundColor, "#f8f5ee"); assert.equal(theme.sidebarColor, "#fffdf8"); assert.equal(theme.chartStyle, "DIMENSIONAL");
 });
 
 test("منشئ اللوحات يحفظ عناصر فعلية مرتبة ومقيدة بمصادر مسموحة", async () => {

@@ -227,7 +227,7 @@ try {
   assert.equal(previewImportBody.validRows, 1, `unexpected import preview: ${JSON.stringify(previewImportBody)}`);
   const executeImport = await jsonRequest(`/api/imports/${previewImportBody.id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "EXECUTE" }) });
   assert.equal(executeImport.response.status, 200); assert.equal(executeImport.body.createdRows, 1);
-  const importedParty = (await jsonRequest("/api/parties")).body.find((row) => row.unifiedNumber === `SMOKE-IMP-${suffix}`);
+  const importedParty = (await jsonRequest(`/api/parties?q=${encodeURIComponent(`SMOKE-IMP-${suffix}`)}`)).body.parties.find((row) => row.unifiedNumber === `SMOKE-IMP-${suffix}`);
   assert.ok(importedParty);
   const rollbackImport = await jsonRequest(`/api/imports/${previewImportBody.id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "ROLLBACK" }) });
   assert.equal(rollbackImport.response.status, 200); assert.equal(rollbackImport.body.status, "ROLLED_BACK");
@@ -382,7 +382,7 @@ try {
   });
   assert.equal(secondParty.response.status, 201);
   const secondPartyList = await jsonRequest("/api/parties");
-  assert.equal(secondPartyList.body.some((row) => row.id === partyResult.body.id), false);
+  assert.equal(secondPartyList.body.parties.some((row) => row.id === partyResult.body.id), false);
   const forbiddenDirectRead = await jsonRequest(`/api/parties/${partyResult.body.id}`);
   assert.equal(forbiddenDirectRead.response.status, 404);
   const forbiddenDirectUpdate = await jsonRequest(`/api/parties/${partyResult.body.id}`, {
@@ -409,8 +409,8 @@ try {
   });
   assert.equal(switchBack.response.status, 200);
   const firstPartyList = await jsonRequest("/api/parties");
-  assert.equal(firstPartyList.body.some((row) => row.id === secondParty.body.id), false);
-  assert.equal(firstPartyList.body.find((row) => row.id === partyResult.body.id)?.isActive, true);
+  assert.equal(firstPartyList.body.parties.some((row) => row.id === secondParty.body.id), false);
+  assert.equal(firstPartyList.body.parties.find((row) => row.id === partyResult.body.id)?.isActive, true);
   const forbiddenReverseRead = await jsonRequest(`/api/parties/${secondParty.body.id}`);
   assert.equal(forbiddenReverseRead.response.status, 404);
   const financeWorkspace = await jsonRequest("/api/finance");

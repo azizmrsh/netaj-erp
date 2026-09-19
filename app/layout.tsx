@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import ThemeRuntime from "./components/ThemeRuntime";
 import ServiceWorkerRegistration from "./components/ServiceWorkerRegistration";
+import AppShell from "./components/AppShell";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -26,7 +27,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       dir="rtl"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col"><ThemeRuntime /><ServiceWorkerRegistration />{children}</body>
+      <body className="min-h-full"><ThemeRuntime /><ServiceWorkerRegistration /><AppShell>{children}</AppShell></body>
     </html>
   );
 }

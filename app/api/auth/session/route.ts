@@ -5,6 +5,7 @@ import { authErrorResponse, resolveAuthContext, sessionTokenFromRequest } from "
 export async function GET(request: Request) {
   try {
     const context = await prisma.$transaction((tx) => resolveAuthContext(tx, sessionTokenFromRequest(request)));
+    const planModules = new Set(context.subscription?.plan.modules.filter((row) => row.enabled).map((row) => row.moduleKey) ?? []);
     return NextResponse.json({
       userId: context.userId,
       userName: context.userName,
@@ -13,7 +14,7 @@ export async function GET(request: Request) {
       companyCode: context.companyCode,
       availableCompanies: context.availableCompanies,
       permissions: [...context.permissions],
-      modules: [...context.companyModules.entries()].filter(([, enabled]) => enabled).map(([key]) => key),
+      modules: [...context.companyModules.entries()].filter(([key, enabled]) => enabled && planModules.has(key)).map(([key]) => key),
     });
   } catch (error) {
     const response = authErrorResponse(error);

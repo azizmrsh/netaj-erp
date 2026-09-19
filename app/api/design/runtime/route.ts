@@ -7,7 +7,7 @@ const parse = <T>(value: string, fallback: T) => { try { return JSON.parse(value
 
 export async function GET(request: Request) {
   try {
-    const auth = await authorizeRequest(request, { moduleKey: "DESIGN", action: "READ" });
+    const auth = await authorizeRequest(request, { moduleKey: "CORE", action: "READ" });
     const [theme, dashboards, company] = await Promise.all([
       prisma.companyThemeProfile.findFirst(),
       prisma.dashboardDefinition.findMany({ where: { isActive: true }, include: { widgets: { where: { isActive: true }, orderBy: { position: "asc" } } }, orderBy: [{ isDefault: "desc" }, { name: "asc" }] }),

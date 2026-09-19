@@ -6,14 +6,12 @@ const includeRelations = {
   category: true,
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const items = await prisma.item.findMany({
-      include: includeRelations,
-      orderBy: { id: "desc" },
-    });
+    const params=new URL(request.url).searchParams,page=Math.max(1,Number(params.get("page"))||1),pageSize=Math.min(100,Math.max(10,Number(params.get("pageSize"))||50)),q=String(params.get("q")??"").trim(),where=q?{OR:[{code:{contains:q}},{nameAr:{contains:q}},{nameEn:{contains:q}},{specification:{contains:q}},{manufacturer:{contains:q}},{category:{nameAr:{contains:q}}},{unit:{nameAr:{contains:q}}}]}:{};
+    const [items,total] = await Promise.all([prisma.item.findMany({where,include:includeRelations,orderBy:{id:"desc"},skip:(page-1)*pageSize,take:pageSize}),prisma.item.count({where})]);
 
-    return NextResponse.json(items);
+    return NextResponse.json({items,pagination:{page,pageSize,total,pages:Math.max(1,Math.ceil(total/pageSize))}});
   } catch (error) {
     console.error(error);
     return NextResponse.json(

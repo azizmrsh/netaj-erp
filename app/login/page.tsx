@@ -1,5 +1,6 @@
 import LoginForm from "./LoginForm";
+import Image from "next/image";
 
 export default function LoginPage() {
-  return <main dir="rtl" className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-slate-100"><LoginForm /></main>;
+  return <main dir="rtl" className="relative grid min-h-screen overflow-hidden bg-[#f8f5ee] lg:grid-cols-[1.05fr_.95fr]"><section className="relative hidden min-h-screen overflow-hidden lg:block"><Image src="/media/netaj-industrial-hero.png" alt="منشأة صناعية ولوجستية" fill priority sizes="55vw" className="object-cover"/><div className="absolute inset-0 bg-gradient-to-t from-[#111c2e]/90 via-[#172235]/35 to-transparent"/><div className="absolute inset-x-0 bottom-0 z-10 p-12 text-white"><p className="text-sm font-bold text-amber-200">POWERFUL INSIDE. VERY EASY OUTSIDE.</p><h2 className="mt-3 max-w-2xl text-4xl font-black leading-tight">كل عمليات الشركة، مترابطة من إدخال واحد.</h2><p className="mt-4 max-w-xl leading-7 text-slate-200">من المصنع والمخزون إلى المالية والنقل والمشاريع — رؤية موحدة وآمنة لكل قرار.</p></div></section><section className="relative flex items-center justify-center p-5 md:p-10"><div className="absolute -right-28 top-10 h-72 w-72 rounded-full bg-[#d6ab56]/15 blur-3xl"/><div className="absolute -left-20 bottom-10 h-64 w-64 rounded-full bg-[#172235]/8 blur-3xl"/><LoginForm /></section></main>;
 }

@@ -14,5 +14,5 @@ export default async function HomePage() {
   const enabledModules = [...context.companyModules.entries()]
     .filter(([key, enabled]) => enabled && planModules.has(key))
     .map(([key]) => key);
-  return <DashboardClient enabledModules={enabledModules} companyName={context.companyCode} userName={context.userName} />;
+  return <DashboardClient enabledModules={enabledModules} companyName={context.companyCode} />;
 }

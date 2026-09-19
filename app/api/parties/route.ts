@@ -4,18 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { ConfigurationError, saveCustomFieldValues } from "@/lib/configuration";
 import { audit } from "@/lib/audit";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const parties = await prisma.party.findMany({
-      include: {
-        address: true,
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+    const params=request.nextUrl.searchParams,page=Math.max(1,Number(params.get("page"))||1),pageSize=Math.min(100,Math.max(10,Number(params.get("pageSize"))||50)),q=String(params.get("q")??"").trim(),where=q?{OR:[{nameAr:{contains:q}},{nameEn:{contains:q}},{unifiedNumber:{contains:q}},{vatNumber:{contains:q}},{telephone:{contains:q}},{email:{contains:q}}]}:{};
+    const [parties,total] = await Promise.all([prisma.party.findMany({where,include:{address:true},orderBy:{createdAt:"desc"},skip:(page-1)*pageSize,take:pageSize}),prisma.party.count({where})]);
 
-    return NextResponse.json(parties);
+    return NextResponse.json({parties,pagination:{page,pageSize,total,pages:Math.max(1,Math.ceil(total/pageSize))}});
   } catch (error) {
     console.error(error);
 

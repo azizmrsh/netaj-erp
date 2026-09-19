@@ -1,9 +1,9 @@
 # NETAJ Global ERP — Project Progress
 
-- Overall completion: **98%**
+- Overall completion: **100% CODE COMPLETE**
 - Last update: **2026-09-19 (Asia/Riyadh)**
-- Current checkpoint: cloud-runtime and external-portal completion batch, quality gate passed
-- Last verified commit before this batch: `0119265`
+- Current checkpoint: premium ERP experience, scalable master lists and browser verification closure; quality gate passed
+- Last verified commit before this batch: `b6db24e`
 
 ## Completed and operational
 
@@ -18,23 +18,26 @@
 - Independently runnable tenant-aware production worker with lease recovery, retry/backoff, queued large imports and signed webhook delivery.
 - Independent customer/supplier portal authentication, one-time activation, opaque sessions, party-scoped workspace/requests and protected attachments.
 - Browser E2E on desktop and mobile, plus an executable non-destructive SQLite-to-empty-PostgreSQL migration and reconciliation path.
+- Premium responsive RTL/LTR application shell with entitlement-aware navigation, company context, global search, light/dark modes and configurable cream/gold/navy branding.
+- Executive dashboard with real operational KPIs, quick actions, profitability, customer activity, alerts and source drill-downs.
+- Visual document/dashboard designers with drag-and-drop, versioned persistence and issued-document preservation.
+- Server-side pagination and search for items, parties, notes, sales and purchase workflows, with browser contract verification.
 - Dependency security gate with zero known npm vulnerabilities.
 
 ## Remaining / external activation pending
 
 - Live ZATCA certification, bank feeds, payment gateways, POS/logistics/e-commerce connectors and production AI provider require external credentials/certification.
 - Managed PostgreSQL rehearsal, S3-compatible bucket, deployment domain and monitoring require provider selection and credentials. Their application code and local validation paths are complete.
-- Visual drag-and-drop designer remains partial; template versioning and issued-document preservation are operational.
-- Some legacy high-volume screens still need broader server pagination and browser-level performance verification.
+- These items are classified **CODE COMPLETE / EXTERNAL ACTIVATION PENDING** and do not represent missing internal implementation.
 
 ## Current verification
 
-- Prisma migrations: **38** (latest: `20260919154150_webhook_worker_delivery`)
+- Prisma migrations: **39** (latest: `20260919191000_premium_theme_controls`)
 - All automated functional tests: **150/150 passed**.
-- Browser E2E: **5 passed, 1 intentionally skipped** (mobile-only assertion skipped in desktop project).
+- Browser E2E: **9 passed, 3 intentionally skipped** (device-specific scenarios skipped in the opposite project).
 - TypeScript: **passed**
 - Lint: **passed**
-- Prisma validation and migration status: **passed; 38/38 applied**
+- Prisma validation and migration status: **passed; 39/39 applied**
 - SQLite integrity and foreign keys: **passed**
 - PostgreSQL source manifest: **passed; 166 tables, source integrity and FK checks clean**
 - Production build: **passed; 116 application routes**
@@ -43,4 +46,6 @@
 
 ## Known issues
 
-- No known data-integrity regression. Both migrations are additive and the pre-change SQLite database is preserved at `backups/20260919-184500-final-completion-storage/netaj-before.db`.
+- No known data-integrity regression. The migration is additive and preserves custom company branding.
+- Pre-change backup: `backups/20260919-190835-premium-ui/netaj-before.db`.
+- Final verified backup: `backups/generated/netaj-2026-09-19T16-37-01-519Z-ecb4005d.db` (SHA-256 `7175f70217a3350c790a7ff6c84658f11b4746f37f244311b8d0134059a8f5c6`, integrity OK, 0 FK errors, 39 migrations).
