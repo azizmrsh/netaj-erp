@@ -57,6 +57,9 @@ export type WorkflowInput = {
   requester: string | null;
   department: string | null;
   costCenter: string | null;
+  projectId: number | null;
+  costCenterId: number | null;
+  costCodeId: number | null;
   priority: string | null;
   currency: string;
   bankDetails: string | null;
@@ -119,7 +122,8 @@ export function parseWorkflowInput(value: unknown, forcedType?: WorkflowDocument
   return {
     documentType, documentDate, expiryDate: date(body.expiryDate), neededDate: date(body.neededDate), partyId,
     referenceNumber: clean(body.referenceNumber), salesperson: clean(body.salesperson), requester: clean(body.requester),
-    department: clean(body.department), costCenter: clean(body.costCenter), priority: clean(body.priority), currency,
+    department: clean(body.department), costCenter: clean(body.costCenter), projectId: body.projectId ? Number(body.projectId) : null,
+    costCenterId: body.costCenterId ? Number(body.costCenterId) : null, costCodeId: body.costCodeId ? Number(body.costCodeId) : null, priority: clean(body.priority), currency,
     bankDetails: clean(body.bankDetails), paymentTerms: clean(body.paymentTerms), deliveryTime: clean(body.deliveryTime),
     deliveryPlace: clean(body.deliveryPlace), deliveryTerms: clean(body.deliveryTerms), notes: clean(body.notes), lines,
   };
@@ -154,6 +158,10 @@ async function validatePartyAndItems(tx: Prisma.TransactionClient, input: Workfl
   }
   const currency = await tx.currency.findUnique({ where: { code: input.currency } });
   if (!currency?.isActive) throw new WorkflowError("INVALID_INPUT", "العملة غير معرفة أو غير نشطة");
+  if (input.projectId) {
+    const [project, costCode] = await Promise.all([tx.project.findUnique({ where: { id: input.projectId } }), input.costCodeId ? tx.costCode.findUnique({ where: { id: input.costCodeId } }) : null]);
+    if (!project || project.costCenterId !== input.costCenterId || !costCode) throw new WorkflowError("INVALID_INPUT", "أبعاد المشروع غير صحيحة");
+  }
 }
 
 export async function createBusinessDocument(tx: Prisma.TransactionClient, input: WorkflowInput, sourceDocumentId?: number | null) {
@@ -166,6 +174,7 @@ export async function createBusinessDocument(tx: Prisma.TransactionClient, input
       documentDate: input.documentDate, expiryDate: input.expiryDate, neededDate: input.neededDate,
       partyId: input.partyId, sourceDocumentId: sourceDocumentId ?? null, referenceNumber: input.referenceNumber,
       salesperson: input.salesperson, requester: input.requester, department: input.department, costCenter: input.costCenter,
+      projectId: input.projectId, costCenterId: input.costCenterId, costCodeId: input.costCodeId,
       priority: input.priority, currency: input.currency, bankDetails: input.bankDetails, paymentTerms: input.paymentTerms,
       deliveryTime: input.deliveryTime, deliveryPlace: input.deliveryPlace, deliveryTerms: input.deliveryTerms,
       notes: input.notes, ...totals(input.lines), status: "DRAFT",
@@ -186,7 +195,7 @@ export async function updateBusinessDocument(tx: Prisma.TransactionClient, id: n
   const document = await tx.businessDocument.update({ where: { id }, data: {
     documentDate: input.documentDate, expiryDate: input.expiryDate, neededDate: input.neededDate, partyId: input.partyId,
     referenceNumber: input.referenceNumber, salesperson: input.salesperson, requester: input.requester, department: input.department,
-    costCenter: input.costCenter, priority: input.priority, currency: input.currency, bankDetails: input.bankDetails,
+    costCenter: input.costCenter, projectId: input.projectId, costCenterId: input.costCenterId, costCodeId: input.costCodeId, priority: input.priority, currency: input.currency, bankDetails: input.bankDetails,
     paymentTerms: input.paymentTerms, deliveryTime: input.deliveryTime, deliveryPlace: input.deliveryPlace,
     deliveryTerms: input.deliveryTerms, notes: input.notes, ...totals(input.lines),
     lines: { deleteMany: {}, create: input.lines.map((line, index) => ({ sequence: index + 1, ...line })) },
@@ -199,7 +208,8 @@ function inputFromDocument(source: Prisma.BusinessDocumentGetPayload<{ include: 
   return {
     documentType: target, documentDate: new Date(), expiryDate: source.expiryDate, neededDate: source.neededDate,
     partyId: source.partyId, referenceNumber: source.documentNumber, salesperson: source.salesperson,
-    requester: source.requester, department: source.department, costCenter: source.costCenter, priority: source.priority,
+    requester: source.requester, department: source.department, costCenter: source.costCenter, projectId: source.projectId,
+    costCenterId: source.costCenterId, costCodeId: source.costCodeId, priority: source.priority,
     currency: source.currency, bankDetails: source.bankDetails, paymentTerms: source.paymentTerms,
     deliveryTime: source.deliveryTime, deliveryPlace: source.deliveryPlace, deliveryTerms: source.deliveryTerms,
     notes: source.notes, lines: source.lines.map((line) => ({ itemId: line.itemId, lineType: line.lineType as "ITEM" | "SERVICE",
@@ -261,7 +271,7 @@ export async function convertBusinessDocument(tx: Prisma.TransactionClient, id: 
       materialGrade: line.materialGrade, orderNumber: source.documentNumber, quantity: Number(line.quantity) })),
   };
   const note = await createNote(tx, noteInput);
-  const linked = await tx.deliveryReceiptNote.update({ where: { id: note.id }, data: { sourceDocumentId: source.id } });
+  const linked = await tx.deliveryReceiptNote.update({ where: { id: note.id }, data: { sourceDocumentId: source.id, projectId: source.projectId, costCenterId: source.costCenterId, costCodeId: source.costCodeId } });
   await audit(tx, { action: "CONVERT", entityType: source.documentType, entityId: source.id, metadata: { target: normalizedTarget, noteId: note.id } });
   return { note: linked, created: true };
 }
@@ -284,6 +294,7 @@ export async function createFinalInvoiceFromNote(tx: Prisma.TransactionClient, n
     const invoiceNumber = await nextDocumentNumber(tx, "INV");
     const invoice = await tx.sale.create({ data: {
       invoiceNumber, invoiceDate: new Date(), partyId: note.partyId, sourceOrderId: order.id, deliveryNoteId: note.id,
+      projectId: order.projectId, costCenterId: order.costCenterId, costCodeId: order.costCodeId,
       currency: order.currency,
       referenceNumber: note.referenceNumber, purchaseOrderNumber: order.referenceNumber, paymentMethod: clean(options.paymentMethod),
       dueDate: date(options.dueDate), ...calculated, status: "COMPLETED", notes: clean(options.notes) ?? order.notes,
@@ -299,6 +310,7 @@ export async function createFinalInvoiceFromNote(tx: Prisma.TransactionClient, n
   const purchaseNumber = await nextDocumentNumber(tx, "INV");
   const invoice = await tx.purchase.create({ data: {
     purchaseNumber, purchaseDate: new Date(), partyId: note.partyId, sourceOrderId: order.id, receiptNoteId: note.id,
+    projectId: order.projectId, costCenterId: order.costCenterId, costCodeId: order.costCodeId,
     currency: order.currency,
     supplierInvoiceNumber: clean(options.supplierInvoiceNumber), referenceNumber: note.referenceNumber,
     dueDate: date(options.dueDate), paymentMethod: clean(options.paymentMethod), ...calculated,

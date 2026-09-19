@@ -1,0 +1,2 @@
+import{NextResponse}from"next/server";import{prisma}from"@/lib/prisma";import{linkProjectCost,projectErrorResponse}from"@/lib/projects";
+export async function POST(request:Request){try{const body=await request.json(),row=await prisma.$transaction(tx=>linkProjectCost(tx,body));return NextResponse.json(row)}catch(error){console.error(error);const r=projectErrorResponse(error);return NextResponse.json({error:r.message,code:r.code},{status:r.status})}}

@@ -19,6 +19,7 @@ function requiredModule(path: string) {
   if (path.startsWith("/api/factory") || path.startsWith("/factory")) return "FACTORY";
   if (path.startsWith("/api/hr") || path.startsWith("/hr")) return "HR";
   if (path.startsWith("/api/external") || path.startsWith("/external")) return "EXTERNAL";
+  if (path.startsWith("/api/projects") || path.startsWith("/projects")) return "PROJECTS";
   return "CORE";
 }
 

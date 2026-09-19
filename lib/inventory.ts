@@ -16,6 +16,9 @@ export type StockMovementInput = {
   referenceType?: string | null;
   referenceId?: number | null;
   referenceNumber?: string | null;
+  projectId?: number | null;
+  costCenterId?: number | null;
+  costCodeId?: number | null;
   notes?: string | null;
 };
 
@@ -216,6 +219,9 @@ export async function applyStockMovement(
       referenceType: input.referenceType ?? null,
       referenceId: input.referenceId ?? null,
       referenceNumber: input.referenceNumber ?? null,
+      projectId: input.projectId ?? null,
+      costCenterId: input.costCenterId ?? null,
+      costCodeId: input.costCodeId ?? null,
       notes: input.notes ?? null,
     },
   });

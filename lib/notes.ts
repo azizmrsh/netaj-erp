@@ -360,6 +360,9 @@ export async function postNote(tx: Prisma.TransactionClient, noteId: number) {
         referenceType: "DELIVERY_RECEIPT_NOTE",
         referenceId: note.id,
         referenceNumber: note.noteNumber,
+        projectId: note.projectId,
+        costCenterId: note.costCenterId,
+        costCodeId: note.costCodeId,
         notes: note.notes,
       });
     }
@@ -396,6 +399,9 @@ export async function postNote(tx: Prisma.TransactionClient, noteId: number) {
         source: note.source,
         loadingPoint: note.loadingPoint,
         unloadingPoint: note.unloadingPoint,
+        projectId: note.projectId,
+        costCenterId: note.costCenterId,
+        costCodeId: note.costCodeId,
         status: "OPEN",
         notes: `أُنشئت تلقائيًا من السند ${note.noteNumber}`,
       },

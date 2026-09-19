@@ -15,6 +15,9 @@ export const scopedModels = new Set([
   "CreditDebitNote", "AccountingAdjustment", "AccountingAdjustmentLine",
   "ExchangeRate", "FxRevaluation", "FxRevaluationLine", "Budget", "BudgetLine",
   "FactoryProductionTarget", "EquipmentReading",
+  "CostCode", "Project", "ProjectContract", "ProjectBoqItem", "ProjectCostBudget",
+  "ProjectChangeOrder", "ProjectChangeOrderLine", "ProjectProgress", "ProgressCertificate",
+  "ProgressCertificateLine", "SubcontractorContract", "SubcontractorCertificate",
 ]);
 
 export async function getVerifiedDataScope(): Promise<DataScope> {

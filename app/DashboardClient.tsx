@@ -9,6 +9,7 @@ const menu = [
   ["العملاء والموردون", "/parties", "CORE"], ["المواد", "/items", "CORE"], ["المبيعات", "/sales", "SALES"], ["المشتريات", "/purchases", "PURCHASES"],
   ["المخزون", "/inventory", "INVENTORY"], ["المصنع", "/factory", "FACTORY"], ["السندات", "/notes", "NOTES"], ["النقليات", "/transport", "TRANSPORT"],
   ["المحاسبة والمالية", "/accounting", "ACCOUNTING"], ["الموارد البشرية", "/hr", "HR"], ["الأعمال الخارجية", "/external", "EXTERNAL"], ["التقارير والمقارنات", "/reports", "CORE"],
+  ["المشاريع والمقاولات", "/projects", "PROJECTS"],
   ["المستخدمون والصلاحيات", "/settings/users", "CORE"], ["إعدادات المؤسسة", "/settings/organization", "CORE"],
 ] as const;
 const money=(value:unknown)=>`${Number(value??0).toLocaleString("ar-SA",{minimumFractionDigits:2,maximumFractionDigits:2})} ر.س`;

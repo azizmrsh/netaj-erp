@@ -115,6 +115,7 @@ export type JournalLineInput = {
   partyId?: number | null;
   costCenter?: string | null;
   costCenterId?: number | null;
+  costCodeId?: number | null;
   departmentId?: number | null;
   projectCode?: string | null;
   description?: string;
@@ -207,6 +208,7 @@ export async function createBalancedJournal(
           partyId: line.partyId ?? null,
           costCenter: line.costCenter ?? null,
           costCenterId: line.costCenterId ?? null,
+          costCodeId: line.costCodeId ?? null,
           departmentId: line.departmentId ?? null,
           projectCode: line.projectCode ?? null,
           description: line.description ?? input.description,
@@ -258,7 +260,7 @@ export async function reverseJournalEntry(
         accountName: line.accountName, debit: line.credit, credit: line.debit, partyId: line.partyId,
         transactionDebit: line.transactionCredit, transactionCredit: line.transactionDebit,
         transactionCurrencyCode: line.transactionCurrencyCode, exchangeRate: line.exchangeRate,
-        costCenter: line.costCenter, costCenterId: line.costCenterId, departmentId: line.departmentId, projectCode: line.projectCode,
+        costCenter: line.costCenter, costCenterId: line.costCenterId, costCodeId: line.costCodeId, departmentId: line.departmentId, projectCode: line.projectCode,
         description: `عكس ${line.description ?? original.description ?? "القيد"}` })) },
     },
     include: { lines: true },
@@ -278,6 +280,7 @@ export async function postSalesInvoiceJournal(tx: TransactionClient, saleId: num
   const functionalBeforeVat = functionalAmount(beforeVat, fx.rate);
   const functionalVat = functionalAmount(sale.vatAmount, fx.rate);
   const functionalTotal = functionalAmount(sale.totalAmount, fx.rate);
+  const dimension = sale.projectId ? { projectCode: (await tx.project.findUnique({ where: { id: sale.projectId }, select: { projectNumber: true } }))?.projectNumber, costCenterId: sale.costCenterId, costCodeId: sale.costCodeId } : {};
   await tx.sale.update({ where: { id: sale.id }, data: { exchangeRate: fx.rate, rateDate: fx.rateDate,
     functionalSubtotal: functionalAmount(sale.subtotal, fx.rate), functionalDiscount: functionalAmount(sale.discount, fx.rate),
     functionalVatAmount: functionalVat, functionalTotalAmount: functionalTotal } });
@@ -292,10 +295,10 @@ export async function postSalesInvoiceJournal(tx: TransactionClient, saleId: num
     exchangeRate: fx.rate,
     rateDate: fx.rateDate,
     lines: [
-      { mappingKey: "ACCOUNTS_RECEIVABLE", debit: functionalTotal, transactionDebit: sale.totalAmount, partyId: sale.partyId },
-      { mappingKey: sale.factoryTransactionId ? "FACTORY_MANUFACTURING_REVENUE" : "SALES_REVENUE", credit: functionalBeforeVat, transactionCredit: beforeVat },
-      { mappingKey: "VAT_PAYABLE", credit: functionalVat, transactionCredit: sale.vatAmount },
-    ].filter((line) => !new Prisma.Decimal(line.debit ?? line.credit ?? 0).isZero()),
+      { mappingKey: "ACCOUNTS_RECEIVABLE", debit: functionalTotal, transactionDebit: sale.totalAmount, partyId: sale.partyId, ...dimension },
+      { mappingKey: sale.factoryTransactionId ? "FACTORY_MANUFACTURING_REVENUE" : "SALES_REVENUE", credit: functionalBeforeVat, transactionCredit: beforeVat, ...dimension },
+      { mappingKey: "VAT_PAYABLE", credit: functionalVat, transactionCredit: sale.vatAmount, ...dimension },
+    ].filter((line) => !new Prisma.Decimal("debit" in line ? line.debit : line.credit).isZero()),
   });
 }
 
@@ -309,6 +312,7 @@ export async function postSupplierInvoiceJournal(tx: TransactionClient, purchase
   const functionalBeforeVat = functionalAmount(beforeVat, fx.rate);
   const functionalVat = functionalAmount(purchase.vatAmount, fx.rate);
   const functionalTotal = functionalAmount(purchase.totalAmount, fx.rate);
+  const dimension = purchase.projectId ? { projectCode: (await tx.project.findUnique({ where: { id: purchase.projectId }, select: { projectNumber: true } }))?.projectNumber, costCenterId: purchase.costCenterId, costCodeId: purchase.costCodeId } : {};
   await tx.purchase.update({ where: { id: purchase.id }, data: { exchangeRate: fx.rate, rateDate: fx.rateDate,
     functionalSubtotal: functionalAmount(purchase.subtotal, fx.rate), functionalDiscount: functionalAmount(purchase.discount, fx.rate),
     functionalVatAmount: functionalVat, functionalTotalAmount: functionalTotal } });
@@ -323,10 +327,10 @@ export async function postSupplierInvoiceJournal(tx: TransactionClient, purchase
     exchangeRate: fx.rate,
     rateDate: fx.rateDate,
     lines: [
-      { mappingKey: "INVENTORY_PURCHASES", debit: functionalBeforeVat, transactionDebit: beforeVat },
-      { mappingKey: "INPUT_VAT", debit: functionalVat, transactionDebit: purchase.vatAmount },
-      { mappingKey: "ACCOUNTS_PAYABLE", credit: functionalTotal, transactionCredit: purchase.totalAmount, partyId: purchase.partyId },
-    ].filter((line) => !new Prisma.Decimal(line.debit ?? line.credit ?? 0).isZero()),
+      { mappingKey: "INVENTORY_PURCHASES", debit: functionalBeforeVat, transactionDebit: beforeVat, ...dimension },
+      { mappingKey: "INPUT_VAT", debit: functionalVat, transactionDebit: purchase.vatAmount, ...dimension },
+      { mappingKey: "ACCOUNTS_PAYABLE", credit: functionalTotal, transactionCredit: purchase.totalAmount, partyId: purchase.partyId, ...dimension },
+    ].filter((line) => !new Prisma.Decimal("debit" in line ? line.debit : line.credit).isZero()),
   });
 }
 

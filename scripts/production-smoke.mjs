@@ -63,6 +63,7 @@ const routes = [
   "/hr",
   "/external",
   "/reports",
+  "/projects",
   "/settings/organization",
   "/api/units",
   "/api/item-categories",
@@ -111,6 +112,7 @@ const routes = [
   "/api/external/expenses",
   "/api/platform",
   "/api/analytics",
+  "/api/projects",
   "/api/reports/legacy?report=monthly-comparison&from=2026-01-01&to=2026-12-31",
 ];
 
@@ -282,6 +284,7 @@ try {
   assert.equal(limitedDashboard.body.materials.length, 0);
   const forbiddenLegacyReport = await jsonRequest("/api/reports/legacy?report=payroll&from=2026-01-01&to=2026-12-31");
   assert.equal(forbiddenLegacyReport.response.status, 403);
+  assert.equal((await jsonRequest("/api/projects")).response.status, 403);
   sessionCookie = adminCookie;
   console.log("PASS production granular RBAC for read-only user");
 
@@ -295,6 +298,24 @@ try {
     }),
   });
   assert.equal(itemResult.response.status, 201);
+  const projectWorkspace = await jsonRequest("/api/projects");
+  assert.equal(projectWorkspace.response.status, 200);
+  const smokeProject = await jsonRequest("/api/projects", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: "مشروع اختبار الإنتاج", partyId: partyResult.body.id, costCenterId: projectWorkspace.body.costCenters[0].id, billingItemId: itemResult.body.id, startDate: "2026-09-01", contractValue: 1000, retentionPercent: 10 }) });
+  assert.equal(smokeProject.response.status, 201, JSON.stringify(smokeProject.body));
+  const projectBudget = await jsonRequest(`/api/projects/${smokeProject.body.id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "budget", costCodeId: projectWorkspace.body.costCodes[0].id, budgetAmount: 500, forecastAmount: 550 }) });
+  assert.equal(projectBudget.response.status, 201);
+  const projectDetail = await jsonRequest(`/api/projects/${smokeProject.body.id}`);
+  assert.equal(projectDetail.response.status, 200);
+  assert.equal(Number(projectDetail.body.kpis.budget), 500);
+  const enableSecondProjects = await jsonRequest(`/api/platform/companies/${companyResult.body.id}/modules`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ moduleKey: "PROJECTS", enabled: true }) });
+  assert.equal(enableSecondProjects.response.status, 200);
+  assert.equal((await jsonRequest("/api/auth/switch-company", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ companyId: companyResult.body.id }) })).response.status, 200);
+  assert.equal((await jsonRequest(`/api/projects/${smokeProject.body.id}`)).response.status, 404);
+  const isolatedProjects = await jsonRequest("/api/projects");
+  assert.equal(isolatedProjects.response.status, 200);
+  assert.equal(isolatedProjects.body.projects.some((row) => row.id === smokeProject.body.id), false);
+  assert.equal((await jsonRequest("/api/auth/switch-company", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ companyId: 1 }) })).response.status, 200);
+  console.log("PASS production Phase F project KPIs, RBAC, module entitlement, and cross-company IDOR isolation");
   const physicalReading = await jsonRequest("/api/reports/readings", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type: "READING", readingDate: "2026-09-19", assetType: "TANK", assetName: "Smoke Tank", readingType: "DAILY", unit: "L", openingValue: 100, usedValue: 20, closingValue: 80 }),
