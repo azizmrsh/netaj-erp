@@ -20,6 +20,7 @@ const menu = [
   ["مساعد ERP", "/assistant", "CORE"], ["البحث الشامل", "/search", "CORE"], ["الرقابة والتنبيهات", "/controls", "CORE"],
   ["المستخدمون والصلاحيات", "/settings/users", "CORE"], ["إعدادات المؤسسة", "/settings/organization", "CORE"],
   ["أمان الحساب", "/settings/security", "CORE"],
+  ["المهام الخلفية", "/settings/jobs", "CORE"],
 ] as const;
 const money=(value:unknown)=>`${Number(value??0).toLocaleString("ar-SA",{minimumFractionDigits:2,maximumFractionDigits:2})} ر.س`;
 const number=(value:unknown)=>Number(value??0).toLocaleString("ar-SA",{maximumFractionDigits:2});

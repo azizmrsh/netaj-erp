@@ -3,11 +3,15 @@ import { spawn } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 
 const port = 3147;
 const temporaryDirectory = mkdtempSync(join(tmpdir(), "netaj-production-smoke-"));
 const databasePath = join(temporaryDirectory, "production-smoke.db");
 copyFileSync("prisma/netaj.db", databasePath);
+const fixtureDatabase = new Database(databasePath);
+fixtureDatabase.exec('PRAGMA foreign_keys = ON; DELETE FROM "AuthSession"; DELETE FROM "PlatformAdministrator"; UPDATE "PlatformUser" SET "email" = \'pending.smoke@netaj.test\', "passwordHash" = NULL, "mfaEnabled" = 0;');
+fixtureDatabase.close();
 const bootstrapToken = "production-smoke-bootstrap-token";
 const smokeEmail = "production-smoke@netaj.test";
 const smokePassword = "ProductionSmoke123";
@@ -84,6 +88,7 @@ const routes = [
   "/controls",
   "/search",
   "/settings/security",
+  "/settings/jobs",
   "/manifest.webmanifest",
   "/sw.js",
   "/api/units",
@@ -156,6 +161,7 @@ const routes = [
   "/api/controls",
   "/api/search?q=NETAj",
   "/api/auth/mfa",
+  "/api/background-jobs",
   "/api/reports/legacy?report=monthly-comparison&from=2026-01-01&to=2026-12-31",
 ];
 

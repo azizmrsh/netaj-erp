@@ -2352,6 +2352,7 @@ model Company {
   assistantProposals     AssistantActionProposal[]
   controlAlerts          ControlAlert[]
   backupRecords          BackupRecord[]
+  backgroundJobs         BackgroundJob[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -4181,6 +4182,35 @@ model BackupRecord {
 
   @@unique([tenantId, companyId, backupNumber])
   @@index([tenantId, companyId, createdAt])
+}
+
+model BackgroundJob {
+  id             Int       @id @default(autoincrement())
+  tenantId       Int       @default(1)
+  companyId      Int       @default(1)
+  jobNumber      String
+  jobType        String
+  status         String    @default("PENDING")
+  priority       Int       @default(100)
+  payloadJson    String    @default("{}")
+  resultJson     String?
+  idempotencyKey String?
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(3)
+  scheduledAt    DateTime  @default(now())
+  startedAt      DateTime?
+  completedAt    DateTime?
+  nextRetryAt    DateTime?
+  lastError      String?
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  company        Company   @relation(fields: [companyId], references: [id])
+
+  @@unique([tenantId, companyId, jobNumber])
+  @@unique([tenantId, companyId, jobType, idempotencyKey])
+  @@index([tenantId, companyId, status, scheduledAt, priority])
+  @@index([tenantId, companyId, jobType, createdAt])
 }
 
 model TenantMembership {

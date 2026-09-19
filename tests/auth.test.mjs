@@ -26,6 +26,12 @@ let token;
 let foreignCompanyId;
 
 before(async () => {
+  // The production-like fixture may already be configured by a prior smoke run.
+  // Reset identity credentials only inside this disposable database copy so the
+  // one-time bootstrap contract is tested without depending on live DB state.
+  await prisma.authSession.deleteMany();
+  await prisma.platformAdministrator.deleteMany();
+  await prisma.platformUser.updateMany({ data: { email: "pending.auth@example.test", passwordHash: null, mfaEnabled: false } });
   await prisma.$transaction((tx) => completeInitialSetup(tx, { email, password }));
   const login = await prisma.$transaction((tx) => authenticateCredentials(tx, { email, password }));
   token = login.token;

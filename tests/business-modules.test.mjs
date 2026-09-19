@@ -65,6 +65,23 @@ test("CRM يغطي العميل المحتمل والفرصة والنشاط و�
   assert.ok(workspace.pipeline.WON.value >= 25000);
 });
 
+test("CRM يحول الفرصة المرتبطة بعميل إلى عرض سعر فعلي مرة واحدة", async () => {
+  const opportunity = await prisma.$transaction((tx) => saveCrm(tx, { action: "OPPORTUNITY", partyId: partyA.id, name: "فرصة عرض مباشر", expectedValue: 500 }, "test"));
+  const quotation = await prisma.$transaction((tx) => saveCrm(tx, { action: "QUOTATION", opportunityId: opportunity.id, itemId: item.id, quantity: 2, unitPrice: 100, vatRate: 15 }, "test"));
+  assert.equal(quotation.documentType, "QUOTATION");
+  assert.equal(quotation.partyId, partyA.id);
+  assert.equal(Number(quotation.totalAmount), 230);
+  const duplicate = await prisma.$transaction((tx) => saveCrm(tx, { action: "QUOTATION", opportunityId: opportunity.id, itemId: item.id, quantity: 9, unitPrice: 999 }, "test"));
+  assert.equal(duplicate.id, quotation.id);
+  assert.equal(await prisma.businessDocument.count({ where: { id: quotation.id } }), 1);
+  const refreshed = await prisma.crmOpportunity.findUniqueOrThrow({ where: { id: opportunity.id } });
+  assert.equal(refreshed.businessDocumentId, quotation.id);
+  assert.equal(refreshed.stage, "PROPOSAL");
+  assert.ok(await prisma.auditLog.findFirst({ where: { action: "CRM_OPPORTUNITY_TO_QUOTATION", entityId: opportunity.id } }));
+  const workspace = await prisma.$transaction((tx) => crmWorkspace(tx));
+  assert.equal(workspace.opportunities.find((row) => row.id === opportunity.id)?.quotation?.documentNumber, quotation.documentNumber);
+});
+
 test("الأصل ينشئ قيد اقتناء وإهلاك متوازن ويحافظ على القيمة الدفترية", async () => {
   const category = await prisma.$transaction((tx) => saveAsset(tx, {
     action: "CATEGORY", tenantId: 1, companyId: 1, code: `VEH-${suffix}`, name: "مركبات",
