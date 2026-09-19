@@ -9,8 +9,8 @@ type Batch = { id: number; batchNumber: string; targetType: string; importMode: 
 type MappingTemplate = { id: number; targetType: string; name: string; mapping: Record<string, string>; isDefault: boolean };
 type InspectResult = { filename: string; headers: string[]; sheets: { name: string; headers: string[]; rowCount: number }[]; mapping: Record<string, string>; fields: Field[]; sampleRows: { sourceSheet: string; sourceRow: number; raw: Record<string, unknown> }[] };
 
-const statusLabels: Record<string, string> = { PREVIEW: "معاينة", RUNNING: "قيد التنفيذ", COMPLETED: "مكتملة", FAILED: "فشلت", ROLLED_BACK: "تم التراجع", VALID: "صالح", INVALID: "خطأ", DUPLICATE: "مكرر", IMPORTED: "مستورد", SKIPPED: "متجاوز", ROLLED_BACK_ROW: "تم التراجع" };
-const badge: Record<string, string> = { COMPLETED: "bg-emerald-100 text-emerald-800", VALID: "bg-emerald-100 text-emerald-800", IMPORTED: "bg-emerald-100 text-emerald-800", INVALID: "bg-red-100 text-red-800", FAILED: "bg-red-100 text-red-800", DUPLICATE: "bg-amber-100 text-amber-900", PREVIEW: "bg-blue-100 text-blue-800", ROLLED_BACK: "bg-slate-200 text-slate-700", SKIPPED: "bg-slate-200 text-slate-700" };
+const statusLabels: Record<string, string> = { PREVIEW: "معاينة", QUEUED:"في طابور التنفيذ", RUNNING: "قيد التنفيذ", COMPLETED: "مكتملة", FAILED: "فشلت", ROLLED_BACK: "تم التراجع", VALID: "صالح", INVALID: "خطأ", DUPLICATE: "مكرر", IMPORTED: "مستورد", SKIPPED: "متجاوز", ROLLED_BACK_ROW: "تم التراجع" };
+const badge: Record<string, string> = { COMPLETED: "bg-emerald-100 text-emerald-800", VALID: "bg-emerald-100 text-emerald-800", IMPORTED: "bg-emerald-100 text-emerald-800", INVALID: "bg-red-100 text-red-800", FAILED: "bg-red-100 text-red-800", DUPLICATE: "bg-amber-100 text-amber-900", PREVIEW: "bg-blue-100 text-blue-800", QUEUED:"bg-indigo-100 text-indigo-800", ROLLED_BACK: "bg-slate-200 text-slate-700", SKIPPED: "bg-slate-200 text-slate-700" };
 
 export default function ImportsClient() {
   const [catalog, setCatalog] = useState<Target[]>([]), [batches, setBatches] = useState<Batch[]>([]), [templates, setTemplates] = useState<MappingTemplate[]>([]);
@@ -67,11 +67,11 @@ export default function ImportsClient() {
     finally { setBusy(false); }
   }
 
-  async function batchAction(action: "EXECUTE" | "ROLLBACK") {
+  async function batchAction(action: "QUEUE_EXECUTE" | "ROLLBACK") {
     if (!selected) return;
     if (action === "ROLLBACK" && !window.confirm("سيحذف النظام فقط السجلات التي أنشأتها هذه الدفعة إذا لم ترتبط بحركات لاحقة. هل تريد المتابعة؟")) return;
     setBusy(true); setMessage("");
-    try { const response = await fetch(`/api/imports/${selected.id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) }), body = await response.json(); if (!response.ok) throw new Error(body.error); setSelected(body); await load(); setMessage(action === "EXECUTE" ? "تم تنفيذ الدفعة بنجاح." : "تم التراجع الآمن عن السجلات المنشأة."); }
+    try { const response = await fetch(`/api/imports/${selected.id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action }) }), body = await response.json(); if (!response.ok) throw new Error(body.error); await load();await openBatch(selected.id); setMessage(action === "QUEUE_EXECUTE" ? "أضيفت الدفعة إلى طابور التنفيذ الخلفي." : "تم التراجع الآمن عن السجلات المنشأة."); }
     catch (error) { setMessage(error instanceof Error ? error.message : "تعذر تنفيذ الإجراء"); }
     finally { setBusy(false); }
   }
@@ -99,7 +99,9 @@ export default function ImportsClient() {
         <div className="mt-5 overflow-x-auto"><table className="min-w-full text-sm"><thead className="bg-slate-100"><tr><th className="p-2 text-right">الورقة</th><th className="p-2 text-right">الصف</th>{inspect.headers.slice(0,6).map((header) => <th key={header} className="p-2 text-right">{header}</th>)}</tr></thead><tbody>{inspect.sampleRows.map((row) => <tr key={`${row.sourceSheet}-${row.sourceRow}`} className="border-b"><td className="p-2">{row.sourceSheet}</td><td>{row.sourceRow}</td>{inspect.headers.slice(0,6).map((header) => <td key={header} className="max-w-40 truncate p-2">{String(row.raw[header] ?? "")}</td>)}</tr>)}</tbody></table></div>
         <button disabled={busy} onClick={createPreview} className="mt-5 rounded-lg bg-blue-700 px-5 py-2.5 font-bold text-white disabled:opacity-50">إنشاء معاينة التحقق</button>
       </section>}
-      {selected && <BatchDetails batch={selected} target={catalog.find((row) => row.key === selected.targetType)} busy={busy} execute={() => batchAction("EXECUTE")} rollback={() => batchAction("ROLLBACK")}/>} 
+      {selected && (
+        <BatchDetails batch={selected} target={catalog.find((row) => row.key === selected.targetType)} busy={busy} execute={() => batchAction("QUEUE_EXECUTE")} rollback={() => batchAction("ROLLBACK")} />
+      )}
     </div>
     <aside className="h-fit rounded-2xl border bg-white p-5 shadow-sm lg:sticky lg:top-4"><h2 className="font-bold">سجل دفعات الاستيراد</h2><input value={historyFilter} onChange={(event) => setHistoryFilter(event.target.value)} placeholder="بحث بالملف أو رقم الدفعة" className="my-4 w-full rounded-lg border px-3 py-2 text-sm"/><div className="max-h-[70vh] space-y-2 overflow-y-auto">{filteredBatches.map((batch) => <button key={batch.id} onClick={() => openBatch(batch.id)} className={`w-full rounded-xl border p-3 text-right ${selected?.id === batch.id ? "border-blue-500 bg-blue-50" : "hover:bg-slate-50"}`}><div className="flex items-center justify-between gap-2"><b className="text-sm">{batch.batchNumber}</b><Status value={batch.status}/></div><p className="mt-1 truncate text-xs text-slate-500">{batch.sourceFile}</p><p className="mt-2 text-xs">{batch.targetType} · {batch.totalRows} صف</p></button>)}</div></aside>
   </div>;

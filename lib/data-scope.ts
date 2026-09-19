@@ -1,4 +1,20 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 export type DataScope = { tenantId: number; companyId: number };
+// Route handlers can be emitted into separate Next.js server chunks that each
+// evaluate this module. Keep one process-wide store so a scope established by
+// portal/worker code is also visible to the Prisma extension chunk.
+const DATA_SCOPE_KEY = Symbol.for("netaj.data-scope");
+const processGlobal = globalThis as typeof globalThis & {
+  [DATA_SCOPE_KEY]?: AsyncLocalStorage<DataScope>;
+};
+const backgroundScope = processGlobal[DATA_SCOPE_KEY] ?? new AsyncLocalStorage<DataScope>();
+processGlobal[DATA_SCOPE_KEY] = backgroundScope;
+
+export function runWithDataScope<T>(scope: DataScope, operation: () => T): T {
+  if (!Number.isInteger(scope.tenantId) || scope.tenantId < 1 || !Number.isInteger(scope.companyId) || scope.companyId < 1) throw new Error("Invalid tenant/company data scope");
+  return backgroundScope.run(scope, operation);
+}
 
 export const scopedModels = new Set([
   "Party", "PartyAddress", "ItemCategory", "Unit", "Item", "CompanyStock", "PartyStockAccount",
@@ -27,11 +43,13 @@ export const scopedModels = new Set([
   "CrmLead", "CrmOpportunity", "CrmActivity", "AssetCategory", "Asset", "AssetDepreciation",
   "MaintenancePlan", "MaintenanceWorkOrder", "MaintenanceSparePart", "DocumentCategory", "ManagedDocument",
   "ManagedDocumentVersion", "ManagedDocumentPermission", "UnifiedApprovalRequest", "UnifiedApprovalAction",
-  "PortalIdentity", "PortalRequest", "TreasuryForecastAdjustment", "IntegrationConnection", "WebhookEndpoint", "WebhookDelivery",
+  "PortalIdentity", "PortalRequest", "PortalSession", "TreasuryForecastAdjustment", "IntegrationConnection", "WebhookEndpoint", "WebhookDelivery",
   "AssistantConversation", "AssistantMessage", "AssistantActionProposal", "ControlAlert", "BackupRecord", "BackgroundJob",
 ]);
 
 export async function getVerifiedDataScope(): Promise<DataScope> {
+  const workerScope = backgroundScope.getStore();
+  if (workerScope) return workerScope;
   try {
     const { headers } = await import("next/headers");
     const store = await headers();

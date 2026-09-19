@@ -23,6 +23,7 @@ const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "star
     DATABASE_URL: `file:${databasePath}`,
     ATTACHMENT_STORAGE_DIR: join(temporaryDirectory, "attachments"),
     AUTH_BOOTSTRAP_TOKEN: bootstrapToken,
+    INTEGRATION_ENCRYPTION_KEY: "production-smoke-only-encryption-key",
     ALLOW_DATABASE_BACKUP_DOWNLOAD: "1",
   },
 });
@@ -82,6 +83,7 @@ const routes = [
   "/documents",
   "/approvals",
   "/portal-admin",
+  "/portal",
   "/treasury",
   "/integrations",
   "/assistant",
@@ -313,6 +315,24 @@ try {
   assert.equal(dmsDocument.response.status, 201, JSON.stringify(dmsDocument.body));
   const portalIdentity = await jsonRequest("/api/portal-admin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "IDENTITY", partyId: partyResult.body.id, email: `portal-${suffix.toLowerCase()}@netaj.test`, permissions: ["INVOICES", "ORDERS"] }) });
   assert.equal(portalIdentity.response.status, 201, JSON.stringify(portalIdentity.body));
+  assert.ok(portalIdentity.body.activationToken);
+  const portalPassword = "PortalSmoke123";
+  const portalEmail = `portal-${suffix.toLowerCase()}@netaj.test`;
+  const portalActivation = await nativeFetch(`http://127.0.0.1:${port}/api/portal/auth/activate`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ companyCode: "NETAJ", email: portalEmail, activationToken: portalIdentity.body.activationToken, password: portalPassword }) });
+  assert.equal(portalActivation.status, 200, await portalActivation.text());
+  const portalLogin = await nativeFetch(`http://127.0.0.1:${port}/api/portal/auth/login`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ companyCode: "NETAJ", email: portalEmail, password: portalPassword }) });
+  assert.equal(portalLogin.status, 200, await portalLogin.text());
+  const portalCookie = (portalLogin.headers.get("set-cookie") ?? "").split(";")[0];
+  assert.match(portalCookie, /^netaj_portal_session=/);
+  const portalWorkspace = await nativeFetch(`http://127.0.0.1:${port}/api/portal/workspace`, { headers: { cookie: portalCookie } });
+  assert.equal(portalWorkspace.status, 200, portalWorkspace.statusText);
+  const portalData = await portalWorkspace.json();
+  assert.equal(portalData.party.id, partyResult.body.id);
+  assert.ok(portalData.sales.every((row) => row.partyId === partyResult.body.id));
+  const portalRequest = await nativeFetch(`http://127.0.0.1:${port}/api/portal/workspace`, { method: "POST", headers: { cookie: portalCookie, "content-type": "application/json" }, body: JSON.stringify({ requestType: "STATEMENT", subject: "كشف حساب Smoke" }) });
+  assert.equal(portalRequest.status, 201, await portalRequest.text());
+  const portalLogout = await nativeFetch(`http://127.0.0.1:${port}/api/portal/auth/logout`, { method: "POST", headers: { cookie: portalCookie } });
+  assert.equal(portalLogout.status, 200);
   const treasuryAdjustment = await jsonRequest("/api/treasury", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ forecastDate: new Date(Date.now() + 86400000).toISOString(), direction: "IN", description: "تحصيل متوقع Production", amount: 100, probability: 75 }) });
   assert.equal(treasuryAdjustment.response.status, 201, JSON.stringify(treasuryAdjustment.body));
   const webhook = await jsonRequest("/api/v1/integrations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "WEBHOOK", code: `SMOKE_HOOK_${suffix}`, url: "https://example.test/netaj", eventTypes: ["sale.posted"] }) });

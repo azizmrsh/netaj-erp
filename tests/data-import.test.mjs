@@ -9,6 +9,7 @@ import * as XLSX from "@stackline/xlsx";
 import { createImportPreview, executeImportBatch, parseImportWorkbook, rollbackImportBatch } from "../lib/data-import.ts";
 import { getImportTarget, mapImportRow, suggestImportMapping } from "../lib/import-definitions.ts";
 import { scopedModels, scopePrismaArgs } from "../lib/data-scope.ts";
+import { enqueueBackgroundJob, runBackgroundJob } from "../lib/background-jobs.ts";
 
 const directory = mkdtempSync(join(tmpdir(), "netaj-import-test-"));
 const database = join(directory, "import.db");
@@ -138,4 +139,17 @@ test("نماذج الاستيراد كلها ضمن tenant/company وID المب
   for (const model of ["ImportBatch", "ImportRow", "LegacyRecordLink", "ImportTemplate"]) assert.ok(scopedModels.has(model));
   const args = scopePrismaArgs("findUnique", { where: { id: 99 } }, { tenantId: 8, companyId: 12 });
   assert.deepEqual(args.where, { id: 99, tenantId: 8, companyId: 12 });
+});
+
+test("دفعة الاستيراد الثقيلة تنفذ مرة واحدة عبر الطابور الخلفي", async () => {
+  const unified = `QUEUE-${suffix}`;
+  const bytes = workbookBytes({ Data: [{ "الاسم العربي": "عميل طابور", "الرقم الموحد": unified, "عميل": "نعم" }] });
+  const preview = await prisma.$transaction((tx) => createImportPreview(tx, { bytes, filename: "queued-party.xlsx", targetType: "PARTIES", importMode: "FULL", duplicateStrategy: "SKIP", createdBy: "test" }));
+  await prisma.importBatch.update({ where: { id: preview.id }, data: { status: "QUEUED" } });
+  const queued = await prisma.$transaction((tx) => enqueueBackgroundJob(tx, { jobType: "IMPORT_EXECUTE", payload: { batchId: preview.id }, idempotencyKey: `import:${preview.id}` }, "test"));
+  await prisma.$transaction((tx) => runBackgroundJob(tx, queued.job.id, "test"));
+  assert.equal((await prisma.importBatch.findUniqueOrThrow({ where: { id: preview.id } })).status, "COMPLETED");
+  assert.equal(await prisma.party.count({ where: { unifiedNumber: unified } }), 1);
+  const duplicate = await prisma.$transaction((tx) => enqueueBackgroundJob(tx, { jobType: "IMPORT_EXECUTE", payload: { batchId: preview.id }, idempotencyKey: `import:${preview.id}` }, "test"));
+  assert.equal(duplicate.created, false);
 });

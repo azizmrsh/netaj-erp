@@ -2344,6 +2344,7 @@ model Company {
   approvalRequests       UnifiedApprovalRequest[]
   portalIdentities       PortalIdentity[]
   portalRequests         PortalRequest[]
+  portalSessions         PortalSession[]
   treasuryAdjustments    TreasuryForecastAdjustment[]
   integrationConnections IntegrationConnection[]
   webhookEndpoints       WebhookEndpoint[]
@@ -3979,6 +3980,8 @@ model PortalIdentity {
   partyId         Int
   email           String
   passwordHash    String?
+  inviteTokenHash String?
+  inviteExpiresAt DateTime?
   status          String          @default("INVITED")
   permissionsJson String          @default("[]")
   lastLoginAt     DateTime?
@@ -3986,9 +3989,29 @@ model PortalIdentity {
   updatedAt       DateTime        @updatedAt
   company         Company         @relation(fields: [companyId], references: [id])
   requests        PortalRequest[]
+  sessions        PortalSession[]
 
   @@unique([tenantId, companyId, email])
   @@index([tenantId, companyId, partyId])
+}
+
+model PortalSession {
+  id               String         @id
+  tenantId         Int            @default(1)
+  companyId        Int            @default(1)
+  portalIdentityId Int
+  tokenHash        String         @unique
+  expiresAt        DateTime
+  lastSeenAt       DateTime       @default(now())
+  revokedAt        DateTime?
+  userAgent        String?
+  ipAddress        String?
+  createdAt        DateTime       @default(now())
+  company          Company        @relation(fields: [companyId], references: [id])
+  identity         PortalIdentity @relation(fields: [portalIdentityId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, companyId, portalIdentityId, expiresAt])
+  @@index([expiresAt, revokedAt])
 }
 
 model PortalRequest {
@@ -4055,6 +4078,7 @@ model WebhookEndpoint {
   code           String
   url            String
   secretHash     String
+  encryptedSecret String?
   eventTypesJson String
   status         String            @default("ACTIVE")
   createdAt      DateTime          @default(now())

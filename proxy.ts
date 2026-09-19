@@ -3,7 +3,7 @@ import { SESSION_COOKIE } from "@/lib/auth-constants";
 import { prisma } from "@/lib/prisma";
 import { AuthError, requireAuthorization, resolveAuthContext } from "@/lib/auth";
 
-const publicPaths = ["/login", "/setup", "/api/auth/login", "/api/auth/setup", "/api/design/branding"];
+const publicPaths = ["/login", "/setup", "/api/auth/login", "/api/auth/setup", "/api/design/branding", "/portal", "/api/portal"];
 
 function requiredModule(path: string) {
   if (path.startsWith("/api/platform")) return null;
@@ -47,8 +47,9 @@ export async function proxy(request: NextRequest) {
   if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
     const fetchSite = request.headers.get("sec-fetch-site");
     const origin = request.headers.get("origin");
+    const expectedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() || request.headers.get("host") || request.nextUrl.host;
     let invalidOrigin = false;
-    if (origin) { try { invalidOrigin = new URL(origin).host !== request.nextUrl.host; } catch { invalidOrigin = true; } }
+    if (origin) { try { invalidOrigin = new URL(origin).host !== expectedHost; } catch { invalidOrigin = true; } }
     if (fetchSite === "cross-site" || invalidOrigin) {
       return NextResponse.json({ error: "تم رفض الطلب بسبب حماية CSRF", code: "CSRF_REJECTED" }, { status: 403 });
     }

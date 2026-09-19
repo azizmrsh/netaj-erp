@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
-import { extname, join, resolve } from "node:path";
+import { extname } from "node:path";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
@@ -9,6 +8,7 @@ import { AuthError } from "@/lib/auth";
 import { authErrorResponse } from "@/lib/api-auth";
 import { assertTenantLimit } from "@/lib/saas";
 import { PlatformError, platformErrorResponse } from "@/lib/platform";
+import { deletePrivateObject, putPrivateObject } from "@/lib/storage";
 
 const maximumSize = 10 * 1024 * 1024;
 const allowed = new Map([
@@ -55,7 +55,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  let fullPath: string | null = null;
+  let storageLocation: string | null = null;
   try {
     const form = await request.formData();
     const file = form.get("file");
@@ -79,20 +79,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "امتداد الملف لا يطابق نوعه" }, { status: 400 });
     }
     const storedName = `${Date.now()}-${randomUUID()}${extension}`;
-    const configuredDirectory = process.env.ATTACHMENT_STORAGE_DIR;
-    const directory = resolve(configuredDirectory ?? join(process.cwd(), "storage", "attachments"));
-    await mkdir(directory, { recursive: true });
-    fullPath = join(directory, storedName);
-    await writeFile(fullPath, new Uint8Array(await file.arrayBuffer()), { flag: "wx" });
+    const object = await putPrivateObject(`${auth.tenantId}/${auth.companyId}/${storedName}`, new Uint8Array(await file.arrayBuffer()));
+    storageLocation = object.location;
     const attachment = await prisma.$transaction(async (tx) => {
-      const saved = await tx.attachment.create({ data: { entityType, entityId, originalName: file.name.slice(0, 255), storedName, storagePath: configuredDirectory ? fullPath! : `storage/attachments/${storedName}`, mimeType: file.type, size: file.size, uploadedBy, notes: String(form.get("notes") ?? "").trim() || null } });
-      await audit(tx, { action: "ATTACH", entityType, entityId, userId: uploadedBy, metadata: { attachmentId: saved.id, fileName: saved.originalName, size: saved.size } });
+      const saved = await tx.attachment.create({ data: { entityType, entityId, originalName: file.name.slice(0, 255), storedName, storagePath: object.location, mimeType: file.type, size: file.size, uploadedBy, notes: String(form.get("notes") ?? "").trim() || null } });
+      await audit(tx, { action: "ATTACH", entityType, entityId, userId: uploadedBy, metadata: { attachmentId: saved.id, fileName: saved.originalName, size: saved.size, storageProvider: object.provider } });
       return saved;
     });
     return NextResponse.json(attachment, { status: 201 });
   } catch (error) {
     console.error(error);
-    if (fullPath) await unlink(fullPath).catch(() => undefined);
+    if (storageLocation) await deletePrivateObject(storageLocation).catch(() => undefined);
     if (error instanceof AuthError) {
       const response = authErrorResponse(error);
       return NextResponse.json({ error: response.message, code: response.code }, { status: response.status });

@@ -11,9 +11,14 @@
     "lint": "eslint",
     "test": "node --import tsx --test --test-concurrency=1 tests/*.test.mjs",
     "test:production": "node scripts/production-smoke.mjs",
+    "test:e2e": "node scripts/run-browser-e2e.mjs",
     "backup": "node --import tsx scripts/backup-database.mjs",
     "restore:verify": "node scripts/verify-restore.mjs",
-    "postinstall": "prisma skills sync || exit 0"
+    "worker": "node --import tsx scripts/background-worker.ts",
+    "worker:once": "node --import tsx scripts/background-worker.ts --once",
+    "postgres:manifest": "node scripts/postgres-migrate.mjs --manifest-only",
+    "postgres:migrate": "node scripts/postgres-migrate.mjs",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.10.0",
@@ -28,6 +33,7 @@
     "jose": "^6.2.12",
     "lucide-react": "^1.47.0",
     "next": "16.3.5",
+    "pg": "^8.23.0",
     "prisma": "^7.10.0",
     "qrcode": "^1.5.4",
     "react": "19.2.8",
@@ -36,8 +42,10 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
@@ -45,5 +53,9 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.13",
     "typescript": "^5"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.2",
+    "mysql2": "3.24.4"
   }
 }

@@ -483,7 +483,7 @@ async function executeOpeningBalances(tx: Prisma.TransactionClient, batch: Batch
 export async function executeImportBatch(tx: Prisma.TransactionClient, batchId: number, userId?: string | null) {
   const batch = await tx.importBatch.findFirst({ where: { id: batchId }, include: { rows: { orderBy: { id: "asc" } } } });
   if (!batch) throw new DataImportError("دفعة الاستيراد غير موجودة", "NOT_FOUND", 404);
-  if (batch.status !== "PREVIEW" && batch.status !== "FAILED") throw new DataImportError("حالة الدفعة لا تسمح بالتنفيذ", "INVALID_STATUS", 409);
+  if (!["PREVIEW", "FAILED", "QUEUED"].includes(batch.status)) throw new DataImportError("حالة الدفعة لا تسمح بالتنفيذ", "INVALID_STATUS", 409);
   if (batch.invalidRows > 0) throw new DataImportError("يجب معالجة الصفوف غير الصالحة قبل التنفيذ", "INVALID_ROWS", 409);
   const executable = batch.rows.filter((row) => row.status === "VALID" || row.status === "DUPLICATE");
   await tx.importBatch.update({ where: { id: batch.id }, data: { status: "RUNNING", failureReason: null } });

@@ -23,6 +23,7 @@ import {
   treasuryWorkspace,
 } from "../lib/business-modules.ts";
 import { scopePrismaArgs, scopedModels } from "../lib/data-scope.ts";
+import { runBackgroundJob } from "../lib/background-jobs.ts";
 
 const directory = mkdtempSync(join(tmpdir(), "netaj-business-modules-"));
 const database = join(directory, "phase-k.db");
@@ -143,7 +144,7 @@ test("بوابة الطرف لا تقبل partyId من الطلب ولا تعر�
     { invoiceNumber: `PORT-A-${suffix}`, partyId: partyA.id, totalAmount: 30, functionalTotalAmount: 30 },
     { invoiceNumber: `PORT-B-${suffix}`, partyId: partyB.id, totalAmount: 40, functionalTotalAmount: 40 },
   ] });
-  const identity = await prisma.$transaction((tx) => savePortal(tx, { action: "IDENTITY", partyId: partyA.id, email: `a-${suffix}@example.test`, permissions: ["INVOICES", "ORDERS", "DOCUMENTS"] }));
+  const identity = await prisma.$transaction((tx) => savePortal(tx, { action: "IDENTITY", tenantId: 1, companyId: 1, partyId: partyA.id, email: `a-${suffix}@example.test`, permissions: ["INVOICES", "ORDERS", "DOCUMENTS"] }));
   const workspace = await prisma.$transaction((tx) => portalPartyWorkspace(tx, identity.id));
   assert.equal(workspace.party.id, partyA.id);
   assert.ok(workspace.sales.some((row) => row.invoiceNumber === `PORT-A-${suffix}`));
@@ -172,13 +173,21 @@ test("التكاملات لا تحفظ أسرارًا بلا مفتاح وتفر
   await assert.rejects(prisma.$transaction((tx) => saveIntegration(tx, { action: "WEBHOOK", tenantId: 1, companyId: 1, code: `BAD-${suffix}`, url: "http://example.test", eventTypes: ["sale.posted"] }, "test")), /HTTPS/);
   const endpoint = await prisma.$transaction((tx) => saveIntegration(tx, { action: "WEBHOOK", tenantId: 1, companyId: 1, code: `HOOK-${suffix}`, url: "https://example.test/hook", eventTypes: ["sale.posted"] }, "test"));
   assert.ok(endpoint.secret);
-  await prisma.$transaction((tx) => saveIntegration(tx, { action: "QUEUE_EVENT", endpointId: endpoint.id, eventType: "sale.posted", payload: { id: 1 } }, "test"));
+  const delivery = await prisma.$transaction((tx) => saveIntegration(tx, { action: "QUEUE_EVENT", endpointId: endpoint.id, eventType: "sale.posted", payload: { id: 1 } }, "test"));
   const workspace = await prisma.$transaction((tx) => integrationWorkspace(tx));
   const safeConnection = workspace.connections.find((row) => row.code === `PAY-${suffix}`);
   assert.equal(safeConnection.credentialsConfigured, true);
   assert.equal("encryptedCredentials" in safeConnection, false);
   assert.equal(workspace.endpoints.find((row) => row.id === endpoint.id)?.secretHash, "[REDACTED]");
+  assert.equal("encryptedSecret" in workspace.endpoints.find((row) => row.id === endpoint.id), false);
   assert.ok(workspace.deliveries.some((row) => row.endpointId === endpoint.id && row.status === "PENDING"));
+  const job = await prisma.backgroundJob.findFirstOrThrow({ where: { jobType: "WEBHOOK_DELIVERY", idempotencyKey: `webhook:${delivery.id}` } });
+  const originalFetch = globalThis.fetch; let sentHeaders;
+  globalThis.fetch = async (_url, init) => { sentHeaders = init.headers; return new Response(null, { status: 204 }); };
+  try { await prisma.$transaction((tx) => runBackgroundJob(tx, job.id, "test")); } finally { globalThis.fetch = originalFetch; }
+  const delivered = await prisma.webhookDelivery.findUniqueOrThrow({ where: { id: delivery.id } });
+  assert.equal(delivered.status, "DELIVERED");
+  assert.match(sentHeaders["x-netaj-signature"], /^sha256=[a-f0-9]{64}$/);
 });
 
 test("كل نماذج Phase K تخضع لعزل tenant/company حتى مع ID مباشر", () => {
