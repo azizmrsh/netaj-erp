@@ -1346,6 +1346,7 @@ model JournalEntry {
   payrollPayment      PayrollPayment?
   vatReturnFiling     VatReturn?           @relation("VatReturnFilingJournal")
   vatReturnSettlement VatReturn?           @relation("VatReturnSettlementJournal")
+  fiscalYearClosing   FiscalYear?          @relation("FiscalYearClosingJournal")
 
   @@unique([referenceType, referenceId])
   @@index([entryDate])
@@ -2093,17 +2094,21 @@ model Department {
 }
 
 model FiscalYear {
-  id        Int       @id @default(autoincrement())
-  companyId Int
-  name      String
-  startDate DateTime
-  endDate   DateTime
-  status    String    @default("OPEN")
-  closedAt  DateTime?
-  createdAt DateTime  @default(now())
+  id                    Int       @id @default(autoincrement())
+  companyId             Int
+  name                  String
+  startDate             DateTime
+  endDate               DateTime
+  status                String    @default("OPEN")
+  closingJournalEntryId Int?      @unique
+  closedAt              DateTime?
+  closedBy              String?
+  reopenedAt            DateTime?
+  createdAt             DateTime  @default(now())
 
-  company Company        @relation(fields: [companyId], references: [id])
-  periods FiscalPeriod[]
+  company        Company        @relation(fields: [companyId], references: [id])
+  periods        FiscalPeriod[]
+  closingJournal JournalEntry?  @relation("FiscalYearClosingJournal", fields: [closingJournalEntryId], references: [id])
 
   @@unique([companyId, startDate, endDate])
   @@index([companyId, status])
@@ -2118,6 +2123,8 @@ model FiscalPeriod {
   endDate      DateTime
   status       String    @default("OPEN")
   closedAt     DateTime?
+  closedBy     String?
+  reopenedAt   DateTime?
   createdAt    DateTime  @default(now())
 
   fiscalYear FiscalYear @relation(fields: [fiscalYearId], references: [id])

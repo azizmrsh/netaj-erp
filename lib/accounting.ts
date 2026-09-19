@@ -1,6 +1,7 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { audit } from "@/lib/audit";
 import { nextDocumentNumber } from "@/lib/document-numbering";
+import { getVerifiedDataScope } from "@/lib/data-scope";
 
 type TransactionClient = Prisma.TransactionClient;
 
@@ -16,6 +17,7 @@ const defaults = [
   { key: "INVENTORY_ASSET", code: "120100", nameAr: "المخزون والمشتريات", type: "ASSET" },
   { key: "COST_OF_GOODS_SOLD", code: "510100", nameAr: "تكلفة البضاعة المباعة", type: "EXPENSE" },
   { key: "OPENING_BALANCE_EQUITY", code: "310100", nameAr: "حقوق الملكية - أرصدة افتتاحية", type: "EQUITY" },
+  { key: "RETAINED_EARNINGS", code: "310200", nameAr: "الأرباح المبقاة", type: "EQUITY" },
   { key: "FACTORY_MANUFACTURING_REVENUE", code: "420003", nameAr: "رسوم التصنيع والتحسين", type: "REVENUE" },
   { key: "FACTORY_FUEL_EXPENSE", code: "520013", nameAr: "مواد تشغيل ووقود المصنع", type: "EXPENSE" },
   { key: "EMPLOYEE_ADVANCES", code: "110300", nameAr: "سلف الموظفين", type: "ASSET" },
@@ -58,6 +60,33 @@ export async function ensureAccountingFoundation(tx: TransactionClient) {
     },
     update: {},
   });
+  await ensureFiscalCalendar(tx, new Date());
+}
+
+export async function ensureFiscalCalendar(tx: TransactionClient, referenceDate = new Date()) {
+  const { companyId } = await getVerifiedDataScope();
+  const company = await tx.company.findUnique({ where: { id: companyId } });
+  if (!company) throw new AccountingError("الشركة الحالية غير مهيأة محاسبيًا");
+  const startMonth = Math.min(12, Math.max(1, company.fiscalYearStartMonth));
+  const currentMonth = referenceDate.getUTCMonth() + 1;
+  const startYear = currentMonth >= startMonth ? referenceDate.getUTCFullYear() : referenceDate.getUTCFullYear() - 1;
+  const startDate = new Date(Date.UTC(startYear, startMonth - 1, 1));
+  const endDate = new Date(Date.UTC(startYear + 1, startMonth - 1, 1) - 1);
+  const fiscalYear = await tx.fiscalYear.upsert({
+    where: { companyId_startDate_endDate: { companyId, startDate, endDate } },
+    create: { companyId, name: startMonth === 1 ? `السنة المالية ${startYear}` : `السنة المالية ${startYear}/${startYear + 1}`, startDate, endDate },
+    update: {},
+  });
+  for (let index = 0; index < 12; index += 1) {
+    const periodStart = new Date(Date.UTC(startYear, startMonth - 1 + index, 1));
+    const periodEnd = new Date(Date.UTC(startYear, startMonth + index, 1) - 1);
+    await tx.fiscalPeriod.upsert({
+      where: { fiscalYearId_periodNumber: { fiscalYearId: fiscalYear.id, periodNumber: index + 1 } },
+      create: { fiscalYearId: fiscalYear.id, periodNumber: index + 1, name: periodStart.toLocaleDateString("ar-SA", { month: "long", year: "numeric", timeZone: "UTC" }), startDate: periodStart, endDate: periodEnd },
+      update: {},
+    });
+  }
+  return tx.fiscalYear.findUniqueOrThrow({ where: { id: fiscalYear.id }, include: { periods: { orderBy: { periodNumber: "asc" } }, closingJournal: true } });
 }
 
 async function mappedAccount(tx: TransactionClient, key: string) {
@@ -154,13 +183,18 @@ export async function createBalancedJournal(
 
 export async function assertOpenAccountingPeriod(tx: TransactionClient, entryDate: Date) {
   await ensureAccountingFoundation(tx);
+  const { companyId } = await getVerifiedDataScope();
   const period = await tx.accountingPeriod.findFirst({
     where: { startDate: { lte: entryDate }, endDate: { gte: entryDate } },
   });
-  if (!period || period.status !== "OPEN") {
+  const fiscalPeriod = await tx.fiscalPeriod.findFirst({
+    where: { startDate: { lte: entryDate }, endDate: { gte: entryDate }, fiscalYear: { companyId } },
+    include: { fiscalYear: true },
+  });
+  if (!period || period.status !== "OPEN" || !fiscalPeriod || fiscalPeriod.status !== "OPEN" || fiscalPeriod.fiscalYear.status !== "OPEN") {
     throw new AccountingError("الفترة المحاسبية مغلقة أو غير معرفة لهذا التاريخ");
   }
-  return period;
+  return fiscalPeriod;
 }
 
 export async function reverseJournalEntry(

@@ -39,8 +39,8 @@ export async function agingReport(kind: "AR" | "AP", asOf = new Date()) {
   return { kind, asOf, items, totals };
 }
 
-export async function trialBalance(from?: Date, to?: Date) {
-  const lines = await prisma.journalEntryLine.findMany({ where: { journalEntry: { status: "POSTED", ...(from || to ? { entryDate: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}) } }, include: { account: true } });
+export async function trialBalance(from?: Date, to?: Date, excludeClosing = false) {
+  const lines = await prisma.journalEntryLine.findMany({ where: { journalEntry: { status: "POSTED", ...(excludeClosing ? { NOT: [{ referenceType: { startsWith: "FISCAL_YEAR_CLOSE_" } }, { referenceType: { startsWith: "FISCAL_YEAR_REOPEN_" } }] } : {}), ...(from || to ? { entryDate: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}) } }, include: { account: true } });
   const accounts = new Map<number, { accountId: number; code: string; name: string; type: string; debit: number; credit: number; balance: number }>();
   for (const line of lines) {
     if (!line.accountId || !line.account) continue;
@@ -68,11 +68,43 @@ export async function generalLedger(params: URLSearchParams) {
 }
 
 export async function statementReport(from?: Date, to?: Date) {
-  const trial = await trialBalance(from, to);
+  const trial = await trialBalance(from, to, true);
   const byType = (type: string) => trial.rows.filter((row) => row.type === type).reduce((sum, row) => sum + row.balance, 0);
   const revenue = -byType("REVENUE"), expenses = byType("EXPENSE");
   const assets = byType("ASSET"), liabilities = -byType("LIABILITY"), equity = -byType("EQUITY");
   return { profitAndLoss: { revenue, expenses, netProfit: revenue - expenses }, balanceSheet: { assets, liabilities, equity, currentProfit: revenue - expenses, liabilitiesAndEquity: liabilities + equity + revenue - expenses } };
+}
+
+export async function accountStatement(params: URLSearchParams) {
+  const { from, to } = reportDates(params), accountId = Number(params.get("accountId")), partyId = Number(params.get("partyId"));
+  if (!Number.isInteger(accountId) || accountId < 1) return { openingBalance: 0, rows: [], closingBalance: 0 };
+  const partyFilter = Number.isInteger(partyId) && partyId > 0 ? { partyId } : {};
+  const openingLines = from ? await prisma.journalEntryLine.findMany({ where: { accountId, ...partyFilter, journalEntry: { status: "POSTED", entryDate: { lt: from } } } }) : [];
+  const openingBalance = openingLines.reduce((sum, line) => sum + decimal(line.debit) - decimal(line.credit), 0);
+  const lines = await prisma.journalEntryLine.findMany({ where: { accountId, ...partyFilter,
+    journalEntry: { status: "POSTED", ...(from || to ? { entryDate: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}) } },
+    include: { account: true, journalEntry: true }, orderBy: [{ journalEntry: { entryDate: "asc" } }, { id: "asc" }] });
+  let balance = openingBalance;
+  const rows = lines.map((line) => { balance += decimal(line.debit) - decimal(line.credit); return { id: line.id, date: line.journalEntry.entryDate,
+    entryNumber: line.journalEntry.entryNumber, referenceType: line.journalEntry.referenceType, referenceId: line.journalEntry.referenceId,
+    referenceNumber: line.journalEntry.referenceNumber, description: line.description ?? line.journalEntry.description,
+    debit: decimal(line.debit), credit: decimal(line.credit), balance }; });
+  return { account: lines[0]?.account ?? await prisma.account.findUnique({ where: { id: accountId } }), openingBalance, rows, closingBalance: balance,
+    totals: rows.reduce((sum, row) => ({ debit: sum.debit + row.debit, credit: sum.credit + row.credit }), { debit: 0, credit: 0 }) };
+}
+
+export async function changesInEquity(from?: Date, to?: Date) {
+  const equityAccounts = await prisma.account.findMany({ where: { accountType: "EQUITY", isActive: true }, orderBy: { code: "asc" } });
+  const accountIds = equityAccounts.map((account) => account.id);
+  const [openingLines, movementLines, performance] = await Promise.all([
+    from ? prisma.journalEntryLine.findMany({ where: { accountId: { in: accountIds }, journalEntry: { status: "POSTED", entryDate: { lt: from } } } }) : Promise.resolve([]),
+    prisma.journalEntryLine.findMany({ where: { accountId: { in: accountIds }, journalEntry: { status: "POSTED", NOT: [{ referenceType: { startsWith: "FISCAL_YEAR_CLOSE_" } }, { referenceType: { startsWith: "FISCAL_YEAR_REOPEN_" } }], ...(from || to ? { entryDate: { ...(from ? { gte: from } : {}), ...(to ? { lte: to } : {}) } } : {}) } } }),
+    statementReport(from, to),
+  ]);
+  const creditBalance = (lines: typeof movementLines, accountId: number) => lines.filter((line) => line.accountId === accountId).reduce((sum, line) => sum + decimal(line.credit) - decimal(line.debit), 0);
+  const rows = equityAccounts.map((account) => { const opening = creditBalance(openingLines, account.id), directChanges = creditBalance(movementLines, account.id); return { accountId: account.id, code: account.code, name: account.nameAr, opening, directChanges, closingBeforeProfit: opening + directChanges }; });
+  const openingEquity = rows.reduce((sum, row) => sum + row.opening, 0), directChanges = rows.reduce((sum, row) => sum + row.directChanges, 0), currentProfit = Number(performance.profitAndLoss.netProfit);
+  return { rows, totals: { openingEquity, directChanges, currentProfit, closingEquity: openingEquity + directChanges + currentProfit } };
 }
 
 export async function cashFlow(from?: Date, to?: Date) {

@@ -85,6 +85,7 @@ const routes = [
   "/api/finance/transfers",
   "/api/finance/reconciliations",
   "/api/finance/vat-returns",
+  "/api/finance/fiscal-calendar",
   "/api/finance/reports?report=trial-balance",
   "/api/factory",
   "/api/factory/transactions",
@@ -188,6 +189,9 @@ try {
   const disabledInventory = await jsonRequest("/api/inventory");
   assert.equal(disabledInventory.response.status, 403);
   assert.equal(disabledInventory.body.code, "MODULE_DISABLED");
+  const disabledAccounting = await jsonRequest("/api/finance/vat-returns");
+  assert.equal(disabledAccounting.response.status, 403);
+  assert.equal(disabledAccounting.body.code, "MODULE_DISABLED");
   const secondCompanyHome = await (await fetch(`http://127.0.0.1:${port}/`)).text();
   assert.equal(secondCompanyHome.includes('href="/inventory"'), false);
   const switchBack = await jsonRequest("/api/auth/switch-company", {
@@ -460,6 +464,22 @@ try {
   });
   assert.equal(completedReconciliation.response.status, 200);
   assert.equal(completedReconciliation.body.status, "COMPLETED");
+  const fiscalCalendar = await jsonRequest("/api/finance/fiscal-calendar");
+  assert.equal(fiscalCalendar.response.status, 200);
+  assert.equal(fiscalCalendar.body.periods.length, 12);
+  const closablePeriod = fiscalCalendar.body.periods.find((period) => period.status === "OPEN" && !(period.blockers ?? []).length && new Date(period.endDate) < new Date("2026-09-01"));
+  assert.ok(closablePeriod);
+  const closedPeriod = await jsonRequest(`/api/finance/fiscal-periods/${closablePeriod.id}`, {
+    method: "PATCH", headers: movementHeaders, body: JSON.stringify({ action: "CLOSE" }),
+  });
+  assert.equal(closedPeriod.response.status, 200);
+  assert.equal(closedPeriod.body.status, "CLOSED");
+  const reopenedPeriod = await jsonRequest(`/api/finance/fiscal-periods/${closablePeriod.id}`, {
+    method: "PATCH", headers: movementHeaders, body: JSON.stringify({ action: "REOPEN", reason: "Production smoke verification" }),
+  });
+  assert.equal(reopenedPeriod.response.status, 200);
+  assert.equal(reopenedPeriod.body.status, "OPEN");
+  console.log("PASS production fiscal calendar, guarded period close, and audited reopen");
   console.log("PASS production VAT reconciliation, filing, settlement, and bank reconciliation");
   console.log("PASS production sales and purchase workflows, accounting idempotency, and attachment upload");
   console.log("PASS production note to stock to transport flow on isolated database");
