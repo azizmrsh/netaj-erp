@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 
 const email = "owner.e2e@netaj.test", password = "BrowserE2E123";
 test.describe.configure({ mode: "serial" });
@@ -15,7 +17,7 @@ test.beforeEach(async ({ page }) => {
 test("تسجيل الدخول والتنقل التشغيلي يعرضان بيانات فعلية دون أخطاء متصفح", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
-  await expect(page.getByRole("heading", { name: "قيادة أعمالك من صورة واحدة واضحة" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "صورة أعمال واحدة. قرار أوضح." })).toBeVisible();
   await page.goto("/inventory");
   await expect(page.getByRole("heading", { name: /المخزون/ })).toBeVisible();
   await page.goto("/sales");
@@ -42,6 +44,46 @@ test("واجهات الوحدات الأساسية تعمل داخل الغلا�
     await expect(page.locator("main").first()).toBeVisible();
   }
   expect(errors).toEqual([]);
+});
+
+test("القبول البصري التنفيذي ولقطات الشاشات والاتجاهين", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "desktop project captures all target viewports");
+  const evidence = resolve("artifacts/ui-acceptance"); mkdirSync(evidence, { recursive: true });
+  const assertDashboard = async (maxHero:number) => {
+    await page.goto("/");
+    await expect(page.getByRole("heading", { name: "صورة أعمال واحدة. قرار أوضح." })).toBeVisible();
+    await expect(page.locator(".premium-kpi")).toHaveCount(8);
+    await expect(page.locator(".premium-command-grid")).toBeVisible();
+    const metrics = await page.evaluate(() => ({
+      hero: document.querySelector(".premium-executive-hero")?.getBoundingClientRect().height ?? 999,
+      analyticsTop: document.querySelector(".premium-command-grid")?.getBoundingClientRect().top ?? 9999,
+      viewport: innerHeight,
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    }));
+    expect(metrics.hero).toBeLessThanOrEqual(maxHero);
+    expect(metrics.analyticsTop).toBeLessThan(metrics.viewport);
+    expect(metrics.overflow).toBeLessThanOrEqual(2);
+  };
+  await page.setViewportSize({ width:1440, height:900 }); await assertDashboard(190); await page.screenshot({ path:resolve(evidence,"dashboard-desktop.png"), fullPage:true });
+  await page.setViewportSize({ width:1024, height:900 }); await assertDashboard(210); await page.screenshot({ path:resolve(evidence,"dashboard-tablet.png"), fullPage:true });
+  await page.setViewportSize({ width:390, height:844 }); await assertDashboard(220); await page.screenshot({ path:resolve(evidence,"dashboard-mobile.png"), fullPage:true });
+  await page.setViewportSize({ width:1440, height:900 }); await page.goto("/");
+  await page.getByRole("button", { name:"تغيير اتجاه اللغة" }).click();
+  await expect(page.locator("html")).toHaveAttribute("dir","ltr");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(2);
+  await page.screenshot({ path:resolve(evidence,"dashboard-ltr.png"), fullPage:false });
+  for (const route of ["/accounting","/sales","/inventory","/imports"]) {
+    await page.goto(route); await expect(page.locator("main").first()).toBeVisible();
+    expect(await page.locator("main").first().evaluate(element => getComputedStyle(element).direction)).toBe("ltr");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth-document.documentElement.clientWidth)).toBeLessThanOrEqual(2);
+  }
+  await page.goto("/");
+  await page.getByRole("button", { name:"تغيير اتجاه اللغة" }).click();
+  for (const [route,name] of [["/accounting","accounting-desktop.png"],["/sales","sales-desktop.png"],["/inventory","inventory-desktop.png"],["/imports","migration-center-desktop.png"]] as const) {
+    await page.goto(route); await expect(page.locator("main").first()).toBeVisible();
+    await page.waitForFunction(() => !document.body.innerText.includes("جارٍ تحميل"), null, { timeout:10000 }).catch(() => undefined);
+    await page.screenshot({ path:resolve(evidence,name), fullPage:false });
+  }
 });
 
 test("البحث والترقيم يعيدان عقود API قابلة للتوسع", async ({ page }) => {
@@ -113,7 +155,7 @@ test("NETAJ ONE يعمل عالميًا بالكتابة ويعرض نتيجة �
 
 test("الواجهة الحرجة قابلة للاستخدام على شاشة هاتف", async ({ page }, testInfo) => {
   test.skip(!testInfo.project.name.includes("mobile"), "mobile project only");
-  await expect(page.getByRole("heading", { name: "قيادة أعمالك من صورة واحدة واضحة" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "صورة أعمال واحدة. قرار أوضح." })).toBeVisible();
   await page.getByRole("button", { name: "فتح القائمة" }).click();
   await expect(page.getByRole("navigation", { name: "القائمة الرئيسية" })).toBeVisible();
   await page.getByRole("navigation", { name: "القائمة الرئيسية" }).getByRole("link", { name: "المخزون", exact: true }).click();

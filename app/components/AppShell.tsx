@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Landmark, LayoutDashboard, ShoppingCart, ShoppingBag, Boxes, Factory, ClipboardCheck,
   Truck, Users, HardHat, Globe2, Handshake, Wrench, ChartNoAxesCombined, UploadCloud,
@@ -58,17 +58,20 @@ const publicRoutes=["/login","/setup","/portal"];
 const publicPage=(path:string)=>publicRoutes.some(route=>path===route||path.startsWith(`${route}/`))||/^\/notes\/\d+\/print$/.test(path);
 
 export default function AppShell({children}:{children:React.ReactNode}){
-  const pathname=usePathname(),router=useRouter(),[session,setSession]=useState<Session|null>(null),[theme,setTheme]=useState<Theme|null>(null),[collapsed,setCollapsed]=useState(()=>typeof window!=="undefined"&&window.localStorage.getItem("netaj-sidebar-collapsed")==="1"),[mobileOpen,setMobileOpen]=useState(false),[accountOpen,setAccountOpen]=useState(false),[query,setQuery]=useState("");
+  const pathname=usePathname(),router=useRouter(),[session,setSession]=useState<Session|null>(null),[theme,setTheme]=useState<Theme|null>(null),[collapsed,setCollapsed]=useState(()=>typeof window!=="undefined"&&window.localStorage.getItem("netaj-sidebar-collapsed")==="1"),[mobileOpen,setMobileOpen]=useState(false),[accountOpen,setAccountOpen]=useState(false),[query,setQuery]=useState(""),[direction,setDirection]=useState<"rtl"|"ltr">(()=>typeof window!=="undefined"&&window.localStorage.getItem("netaj-direction")==="ltr"?"ltr":"rtl"),searchRef=useRef<HTMLInputElement>(null);
   const isPublic=publicPage(pathname);
   useEffect(()=>{if(isPublic)return;const controller=new AbortController();Promise.all([fetch("/api/auth/session",{cache:"no-store",signal:controller.signal}).then(r=>r.ok?r.json():null),fetch("/api/design/runtime",{cache:"no-store",signal:controller.signal}).then(r=>r.ok?r.json():null)]).then(([auth,runtime])=>{if(auth)setSession(auth);if(runtime?.theme)setTheme(runtime.theme)}).catch(()=>undefined);return()=>controller.abort()},[isPublic]);
+  useEffect(()=>{if(isPublic)return;const handle=(event:KeyboardEvent)=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="k"){event.preventDefault();searchRef.current?.focus()}};window.addEventListener("keydown",handle);return()=>window.removeEventListener("keydown",handle)},[isPublic]);
+  useEffect(()=>{if(isPublic)return;document.documentElement.dir=direction;document.documentElement.lang=direction==="rtl"?"ar":"en"},[direction,isPublic]);
   const visibleGroups=useMemo(()=>{const enabled=new Set(session?.modules??[]),order=new Map((theme?.menuOrder??[]).map((href,index)=>[href,index]));return groups.map(group=>({...group,items:group.items.filter(item=>enabled.has(item.module)).sort((a,b)=>(order.get(a.href)??999)-(order.get(b.href)??999))})).filter(group=>group.items.length)},[session,theme]);
   if(isPublic)return children;
   function toggleSidebar(){setCollapsed(value=>{window.localStorage.setItem("netaj-sidebar-collapsed",value?"0":"1");return!value})}
   function search(event:FormEvent){event.preventDefault();if(query.trim().length>1)router.push(`/search?q=${encodeURIComponent(query.trim())}`)}
   function toggleTheme(){const root=document.documentElement,next=root.dataset.theme==="dark"?"light":"dark";root.dataset.theme=next;window.localStorage.setItem("netaj-color-mode",next)}
+  function toggleDirection(){setDirection(current=>{const next=current==="rtl"?"ltr":"rtl";window.localStorage.setItem("netaj-direction",next);return next})}
   async function switchCompany(companyId:number){if(companyId===session?.companyId)return;const response=await fetch("/api/auth/switch-company",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({companyId})});if(response.ok){router.push("/");router.refresh()}}
   async function logout(){await fetch("/api/auth/logout",{method:"POST"});router.push("/login");router.refresh()}
-  return <div className="erp-shell" dir="rtl">
+  return <div className="erp-shell" dir={direction}>
     {mobileOpen&&<button aria-label="إغلاق القائمة" className="erp-sidebar-backdrop" onClick={()=>setMobileOpen(false)}/>} 
     <aside className={`erp-sidebar ${collapsed?"is-collapsed":""} ${mobileOpen?"is-mobile-open":""}`}>
       <div className="erp-brand">
@@ -81,9 +84,9 @@ export default function AppShell({children}:{children:React.ReactNode}){
     <div className="erp-stage">
       <header className="erp-topbar">
         <button aria-label="فتح القائمة" className="erp-mobile-menu" onClick={()=>setMobileOpen(true)}><Menu/></button>
-        <form onSubmit={search} className="erp-global-search"><Search size={18}/><input aria-label="البحث الشامل" value={query} onChange={event=>setQuery(event.target.value)} placeholder="ابحث عن عميل، فاتورة، مادة أو مشروع…"/><kbd>⌘ K</kbd></form>
+        <form onSubmit={search} className="erp-global-search"><Search size={18}/><input ref={searchRef} aria-label="البحث الشامل" value={query} onChange={event=>setQuery(event.target.value)} placeholder="ابحث عن عميل، فاتورة، مادة أو مشروع…"/><kbd>⌘ K</kbd></form>
         <div className="erp-top-actions">
-          <button aria-label="تغيير اللغة" className="erp-icon-button"><Languages size={19}/><span className="hidden xl:inline">AR</span></button>
+          <button aria-label="تغيير اتجاه اللغة" aria-pressed={direction==="ltr"} className="erp-icon-button" onClick={toggleDirection}><Languages size={19}/><span className="hidden xl:inline">{direction==="rtl"?"AR":"EN"}</span></button>
           <button aria-label="تبديل الوضع" className="erp-icon-button" onClick={toggleTheme}><Sun className="theme-light-icon" size={19}/><Moon className="theme-dark-icon" size={19}/></button>
           <Link aria-label="التنبيهات" href="/notifications" className="erp-icon-button"><Bell size={19}/><i/></Link>
           <div className="relative"><button aria-expanded={accountOpen} onClick={()=>setAccountOpen(!accountOpen)} className="erp-account-button"><span>{session?.userName?.slice(0,1)??"N"}</span><div><b>{session?.userName??"NETAj"}</b><small>{session?.companyCode??"ERP"}</small></div><ChevronDown size={16}/></button>{accountOpen&&<div className="erp-account-menu"><label>الشركة<select value={session?.companyId??""} onChange={event=>void switchCompany(Number(event.target.value))}>{session?.availableCompanies?.map(company=><option key={company.id} value={company.id}>{company.legalNameAr||company.code}</option>)}</select></label><Link href="/settings/security"><ShieldCheck size={16}/>أمان الحساب</Link><button onClick={()=>void logout()}><LogOut size={16}/>تسجيل الخروج</button></div>}</div>
