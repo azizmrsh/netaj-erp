@@ -21,7 +21,7 @@ const menu = [
   { label: "التقارير والمقارنات" },
   { label: "المساعد الذكي" },
   { label: "المستخدمون والصلاحيات" },
-  { label: "الإعدادات" },
+  { label: "إعدادات المؤسسة", href: "/settings/organization" },
 ];
 
 export default function Home() {

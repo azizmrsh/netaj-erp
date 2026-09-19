@@ -1498,12 +1498,17 @@ model Revenue {
 
 model CostCenter {
   id        Int      @id @default(autoincrement())
+  companyId Int      @default(1)
   code      String   @unique
   nameAr    String
   nameEn    String?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([companyId])
 }
 
 model ExpenseCategory {
@@ -1648,4 +1653,457 @@ model VoucherAllocation {
   @@unique([voucherId, purchaseId])
   @@index([saleId])
   @@index([purchaseId])
+}
+
+// ============================================================
+// GLOBAL SAAS CORE
+// Tenant, organization, localization, entitlements and RBAC.
+// Existing NETAj records are retained under the default company.
+// ============================================================
+
+model Tenant {
+  id                  Int      @id @default(autoincrement())
+  slug                String   @unique
+  name                String
+  status              String   @default("ACTIVE")
+  defaultLanguageCode String   @default("ar")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  groups        CompanyGroup[]
+  companies     Company[]
+  memberships   TenantMembership[]
+  roles         Role[]
+  subscriptions TenantSubscription[]
+}
+
+model CompanyGroup {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int
+  code      String
+  nameAr    String
+  nameEn    String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant    @relation(fields: [tenantId], references: [id])
+  companies Company[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model Company {
+  id                   Int      @id @default(autoincrement())
+  tenantId             Int
+  groupId              Int?
+  code                 String
+  legalNameAr          String
+  legalNameEn          String?
+  tradeName            String?
+  countryCode          String   @default("SA")
+  baseCurrencyCode     String   @default("SAR")
+  defaultLanguageCode  String   @default("ar")
+  timeZoneName         String   @default("Asia/Riyadh")
+  vatNumber            String?
+  fiscalYearStartMonth Int      @default(1)
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  tenant        Tenant                @relation(fields: [tenantId], references: [id])
+  group         CompanyGroup?         @relation(fields: [groupId], references: [id])
+  country       Country               @relation(fields: [countryCode], references: [code])
+  baseCurrency  Currency              @relation(fields: [baseCurrencyCode], references: [code])
+  language      Language              @relation(fields: [defaultLanguageCode], references: [code])
+  timeZone      TimeZone              @relation(fields: [timeZoneName], references: [name])
+  branches      Branch[]
+  warehouses    Warehouse[]
+  departments   Department[]
+  costCenters   CostCenter[]
+  fiscalYears   FiscalYear[]
+  exchangeRates ExchangeRate[]
+  localizations CompanyLocalization[]
+  modules       CompanyModule[]
+  entitlements  CompanyEntitlement[]
+  roles         Role[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([groupId])
+}
+
+model Branch {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  code      String
+  nameAr    String
+  nameEn    String?
+  city      String?
+  isMain    Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company    Company     @relation(fields: [companyId], references: [id])
+  warehouses Warehouse[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+}
+
+model Warehouse {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  branchId  Int?
+  code      String
+  nameAr    String
+  nameEn    String?
+  isMain    Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+  branch  Branch? @relation(fields: [branchId], references: [id])
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([branchId])
+}
+
+model Department {
+  id        Int      @id @default(autoincrement())
+  companyId Int
+  parentId  Int?
+  code      String
+  nameAr    String
+  nameEn    String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company  Company      @relation(fields: [companyId], references: [id])
+  parent   Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children Department[] @relation("DepartmentHierarchy")
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([parentId])
+}
+
+model FiscalYear {
+  id        Int       @id @default(autoincrement())
+  companyId Int
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  status    String    @default("OPEN")
+  closedAt  DateTime?
+  createdAt DateTime  @default(now())
+
+  company Company        @relation(fields: [companyId], references: [id])
+  periods FiscalPeriod[]
+
+  @@unique([companyId, startDate, endDate])
+  @@index([companyId, status])
+}
+
+model FiscalPeriod {
+  id           Int       @id @default(autoincrement())
+  fiscalYearId Int
+  periodNumber Int
+  name         String
+  startDate    DateTime
+  endDate      DateTime
+  status       String    @default("OPEN")
+  closedAt     DateTime?
+  createdAt    DateTime  @default(now())
+
+  fiscalYear FiscalYear @relation(fields: [fiscalYearId], references: [id])
+
+  @@unique([fiscalYearId, periodNumber])
+  @@index([startDate, endDate])
+}
+
+model Currency {
+  code          String   @id
+  nameAr        String
+  nameEn        String
+  symbol        String?
+  decimalPlaces Int      @default(2)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  companies          Company[]
+  baseExchangeRates  ExchangeRate[] @relation("BaseCurrency")
+  quoteExchangeRates ExchangeRate[] @relation("QuoteCurrency")
+}
+
+model ExchangeRate {
+  id                Int      @id @default(autoincrement())
+  companyId         Int
+  baseCurrencyCode  String
+  quoteCurrencyCode String
+  rateDate          DateTime
+  rate              Decimal
+  source            String?
+  createdAt         DateTime @default(now())
+
+  company       Company  @relation(fields: [companyId], references: [id])
+  baseCurrency  Currency @relation("BaseCurrency", fields: [baseCurrencyCode], references: [code])
+  quoteCurrency Currency @relation("QuoteCurrency", fields: [quoteCurrencyCode], references: [code])
+
+  @@unique([companyId, baseCurrencyCode, quoteCurrencyCode, rateDate])
+  @@index([companyId, rateDate])
+}
+
+model Language {
+  code       String   @id
+  name       String
+  nativeName String
+  direction  String   @default("LTR")
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  companies Company[]
+  packs     LocalizationPack[]
+}
+
+model Country {
+  code                 String   @id
+  nameAr               String
+  nameEn               String
+  defaultCurrencyCode  String?
+  taxRegistrationLabel String?
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+
+  companies Company[]
+  packs     LocalizationPack[]
+}
+
+model TimeZone {
+  name      String   @id
+  label     String
+  utcOffset String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  companies Company[]
+}
+
+model LocalizationPack {
+  id           Int      @id @default(autoincrement())
+  code         String   @unique
+  name         String
+  countryCode  String
+  languageCode String
+  version      Int      @default(1)
+  configJson   String   @default("{}")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  country   Country               @relation(fields: [countryCode], references: [code])
+  language  Language              @relation(fields: [languageCode], references: [code])
+  companies CompanyLocalization[]
+
+  @@index([countryCode, languageCode])
+}
+
+model CompanyLocalization {
+  id                 Int      @id @default(autoincrement())
+  companyId          Int
+  localizationPackId Int
+  isPrimary          Boolean  @default(false)
+  settingsJson       String   @default("{}")
+  createdAt          DateTime @default(now())
+
+  company          Company          @relation(fields: [companyId], references: [id])
+  localizationPack LocalizationPack @relation(fields: [localizationPackId], references: [id])
+
+  @@unique([companyId, localizationPackId])
+  @@index([companyId])
+}
+
+model ModuleDefinition {
+  key         String   @id
+  nameAr      String
+  nameEn      String
+  description String?
+  isCore      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  companies CompanyModule[]
+  plans     PlanModule[]
+}
+
+model CompanyModule {
+  id           Int      @id @default(autoincrement())
+  companyId    Int
+  moduleKey    String
+  enabled      Boolean  @default(true)
+  settingsJson String   @default("{}")
+  updatedAt    DateTime @updatedAt
+
+  company Company          @relation(fields: [companyId], references: [id])
+  module  ModuleDefinition @relation(fields: [moduleKey], references: [key])
+
+  @@unique([companyId, moduleKey])
+  @@index([companyId])
+}
+
+model EntitlementDefinition {
+  key         String   @id
+  name        String
+  valueType   String   @default("BOOLEAN")
+  description String?
+  createdAt   DateTime @default(now())
+
+  companies CompanyEntitlement[]
+}
+
+model CompanyEntitlement {
+  id             Int       @id @default(autoincrement())
+  companyId      Int
+  entitlementKey String
+  value          String
+  source         String    @default("PLAN")
+  expiresAt      DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  company     Company               @relation(fields: [companyId], references: [id])
+  entitlement EntitlementDefinition @relation(fields: [entitlementKey], references: [key])
+
+  @@unique([companyId, entitlementKey])
+  @@index([companyId])
+}
+
+model SubscriptionPlan {
+  id           Int      @id @default(autoincrement())
+  code         String   @unique
+  name         String
+  status       String   @default("ACTIVE")
+  userLimit    Int?
+  companyLimit Int?
+  storageMb    Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  modules       PlanModule[]
+  subscriptions TenantSubscription[]
+}
+
+model PlanModule {
+  id        Int     @id @default(autoincrement())
+  planId    Int
+  moduleKey String
+  enabled   Boolean @default(true)
+
+  plan   SubscriptionPlan @relation(fields: [planId], references: [id])
+  module ModuleDefinition @relation(fields: [moduleKey], references: [key])
+
+  @@unique([planId, moduleKey])
+}
+
+model TenantSubscription {
+  id          Int       @id @default(autoincrement())
+  tenantId    Int
+  planId      Int
+  status      String    @default("TRIAL")
+  startsAt    DateTime  @default(now())
+  trialEndsAt DateTime?
+  endsAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id])
+  plan   SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  @@index([tenantId, status])
+}
+
+model PlatformUser {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  name         String
+  passwordHash String?
+  status       String   @default("ACTIVE")
+  locale       String   @default("ar")
+  mfaEnabled   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships TenantMembership[]
+}
+
+model TenantMembership {
+  id               Int      @id @default(autoincrement())
+  tenantId         Int
+  userId           Int
+  defaultCompanyId Int?
+  status           String   @default("ACTIVE")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id])
+  user   PlatformUser     @relation(fields: [userId], references: [id])
+  roles  MembershipRole[]
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+}
+
+model Role {
+  id        Int      @id @default(autoincrement())
+  tenantId  Int
+  companyId Int?
+  code      String
+  name      String
+  isSystem  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id])
+  company     Company?         @relation(fields: [companyId], references: [id])
+  permissions RolePermission[]
+  memberships MembershipRole[]
+
+  @@unique([tenantId, companyId, code])
+  @@index([tenantId])
+}
+
+model Permission {
+  key         String   @id
+  moduleKey   String
+  action      String
+  description String?
+  createdAt   DateTime @default(now())
+
+  roles RolePermission[]
+
+  @@index([moduleKey])
+}
+
+model RolePermission {
+  roleId        Int
+  permissionKey String
+  granted       Boolean @default(true)
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionKey], references: [key])
+
+  @@id([roleId, permissionKey])
+}
+
+model MembershipRole {
+  membershipId Int
+  roleId       Int
+
+  membership TenantMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  role       Role             @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([membershipId, roleId])
 }

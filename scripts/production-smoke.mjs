@@ -50,6 +50,7 @@ const routes = [
   "/factory",
   "/hr",
   "/external",
+  "/settings/organization",
   "/api/units",
   "/api/item-categories",
   "/api/items",
@@ -87,6 +88,7 @@ const routes = [
   "/api/external/trades",
   "/api/external/costs",
   "/api/external/expenses",
+  "/api/platform",
 ];
 
 async function jsonRequest(route, init) {
@@ -105,6 +107,22 @@ try {
 
   const units = await (await fetch(`http://127.0.0.1:${port}/api/units`)).json();
   const suffix = Date.now().toString(36).toUpperCase();
+  const companyResult = await jsonRequest("/api/platform", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      code: `SMOKE-${suffix}`,
+      legalNameAr: "شركة اختبار SaaS",
+      countryCode: "SA",
+      baseCurrencyCode: "SAR",
+      defaultLanguageCode: "ar",
+      timeZoneName: "Asia/Riyadh",
+    }),
+  });
+  assert.equal(companyResult.response.status, 201);
+  assert.equal(companyResult.body.branches.length, 1);
+  assert.equal(companyResult.body.warehouses.length, 1);
+
   const partyResult = await jsonRequest("/api/parties", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
