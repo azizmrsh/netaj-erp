@@ -34,6 +34,27 @@ test("المسارات المحمية وIDOR لا يمكن تجاوزهما من
   await isolated.close();
 });
 
+test("فشل التحليلات ينتهي بحالة خطأ قابلة لإعادة المحاولة ولا يترك Skeleton دائمًا", async ({ browser,baseURL },testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"),"request failure simulation is covered by desktop; mobile remains covered by the live dashboard flow");
+  const context=await browser.newContext({baseURL,serviceWorkers:"block"}),page=await context.newPage();
+  let shouldFail=true;
+  await page.route("**/api/analytics?**",async route=>{
+    if(shouldFail)await route.fulfill({status:500,contentType:"application/json",body:JSON.stringify({error:"تعذر تحميل التحليلات"})});
+    else await route.continue();
+  });
+  await page.goto("/login");
+  await page.locator('input[name="email"]').fill(email);
+  await page.locator('input[name="password"]').fill(password);
+  await page.getByRole("button",{name:/دخول/}).click();
+  await expect(page.getByRole("heading",{name:"تعذر إكمال لوحة التحليلات"})).toBeVisible();
+  await expect(page.getByLabel("جارٍ تحميل المؤشرات")).toHaveCount(0);
+  shouldFail=false;
+  await page.getByRole("button",{name:/إعادة المحاولة/}).click();
+  await expect(page.locator(".premium-kpi")).toHaveCount(8);
+  await expect(page.getByRole("heading",{name:"تعذر إكمال لوحة التحليلات"})).toHaveCount(0);
+  await context.close();
+});
+
 test("واجهات الوحدات الأساسية تعمل داخل الغلاف المؤسسي", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes("mobile"), "desktop project only");
   const errors: string[] = [];
@@ -48,21 +69,35 @@ test("واجهات الوحدات الأساسية تعمل داخل الغلا�
 
 test("القبول البصري التنفيذي ولقطات الشاشات والاتجاهين", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes("mobile"), "desktop project captures all target viewports");
-  const evidence = resolve("artifacts/ui-acceptance"); mkdirSync(evidence, { recursive: true });
+  const evidence = resolve("artifacts/dashboard-recovery"); mkdirSync(evidence, { recursive: true });
   const assertDashboard = async (maxHero:number) => {
     await page.goto("/");
     await expect(page.getByRole("heading", { name: "صورة أعمال واحدة. قرار أوضح." })).toBeVisible();
     await expect(page.locator(".premium-kpi")).toHaveCount(8);
     await expect(page.locator(".premium-command-grid")).toBeVisible();
+    await expect(page.getByText("تعذر تحميل التحليلات")).toHaveCount(0);
+    await expect(page.getByLabel("جارٍ تحميل المؤشرات")).toHaveCount(0);
+    await expect(page.getByText("ما الذي يحتاج انتباهي اليوم؟")).toBeVisible();
+    await expect(page.getByText("آخر العمليات", { exact:true })).toBeVisible();
+    await expect(page.getByRole("button", { name:"فتح NETAJ ONE" })).toBeVisible();
+    for (const label of ["صافي الربح","المبيعات","المشتريات","قيمة المخزون","السيولة","ذمم العملاء","ذمم الموردين","موقف الضريبة"]) await expect(page.getByText(label,{exact:true}).first()).toBeVisible();
     const metrics = await page.evaluate(() => ({
       hero: document.querySelector(".premium-executive-hero")?.getBoundingClientRect().height ?? 999,
       analyticsTop: document.querySelector(".premium-command-grid")?.getBoundingClientRect().top ?? 9999,
       viewport: innerHeight,
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      sidebarWidth: document.querySelector(".erp-sidebar")?.getBoundingClientRect().width ?? 0,
+      sidebarBackground: getComputedStyle(document.querySelector(".erp-sidebar") as Element).backgroundImage,
+      kpiValues: [...document.querySelectorAll(".premium-kpi strong")].map(node=>node.textContent?.trim()??""),
     }));
     expect(metrics.hero).toBeLessThanOrEqual(maxHero);
     expect(metrics.analyticsTop).toBeLessThan(metrics.viewport);
     expect(metrics.overflow).toBeLessThanOrEqual(2);
+    expect(metrics.sidebarWidth).toBeGreaterThanOrEqual(240);
+    expect(metrics.sidebarBackground).toContain("gradient");
+    expect(metrics.kpiValues).toHaveLength(8);
+    expect(metrics.kpiValues.every(Boolean)).toBeTruthy();
+    await expect(page.locator(".premium-dual-chart, .premium-command-grid .premium-empty").first()).toBeVisible();
   };
   await page.setViewportSize({ width:1440, height:900 }); await assertDashboard(190); await page.screenshot({ path:resolve(evidence,"dashboard-desktop.png"), fullPage:true });
   await page.setViewportSize({ width:1024, height:900 }); await assertDashboard(210); await page.screenshot({ path:resolve(evidence,"dashboard-tablet.png"), fullPage:true });

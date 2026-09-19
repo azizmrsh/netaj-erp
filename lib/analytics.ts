@@ -117,17 +117,22 @@ async function customerActivity(tx: Tx, range: Range, inactiveDays: number) {
 }
 
 export async function loadExecutiveDashboard(tx: Tx, range: Range, enabledModules: Set<string>, inactiveDays = 60) {
+  async function widget<T>(name: string, operation: () => Promise<T>, fallback: T): Promise<T> {
+    try { return await operation(); }
+    catch (error) { console.error(`[analytics:${name}] widget unavailable`, error); return fallback; }
+  }
   const [sales, purchases, ledger, banks, stocks, factory, transport, monthly, customers, vatReturns, projectLines] = await Promise.all([
     enabledModules.has("SALES") ? tx.sale.findMany({ where: { status: active, invoiceDate: dateWhere(range) }, include: { allocations: true, creditDebitNotes: { where: { status: "POSTED" } } } }) : [],
     enabledModules.has("PURCHASES") ? tx.purchase.findMany({ where: { status: active, purchaseDate: dateWhere(range) }, include: { allocations: true, creditDebitNotes: { where: { status: "POSTED" } } } }) : [],
     enabledModules.has("ACCOUNTING") ? ledgerProfit(tx, range) : { revenue: 0, expenses: 0, netProfit: 0, lines: [] },
     enabledModules.has("ACCOUNTING") ? tx.bankAccount.findMany({ where: { isActive: true } }) : [],
     enabledModules.has("INVENTORY") ? tx.companyStock.findMany({ include: { item: true } }) : [],
-    enabledModules.has("FACTORY") ? factoryProfitability(tx, range) : null,
-    enabledModules.has("TRANSPORT") ? transportProfitability(tx, range) : null,
-    enabledModules.has("ACCOUNTING") ? monthlyComparison(tx, range) : [], enabledModules.has("INVENTORY") ? customerActivity(tx, range, inactiveDays) : [],
-    enabledModules.has("ACCOUNTING") ? tx.vatReturn.findMany({where:{periodEnd:dateWhere(range),status:{not:"CANCELLED"}},select:{netVatDue:true}}) : [],
-    enabledModules.has("PROJECTS") ? tx.journalEntryLine.findMany({where:{projectCode:{not:null},journalEntry:{status:"POSTED",entryDate:dateWhere(range)}},include:{account:true}}) : [],
+    enabledModules.has("FACTORY") ? widget("factory-profitability", () => factoryProfitability(tx, range), null) : null,
+    enabledModules.has("TRANSPORT") ? widget("transport-profitability", () => transportProfitability(tx, range), null) : null,
+    enabledModules.has("ACCOUNTING") ? widget("monthly-comparison", () => monthlyComparison(tx, range), []) : [],
+    enabledModules.has("INVENTORY") ? widget("customer-activity", () => customerActivity(tx, range, inactiveDays), []) : [],
+    enabledModules.has("ACCOUNTING") ? widget("vat-returns", () => tx.vatReturn.findMany({where:{periodEnd:dateWhere(range),status:{not:"CANCELLED"}},select:{netVatDue:true}}), []) : [],
+    enabledModules.has("PROJECTS") ? widget("project-profitability", () => tx.journalEntryLine.findMany({where:{projectCode:{not:null},journalEntry:{status:"POSTED",entryDate:dateWhere(range)}},include:{account:true}}), []) : [],
   ]);
   const salesTotal = sales.reduce((sum, row) => sum + n(row.functionalTotalAmount || row.totalAmount), 0), purchaseTotal = purchases.reduce((sum, row) => sum + n(row.functionalTotalAmount || row.totalAmount), 0);
   const ar = sales.reduce((sum, row) => sum + n(row.functionalTotalAmount || row.totalAmount) - row.allocations.reduce((s, a) => s + n(a.functionalAmount || a.amount), 0) - row.creditDebitNotes.reduce((s, note) => s + (note.noteType === "CREDIT_NOTE" ? n(note.functionalTotalAmount || note.totalAmount) : -n(note.functionalTotalAmount || note.totalAmount)), 0), 0);
@@ -135,16 +140,16 @@ export async function loadExecutiveDashboard(tx: Tx, range: Range, enabledModule
   const cashFlow = enabledModules.has("ACCOUNTING") ? await tx.bankTransaction.aggregate({ where: { transactionDate: dateWhere(range) }, _sum: { functionalAmountIn: true, functionalAmountOut: true } }) : null;
   const projectProfit=projectLines.reduce((sum,row)=>sum+(row.account?.accountType==="REVENUE"?n(row.credit)-n(row.debit):row.account?.accountType==="EXPENSE"?n(row.credit)-n(row.debit):0),0);
   const [recentSales,recentPurchases,recentVouchers,recentTrips,recentMovements,recentJournals,pendingApprovals,failedJobs,migrationWarnings,openControlAlerts] = await Promise.all([
-    enabledModules.has("SALES") ? tx.sale.findMany({ where:{invoiceDate:dateWhere(range),status:active},include:{party:true},orderBy:{invoiceDate:"desc"},take:5 }) : [],
-    enabledModules.has("PURCHASES") ? tx.purchase.findMany({ where:{purchaseDate:dateWhere(range),status:active},include:{party:true},orderBy:{purchaseDate:"desc"},take:5 }) : [],
-    enabledModules.has("ACCOUNTING") ? tx.financialVoucher.findMany({ where:{voucherDate:dateWhere(range),status:{notIn:["CANCELLED","REVERSED"]}},include:{party:true},orderBy:{voucherDate:"desc"},take:5 }) : [],
-    enabledModules.has("TRANSPORT") ? tx.transportTrip.findMany({ where:{tripDate:dateWhere(range)},include:{party:true},orderBy:{tripDate:"desc"},take:5 }) : [],
-    enabledModules.has("INVENTORY") ? tx.stockMovement.findMany({ where:{movementDate:dateWhere(range)},include:{item:true,party:true},orderBy:[{movementDate:"desc"},{id:"desc"}],take:5 }) : [],
-    enabledModules.has("ACCOUNTING") ? tx.journalEntry.findMany({ where:{entryDate:dateWhere(range),status:"POSTED"},orderBy:{entryDate:"desc"},take:5 }) : [],
-    enabledModules.has("APPROVALS") ? tx.unifiedApprovalRequest.count({where:{status:"PENDING"}}) : 0,
-    tx.backgroundJob.count({where:{status:{in:["FAILED","DEAD"]}}}),
-    enabledModules.has("IMPORT") ? tx.importBatch.count({where:{status:{in:["FAILED","MISMATCH","WARNING"]}}}) : 0,
-    tx.controlAlert.count({where:{status:"OPEN"}}),
+    enabledModules.has("SALES") ? widget("recent-sales",()=>tx.sale.findMany({ where:{invoiceDate:dateWhere(range),status:active},include:{party:true},orderBy:{invoiceDate:"desc"},take:5 }),[]) : [],
+    enabledModules.has("PURCHASES") ? widget("recent-purchases",()=>tx.purchase.findMany({ where:{purchaseDate:dateWhere(range),status:active},include:{party:true},orderBy:{purchaseDate:"desc"},take:5 }),[]) : [],
+    enabledModules.has("ACCOUNTING") ? widget("recent-vouchers",()=>tx.financialVoucher.findMany({ where:{voucherDate:dateWhere(range),status:{notIn:["CANCELLED","REVERSED"]}},include:{party:true},orderBy:{voucherDate:"desc"},take:5 }),[]) : [],
+    enabledModules.has("TRANSPORT") ? widget("recent-trips",()=>tx.transportTrip.findMany({ where:{tripDate:dateWhere(range)},include:{party:true},orderBy:{tripDate:"desc"},take:5 }),[]) : [],
+    enabledModules.has("INVENTORY") ? widget("recent-stock",()=>tx.stockMovement.findMany({ where:{movementDate:dateWhere(range)},include:{item:true,party:true},orderBy:[{movementDate:"desc"},{id:"desc"}],take:5 }),[]) : [],
+    enabledModules.has("ACCOUNTING") ? widget("recent-journals",()=>tx.journalEntry.findMany({ where:{entryDate:dateWhere(range),status:"POSTED"},orderBy:{entryDate:"desc"},take:5 }),[]) : [],
+    enabledModules.has("APPROVALS") ? widget("pending-approvals",()=>tx.unifiedApprovalRequest.count({where:{status:"PENDING"}}),0) : 0,
+    widget("failed-jobs",()=>tx.backgroundJob.count({where:{status:{in:["FAILED","DEAD"]}}}),0),
+    enabledModules.has("IMPORT") ? widget("migration-warnings",()=>tx.importBatch.count({where:{status:{in:["FAILED","MISMATCH","WARNING"]}}}),0) : 0,
+    widget("control-alerts",()=>tx.controlAlert.count({where:{status:"OPEN"}}),0),
   ]);
   const latestTransactions = [
     ...recentSales.map(row=>({key:`sale-${row.id}`,type:"فاتورة مبيعات",document:row.invoiceNumber,party:row.party.nameAr,amount:n(row.functionalTotalAmount||row.totalAmount),status:row.status,date:row.invoiceDate,href:`/sales?id=${row.id}`})),
@@ -154,7 +159,11 @@ export async function loadExecutiveDashboard(tx: Tx, range: Range, enabledModule
     ...recentMovements.map(row=>({key:`stock-${row.id}`,type:"حركة مخزون",document:row.movementNumber,party:row.party?.nameAr??row.item.nameAr,amount:n(row.quantityIn)||n(row.quantityOut),unit:"كمية",status:row.movementType,date:row.movementDate,href:`/inventory?movementId=${row.id}`})),
     ...recentJournals.map(row=>({key:`journal-${row.id}`,type:"قيد يومية",document:row.entryNumber,party:row.description??"—",amount:n(row.totalDebit),status:row.status,date:row.entryDate,href:`/accounting?tab=journal&id=${row.id}`})),
   ].sort((a,b)=>b.date.getTime()-a.date.getTime()).slice(0,8).map(row=>({...row,date:row.date.toISOString()}));
-  return { range: { from: day(range.from), to: day(range.to) }, kpis: { sales: salesTotal, purchases: purchaseTotal, netProfit: ledger.netProfit, liquidity: banks.reduce((sum, row) => sum + n(row.currentBalance), 0), inventory: stocks.reduce((sum, row) => sum + n(row.quantity) * n(row.averageCost), 0), ar, ap, cashFlow: n(cashFlow?._sum.functionalAmountIn) - n(cashFlow?._sum.functionalAmountOut), activeCustomers:customers.filter(row=>!row.inactive).length, vat:vatReturns.reduce((sum,row)=>sum+n(row.netVatDue),0), projectProfit }, factory, transport, monthly, materials: enabledModules.has("ACCOUNTING") ? await materialProfitability(tx, range) : [], customerActivity: customers, latestTransactions, alerts: { negativeCustomerStocks: enabledModules.has("INVENTORY") ? await tx.partyStockAccount.count({ where: { quantity: { lt: 0 } } }) : 0, inactiveCustomers: customers.filter((row) => row.inactive).length, decliningCustomers: customers.filter((row) => row.declining).length, stoppedCustomers: customers.filter((row) => row.stopped).length, newCustomers: customers.filter((row) => row.isNew).length, overdueReceivables: sales.filter((row) => row.dueDate && row.dueDate < range.to).length, openTrips: transport?.trips.filter((row) => row.status === "OPEN").length ?? 0, pendingApprovals, failedJobs, migrationWarnings, openControlAlerts } };
+  const [materials, negativeCustomerStocks] = await Promise.all([
+    enabledModules.has("ACCOUNTING") ? widget("material-profitability", () => materialProfitability(tx, range), []) : [],
+    enabledModules.has("INVENTORY") ? widget("negative-customer-stocks", () => tx.partyStockAccount.count({ where: { quantity: { lt: 0 } } }), 0) : 0,
+  ]);
+  return { range: { from: day(range.from), to: day(range.to) }, kpis: { sales: salesTotal, purchases: purchaseTotal, netProfit: ledger.netProfit, liquidity: banks.reduce((sum, row) => sum + n(row.currentBalance), 0), inventory: stocks.reduce((sum, row) => sum + n(row.quantity) * n(row.averageCost), 0), ar, ap, cashFlow: n(cashFlow?._sum.functionalAmountIn) - n(cashFlow?._sum.functionalAmountOut), activeCustomers:customers.filter(row=>!row.inactive).length, vat:vatReturns.reduce((sum,row)=>sum+n(row.netVatDue),0), projectProfit }, factory, transport, monthly, materials, customerActivity: customers, latestTransactions, alerts: { negativeCustomerStocks, inactiveCustomers: customers.filter((row) => row.inactive).length, decliningCustomers: customers.filter((row) => row.declining).length, stoppedCustomers: customers.filter((row) => row.stopped).length, newCustomers: customers.filter((row) => row.isNew).length, overdueReceivables: sales.filter((row) => row.dueDate && row.dueDate < range.to).length, openTrips: transport?.trips.filter((row) => row.status === "OPEN").length ?? 0, pendingApprovals, failedJobs, migrationWarnings, openControlAlerts } };
 }
 
 export async function loadLegacyReport(tx: Tx, report: string, range: Range, params: URLSearchParams) {

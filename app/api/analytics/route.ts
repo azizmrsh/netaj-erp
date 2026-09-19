@@ -12,6 +12,9 @@ export async function GET(request: Request) {
     return NextResponse.json(await prisma.$transaction((tx) => loadExecutiveDashboard(tx, range, enabledModules, inactiveDays)));
   } catch (error) {
     if (error instanceof AuthError) { const response = authErrorResponse(error); return NextResponse.json({ error: response.message, code: response.code }, { status: response.status }); }
-    return NextResponse.json({ error: error instanceof AnalyticsError ? error.message : "تعذر تحميل التحليلات" }, { status: 400 });
+    if (error instanceof AnalyticsError) return NextResponse.json({ error: error.message, code: "INVALID_ANALYTICS_RANGE" }, { status: 400 });
+    const details = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+    console.error("[analytics] executive dashboard failed", error);
+    return NextResponse.json({ error: "تعذر تحميل التحليلات", code: "ANALYTICS_INTERNAL_ERROR", ...(process.env.NODE_ENV !== "production" ? { details } : {}) }, { status: 500 });
   }
 }
