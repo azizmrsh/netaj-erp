@@ -67,6 +67,30 @@ test("مصمم المستندات يوفر سحبًا وإفلاتًا ومعا�
   await expect(page.getByText("معاينة المستند")).toBeVisible();
 });
 
+test("مركز الترحيل ينفذ ملف CSV من المعاينة حتى التسوية والتراجع", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "desktop project only");
+  const suffix = Date.now().toString(36).toUpperCase(), filename = `browser-migration-${suffix}.csv`;
+  await page.goto("/imports");
+  await page.getByLabel("ملف المصدر").setInputFiles({ name: filename, mimeType: "text/csv", buffer: Buffer.from(`الاسم العربي,الرقم الموحد,عميل\nعميل متصفح,WEB-${suffix},نعم\n`) });
+  await page.getByRole("button", { name: "تحليل الأعمدة" }).click();
+  await expect(page.getByRole("heading", { name: /اكتشاف الأوراق/ })).toBeVisible();
+  await page.getByRole("button", { name: "إنشاء معاينة التحقق" }).click();
+  await expect(page.getByRole("button", { name: "تشغيل Dry Run" })).toBeVisible();
+  await page.getByRole("button", { name: "تشغيل Dry Run" }).click();
+  await expect(page.getByRole("button", { name: "اعتماد الاستيراد" })).toBeVisible();
+  await page.getByRole("button", { name: "اعتماد الاستيراد" }).click();
+  await expect(page.getByRole("button", { name: "تنفيذ الدفعة المعتمدة" })).toBeVisible();
+  const payload = await page.evaluate(async () => (await fetch("/api/imports", { cache: "no-store" })).json()), batch = payload.batches.find((row: { sourceFile: string }) => row.sourceFile === filename);
+  expect(batch).toBeTruthy();
+  const executed = await page.evaluate(async (id) => { const response = await fetch(`/api/imports/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "EXECUTE" }) }); return { status: response.status, body: await response.json() }; }, batch.id);
+  expect(executed.status, JSON.stringify(executed.body)).toBe(200);
+  await page.reload();
+  await page.getByRole("button", { name: new RegExp(batch.batchNumber) }).click();
+  await expect(page.getByText("تقرير التسوية بعد الاستيراد")).toBeVisible();
+  const rolledBack = await page.evaluate(async (id) => { const response = await fetch(`/api/imports/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "ROLLBACK" }) }); return { status: response.status, body: await response.json() }; }, batch.id);
+  expect(rolledBack.status, JSON.stringify(rolledBack.body)).toBe(200);
+});
+
 test("الواجهة الحرجة قابلة للاستخدام على شاشة هاتف", async ({ page }, testInfo) => {
   test.skip(!testInfo.project.name.includes("mobile"), "mobile project only");
   await expect(page.getByRole("heading", { name: "قيادة أعمالك من صورة واحدة واضحة" })).toBeVisible();

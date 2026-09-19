@@ -14,13 +14,13 @@ function failure(error: unknown) {
 export async function POST(request: Request) {
   try {
     const auth = await authorizeRequest(request, { moduleKey: "IMPORT", action: "MANAGE" });
-    const body = await request.json() as { targetType?: unknown; name?: unknown; mapping?: unknown; isDefault?: unknown };
+    const body = await request.json() as { targetType?: unknown; name?: unknown; mapping?: unknown; isDefault?: unknown; sourceSystemId?: unknown; headerFingerprint?: unknown };
     const target = getImportTarget(String(body.targetType ?? "")), name = String(body.name ?? "").trim();
     if (!target || !name || !body.mapping || typeof body.mapping !== "object" || Array.isArray(body.mapping)) throw new DataImportError("بيانات القالب غير مكتملة");
     const result = await prisma.importTemplate.upsert({
       where: { tenantId_companyId_targetType_name: { tenantId: auth.tenantId, companyId: auth.companyId, targetType: target.key, name } },
-      create: { targetType: target.key, name, mappingJson: JSON.stringify(body.mapping), isDefault: Boolean(body.isDefault), createdBy: String(auth.userId) },
-      update: { mappingJson: JSON.stringify(body.mapping), isDefault: Boolean(body.isDefault) },
+      create: { targetType: target.key, name, mappingJson: JSON.stringify(body.mapping), isDefault: Boolean(body.isDefault), sourceSystemId: Number(body.sourceSystemId) || null, headerFingerprint: String(body.headerFingerprint ?? "") || null, createdBy: String(auth.userId) },
+      update: { mappingJson: JSON.stringify(body.mapping), isDefault: Boolean(body.isDefault), sourceSystemId: Number(body.sourceSystemId) || null, headerFingerprint: String(body.headerFingerprint ?? "") || null },
     });
     return NextResponse.json({ ...result, mapping: JSON.parse(result.mappingJson) }, { status: 201 });
   } catch (error) { return failure(error); }
@@ -36,4 +36,3 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ deleted: true });
   } catch (error) { return failure(error); }
 }
-

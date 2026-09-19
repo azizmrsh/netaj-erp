@@ -2317,6 +2317,7 @@ model Company {
   userAccess             CompanyAccess[]
   sessions               AuthSession[]
   importBatches          ImportBatch[]
+  legacySourceSystems    LegacySourceSystem[]
   importTemplates        ImportTemplate[]
   customFieldDefinitions CustomFieldDefinition[]
   customFieldValues      CustomFieldValue[]
@@ -2374,33 +2375,47 @@ model ImportBatch {
   targetType        String
   importMode        String    @default("FULL")
   duplicateStrategy String    @default("SKIP")
+  sourceSystemId    Int?
+  legacySystem      String    @default("GENERIC")
   sourceFile        String
   fileHash          String
   status            String    @default("PREVIEW")
+  cutoverDate       DateTime?
   mappingJson       String    @default("{}")
   sheetsJson        String    @default("[]")
   summaryJson       String    @default("{}")
+  impactJson        String    @default("{}")
+  reconciliationJson String  @default("{}")
   totalRows         Int       @default(0)
   validRows         Int       @default(0)
   invalidRows       Int       @default(0)
   duplicateRows     Int       @default(0)
+  warningRows       Int       @default(0)
   createdRows       Int       @default(0)
   updatedRows       Int       @default(0)
   skippedRows       Int       @default(0)
   createdBy         String?
+  dryRunAt          DateTime?
+  approvedAt        DateTime?
+  approvedBy        String?
   executedAt        DateTime?
   rolledBackAt      DateTime?
+  rollbackStatus    String    @default("AVAILABLE")
+  rollbackBlockedReason String?
   failureReason     String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   company Company            @relation(fields: [companyId], references: [id])
+  sourceSystem LegacySourceSystem? @relation(fields: [sourceSystemId], references: [id])
   rows    ImportRow[]
   links   LegacyRecordLink[]
+  referenceSnapshots LegacyReferenceSnapshot[]
 
   @@index([tenantId, companyId, createdAt])
   @@index([tenantId, companyId, status])
   @@index([fileHash, targetType])
+  @@index([sourceSystemId, targetType])
 }
 
 model ImportRow {
@@ -2425,6 +2440,7 @@ model ImportRow {
 
   batch ImportBatch       @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
   link  LegacyRecordLink?
+  referenceSnapshot LegacyReferenceSnapshot?
 
   @@unique([importBatchId, sourceSheet, sourceRow])
   @@index([tenantId, companyId, status])
@@ -2440,6 +2456,8 @@ model LegacyRecordLink {
   entityType           String
   entityId             Int
   legacySource         String
+  legacySystem         String?
+  legacyCode           String?
   legacyDocumentNumber String?
   sourceFile           String
   sourceSheet          String
@@ -2462,6 +2480,8 @@ model ImportTemplate {
   tenantId    Int      @default(1)
   companyId   Int      @default(1)
   targetType  String
+  sourceSystemId Int?
+  headerFingerprint String?
   name        String
   mappingJson String   @default("{}")
   isDefault   Boolean  @default(false)
@@ -2470,9 +2490,54 @@ model ImportTemplate {
   updatedAt   DateTime @updatedAt
 
   company Company @relation(fields: [companyId], references: [id])
+  sourceSystem LegacySourceSystem? @relation(fields: [sourceSystemId], references: [id])
 
   @@unique([tenantId, companyId, targetType, name])
   @@index([tenantId, companyId, targetType])
+  @@index([sourceSystemId, targetType, headerFingerprint])
+}
+
+model LegacySourceSystem {
+  id              Int      @id @default(autoincrement())
+  tenantId        Int      @default(1)
+  companyId       Int      @default(1)
+  code            String
+  name            String
+  vendor          String?
+  version         String?
+  description     String?
+  detectionJson   String   @default("{}")
+  isActive        Boolean  @default(true)
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  company         Company          @relation(fields: [companyId], references: [id])
+  batches         ImportBatch[]
+  templates       ImportTemplate[]
+
+  @@unique([tenantId, companyId, code])
+  @@index([tenantId, companyId, isActive])
+}
+
+model LegacyReferenceSnapshot {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int      @default(1)
+  companyId      Int      @default(1)
+  importBatchId  Int
+  importRowId    Int      @unique
+  reportType     String
+  snapshotDate   DateTime?
+  legacyCode     String?
+  dataJson       String
+  importedBy     String?
+  importedAt     DateTime @default(now())
+
+  batch ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  row   ImportRow   @relation(fields: [importRowId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, companyId, reportType])
+  @@index([importBatchId])
 }
 
 // ============================================================

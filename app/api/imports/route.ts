@@ -18,11 +18,12 @@ function errorResponse(error: unknown) {
 export async function GET(request: Request) {
   try {
     await authorizeRequest(request, { moduleKey: "IMPORT", action: "READ" });
-    const [batches, templates] = await Promise.all([
+    const [batches, templates, sourceSystems] = await Promise.all([
       prisma.importBatch.findMany({ orderBy: { createdAt: "desc" }, take: 100 }),
       prisma.importTemplate.findMany({ orderBy: [{ targetType: "asc" }, { name: "asc" }] }),
+      prisma.legacySourceSystem.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
     ]);
-    return NextResponse.json({ catalog: importCatalog(), batches: batches.map((batch) => serializeBatch(batch)), templates: templates.map((template) => ({ ...template, mapping: JSON.parse(template.mappingJson) })) });
+    return NextResponse.json({ catalog: importCatalog(), batches: batches.map((batch) => serializeBatch(batch)), templates: templates.map((template) => ({ ...template, mapping: JSON.parse(template.mappingJson) })), sourceSystems });
   } catch (error) {
     return errorResponse(error);
   }
@@ -45,14 +46,20 @@ export async function POST(request: Request) {
       try { mapping = JSON.parse(mappingText) as Record<string, string>; }
       catch { throw new DataImportError("خريطة الأعمدة غير صالحة"); }
     }
+    const sourceSystemId = Number(form.get("sourceSystemId") || 0) || null;
+    const sourceSystem = sourceSystemId ? await prisma.legacySourceSystem.findFirst({ where: { id: sourceSystemId, isActive: true } }) : null;
+    if (sourceSystemId && !sourceSystem) throw new DataImportError("نظام المصدر غير موجود", "SOURCE_NOT_FOUND", 404);
+    const cutoverText = String(form.get("cutoverDate") ?? "").trim();
+    const cutoverDate = cutoverText ? new Date(cutoverText) : null;
+    if (cutoverDate && Number.isNaN(cutoverDate.getTime())) throw new DataImportError("تاريخ التحول غير صالح");
     const bytes = new Uint8Array(await file.arrayBuffer());
     const result = await prisma.$transaction((tx) => createImportPreview(tx, {
       bytes, filename: file.name, targetType, importMode: String(form.get("importMode") ?? "FULL").toUpperCase(),
-      duplicateStrategy: String(form.get("duplicateStrategy") ?? "SKIP").toUpperCase(), mapping, createdBy: String(auth.userId),
+      duplicateStrategy: String(form.get("duplicateStrategy") ?? "SKIP").toUpperCase(), mapping, createdBy: String(auth.userId), sourceSystemId,
+      legacySystem: sourceSystem?.code ?? "GENERIC", cutoverDate,
     }), { timeout: 120_000 });
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     return errorResponse(error);
   }
 }
-

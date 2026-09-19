@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { AuthError, authErrorResponse } from "@/lib/auth";
 import { authorizeRequest } from "@/lib/api-auth";
-import { DataImportError, executeImportBatch, rollbackImportBatch, serializeBatch } from "@/lib/data-import";
+import { approveImportBatch, DataImportError, dryRunImportBatch, executeImportBatch, rollbackImportBatch, serializeBatch } from "@/lib/data-import";
 import { getImportTarget } from "@/lib/import-definitions";
 import { prisma } from "@/lib/prisma";
 import { enqueueBackgroundJob } from "@/lib/background-jobs";
@@ -26,13 +26,24 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   try {
     const { id } = await context.params, body = await request.json() as { action?: unknown };
     const action = String(body.action ?? "").toUpperCase();
-    const batch = await prisma.importBatch.findFirst({ where: { id: Number(id) }, select: { targetType: true, duplicateStrategy: true } });
+    const batch = await prisma.importBatch.findFirst({ where: { id: Number(id) }, select: { targetType: true, duplicateStrategy: true, status: true, approvedAt: true } });
     if (!batch) throw new DataImportError("دفعة الاستيراد غير موجودة", "NOT_FOUND", 404);
+    if (action === "DRY_RUN") {
+      const auth = await authorizeRequest(request, { moduleKey: "IMPORT", action: "PREVIEW" });
+      return NextResponse.json(await prisma.$transaction((tx) => dryRunImportBatch(tx, Number(id), String(auth.userId)), { timeout: 120_000 }));
+    }
+    if (action === "APPROVE") {
+      const auth = await authorizeRequest(request, { moduleKey: "IMPORT", action: "EXECUTE" });
+      const target = getImportTarget(batch.targetType);
+      if (target?.accountingSensitive) await authorizeRequest(request, { moduleKey: "IMPORT", action: "ACCOUNTING_IMPORT" });
+      return NextResponse.json(await prisma.$transaction((tx) => approveImportBatch(tx, Number(id), String(auth.userId)), { timeout: 120_000 }));
+    }
     if (action === "EXECUTE" || action === "QUEUE_EXECUTE") {
       const auth = await authorizeRequest(request, { moduleKey: "IMPORT", action: "EXECUTE" });
       const target = getImportTarget(batch.targetType);
       if (target?.accountingSensitive) await authorizeRequest(request, { moduleKey: "IMPORT", action: "ACCOUNTING_IMPORT" });
       if (["UPDATE", "MERGE"].includes(batch.duplicateStrategy)) await authorizeRequest(request, { moduleKey: "IMPORT", action: "UPDATE_EXISTING" });
+      if (batch.status !== "APPROVED" || !batch.approvedAt) throw new DataImportError("يجب إكمال Dry Run واعتماد الدفعة قبل التنفيذ", "APPROVAL_REQUIRED", 409);
       if(action === "QUEUE_EXECUTE") return NextResponse.json(await prisma.$transaction(async tx=>{const result=await enqueueBackgroundJob(tx,{jobType:"IMPORT_EXECUTE",payload:{batchId:Number(id)},idempotencyKey:`import:${id}`,maxAttempts:3},String(auth.userId));await tx.importBatch.update({where:{id:Number(id)},data:{status:"QUEUED"}});return result}),{status:202});
       return NextResponse.json(await prisma.$transaction((tx) => executeImportBatch(tx, Number(id), String(auth.userId)), { timeout: 120_000 }));
     }
@@ -41,5 +52,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       return NextResponse.json(await prisma.$transaction((tx) => rollbackImportBatch(tx, Number(id), String(auth.userId)), { timeout: 120_000 }));
     }
     throw new DataImportError("الإجراء غير مدعوم");
-  } catch (error) { return errorResponse(error); }
+  } catch (error) {
+    if (error instanceof DataImportError && error.code === "ROLLBACK_DEPENDENCY") {
+      const { id } = await context.params;
+      await prisma.importBatch.updateMany({ where: { id: Number(id) }, data: { rollbackStatus: "BLOCKED", rollbackBlockedReason: error.message } });
+    }
+    return errorResponse(error);
+  }
 }

@@ -34,7 +34,7 @@ export const scopedModels = new Set([
   "CostCode", "Project", "ProjectContract", "ProjectBoqItem", "ProjectCostBudget",
   "ProjectChangeOrder", "ProjectChangeOrderLine", "ProjectProgress", "ProgressCertificate",
   "ProgressCertificateLine", "SubcontractorContract", "SubcontractorCertificate",
-  "ImportBatch", "ImportRow", "LegacyRecordLink", "ImportTemplate",
+  "ImportBatch", "ImportRow", "LegacyRecordLink", "ImportTemplate", "LegacySourceSystem", "LegacyReferenceSnapshot",
   "CustomFieldDefinition", "CustomFieldValue", "CompanyConfiguration", "ApprovalRule",
   "CustomReportDefinition", "CompanyIndustryProfile",
   "DocumentTemplate", "IssuedDocumentPresentation", "CompanyThemeProfile",

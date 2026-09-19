@@ -6,6 +6,7 @@ export type ImportFieldDefinition = {
   labelEn: string;
   type: ImportFieldType;
   required?: boolean;
+  allowNegative?: boolean;
   aliases: string[];
 };
 
@@ -15,6 +16,8 @@ export type ImportTargetDefinition = {
   labelEn: string;
   moduleKey: string;
   accountingSensitive?: boolean;
+  referenceOnly?: boolean;
+  supportedModes?: ("HISTORICAL" | "OPENING" | "FULL")[];
   fields: ImportFieldDefinition[];
   duplicateKey: string[];
 };
@@ -25,8 +28,9 @@ const field = (
   labelEn: string,
   type: ImportFieldType,
   aliases: string[],
-  required = false
-): ImportFieldDefinition => ({ key, labelAr, labelEn, type, aliases: [key, labelAr, labelEn, ...aliases], required });
+  required = false,
+  allowNegative = false
+): ImportFieldDefinition => ({ key, labelAr, labelEn, type, aliases: [key, labelAr, labelEn, ...aliases], required, allowNegative });
 
 export const importTargets: ImportTargetDefinition[] = [
   {
@@ -34,7 +38,7 @@ export const importTargets: ImportTargetDefinition[] = [
     fields: [
       field("nameAr", "الاسم العربي", "Arabic Name", "text", ["الاسم", "اسم العميل", "اسم المورد", "customer", "supplier"], true),
       field("nameEn", "الاسم الإنجليزي", "English Name", "text", ["english name"]),
-      field("unifiedNumber", "الرقم الموحد", "Unified Number", "text", ["رقم موحد", "commercial number", "cr"]),
+      field("unifiedNumber", "الرقم الموحد", "Unified Number", "text", ["رقم موحد", "commercial number", "cr", "رقم العميل", "كود العميل", "customer code", "account no", "customer id", "supplier code", "كود المورد"]),
       field("vatNumber", "الرقم الضريبي", "VAT Number", "text", ["ضريبة", "tax number"]),
       field("telephone", "الهاتف", "Telephone", "text", ["جوال", "phone", "mobile"]),
       field("email", "البريد الإلكتروني", "Email", "text", ["بريد"]),
@@ -78,7 +82,7 @@ export const importTargets: ImportTargetDefinition[] = [
     fields: [
       field("partyKey", "العميل", "Party", "text", ["اسم العميل", "الرقم الموحد", "customer"], true),
       field("itemCode", "كود المادة", "Item Code", "text", ["المادة", "item"], true),
-      field("quantity", "الكمية", "Quantity", "number", ["رصيد", "balance"], true),
+      field("quantity", "الكمية", "Quantity", "number", ["رصيد", "balance"], true, true),
       field("unitCost", "قيمة الوحدة", "Unit Value", "number", ["تكلفة", "value"]),
       field("movementDate", "تاريخ الرصيد", "Balance Date", "date", ["التاريخ", "date"]),
       field("referenceNumber", "المرجع", "Reference", "text", []),
@@ -186,7 +190,62 @@ export const importTargets: ImportTargetDefinition[] = [
       field("notes", "ملاحظات", "Notes", "text", []),
     ],
   },
+  { key: "CUSTOMERS", labelAr: "العملاء", labelEn: "Customers", moduleKey: "CORE", duplicateKey: ["legacyCode", "unifiedNumber", "nameAr"], fields: partyMasterFields("CUSTOMER") },
+  { key: "SUPPLIERS", labelAr: "الموردون", labelEn: "Suppliers", moduleKey: "CORE", duplicateKey: ["legacyCode", "unifiedNumber", "nameAr"], fields: partyMasterFields("SUPPLIER") },
+  {
+    key: "CHART_OF_ACCOUNTS", labelAr: "دليل الحسابات", labelEn: "Chart of accounts", moduleKey: "ACCOUNTING", accountingSensitive: true, duplicateKey: ["accountCode"], supportedModes: ["HISTORICAL", "FULL"],
+    fields: [field("accountCode", "كود الحساب", "Account Code", "text", ["رقم الحساب", "account no", "gl code"], true), field("accountNameAr", "اسم الحساب العربي", "Arabic Account Name", "text", ["اسم الحساب", "account name"], true), field("accountNameEn", "اسم الحساب الإنجليزي", "English Account Name", "text", []), field("accountType", "نوع الحساب", "Account Type", "text", ["التصنيف", "type"], true), field("parentCode", "الحساب الأب", "Parent Account", "text", ["parent code"]), field("allowPosting", "يسمح بالترحيل", "Allow Posting", "boolean", ["posting"]), field("legacyCode", "الكود القديم", "Legacy Code", "text", ["old code"])],
+  },
+  {
+    key: "TRIAL_BALANCE_REFERENCE", labelAr: "ميزان مراجعة مرجعي", labelEn: "Trial balance reference", moduleKey: "ACCOUNTING", accountingSensitive: true, referenceOnly: true, duplicateKey: ["accountCode", "asOfDate"], supportedModes: ["HISTORICAL"],
+    fields: referenceAccountFields(),
+  },
+  {
+    key: "INVENTORY_MOVEMENTS", labelAr: "حركات المخزون القديمة", labelEn: "Inventory movements", moduleKey: "INVENTORY", duplicateKey: ["legacyDocumentNumber", "movementDate", "itemCode", "partyKey", "quantity"], supportedModes: ["HISTORICAL", "FULL"],
+    fields: [field("legacyDocumentNumber", "رقم الحركة القديم", "Legacy Movement Number", "text", ["رقم المستند", "movement no", "document number"], true), field("movementDate", "تاريخ الحركة", "Movement Date", "date", ["التاريخ"], true), field("itemCode", "كود المادة", "Item Code", "text", ["المادة", "item"], true), field("partyKey", "العميل", "Party", "text", ["customer code", "كود العميل"]), field("ownershipType", "نوع الملكية", "Ownership Type", "text", ["الملكية"], true), field("direction", "اتجاه الحركة", "Direction", "text", ["وارد صادر", "in out"], true), field("quantity", "الكمية", "Quantity", "number", ["qty"], true), field("unitCost", "تكلفة الوحدة", "Unit Cost", "number", ["التكلفة"]), field("reference", "المرجع", "Reference", "text", []), field("notes", "ملاحظات", "Notes", "text", [])],
+  },
+  { key: "RECEIPTS", labelAr: "سندات القبض", labelEn: "Receipts", moduleKey: "ACCOUNTING", accountingSensitive: true, duplicateKey: ["voucherNumber", "voucherDate", "partyKey", "amount", "referenceNumber"], fields: voucherImportFields("RECEIPT") },
+  { key: "PAYMENTS", labelAr: "سندات الصرف", labelEn: "Payments", moduleKey: "ACCOUNTING", accountingSensitive: true, duplicateKey: ["voucherNumber", "voucherDate", "partyKey", "amount", "referenceNumber"], fields: voucherImportFields("PAYMENT") },
+  {
+    key: "JOURNAL_ENTRIES", labelAr: "القيود اليومية", labelEn: "Journal entries", moduleKey: "ACCOUNTING", accountingSensitive: true, duplicateKey: ["entryNumber", "lineNumber"], supportedModes: ["HISTORICAL", "FULL"],
+    fields: [field("entryNumber", "رقم القيد القديم", "Legacy Entry Number", "text", ["رقم القيد", "journal no"], true), field("entryDate", "تاريخ القيد", "Entry Date", "date", ["التاريخ"], true), field("lineNumber", "رقم السطر", "Line Number", "number", ["السطر"], true), field("accountCode", "كود الحساب", "Account Code", "text", ["رقم الحساب"], true), field("debit", "مدين", "Debit", "number", ["debit amount"]), field("credit", "دائن", "Credit", "number", ["credit amount"]), field("partyKey", "العميل أو المورد", "Party", "text", ["party code"]), field("currency", "العملة", "Currency", "text", []), field("exchangeRate", "سعر الصرف", "Exchange Rate", "number", ["rate"]), field("description", "البيان", "Description", "text", ["الوصف"]), field("referenceNumber", "المرجع", "Reference", "text", [])],
+  },
+  {
+    key: "AR_AP_BALANCES", labelAr: "أرصدة العملاء والموردين", labelEn: "AR/AP balances", moduleKey: "ACCOUNTING", accountingSensitive: true, duplicateKey: ["partyKey", "balanceType", "asOfDate"], supportedModes: ["HISTORICAL", "OPENING"],
+    fields: [field("partyKey", "العميل أو المورد", "Party", "text", ["customer code", "supplier code", "account no"], true), field("balanceType", "نوع الرصيد", "Balance Type", "text", ["ar ap", "مدين دائن"], true), field("amount", "الرصيد", "Balance", "number", ["amount"], true, true), field("currency", "العملة", "Currency", "text", []), field("exchangeRate", "سعر الصرف", "Exchange Rate", "number", ["rate"]), field("asOfDate", "تاريخ الرصيد", "As Of Date", "date", ["التاريخ"], true), field("legacyDocumentNumber", "رقم المستند القديم", "Legacy Document Number", "text", ["document no"]), field("notes", "ملاحظات", "Notes", "text", [])],
+  },
+  {
+    key: "BANKS_CASH", labelAr: "البنوك والصناديق", labelEn: "Banks and cash", moduleKey: "ACCOUNTING", accountingSensitive: true, duplicateKey: ["iban", "accountNumber", "name"], supportedModes: ["HISTORICAL", "OPENING", "FULL"],
+    fields: [field("name", "اسم الحساب البنكي أو الصندوق", "Bank/Cash Name", "text", ["اسم البنك", "cash account"], true), field("bankName", "اسم البنك", "Bank Name", "text", []), field("accountNumber", "رقم الحساب", "Account Number", "text", ["account no"]), field("iban", "الآيبان", "IBAN", "text", []), field("ledgerAccountCode", "كود حساب الأستاذ", "Ledger Account Code", "text", ["gl code"], true), field("currency", "العملة", "Currency", "text", []), field("openingBalance", "الرصيد الافتتاحي", "Opening Balance", "number", ["الرصيد"], false, true), field("cutoverDate", "تاريخ الرصيد", "Balance Date", "date", ["التاريخ"]), field("legacyCode", "الكود القديم", "Legacy Code", "text", [])],
+  },
+  {
+    key: "VAT_REFERENCE", labelAr: "بيانات ضريبة القيمة المضافة المرجعية", labelEn: "VAT reference", moduleKey: "ACCOUNTING", accountingSensitive: true, referenceOnly: true, duplicateKey: ["period", "documentNumber", "vatAmount"], supportedModes: ["HISTORICAL"],
+    fields: [field("period", "الفترة", "Period", "text", ["tax period"], true), field("documentNumber", "رقم المستند", "Document Number", "text", ["invoice no"]), field("documentDate", "تاريخ المستند", "Document Date", "date", ["التاريخ"]), field("direction", "نوع الضريبة", "VAT Direction", "text", ["input output"]), field("taxableAmount", "المبلغ الخاضع", "Taxable Amount", "number", ["net amount"], false, true), field("vatAmount", "مبلغ الضريبة", "VAT Amount", "number", ["tax amount"], false, true), field("partyKey", "العميل أو المورد", "Party", "text", [])],
+  },
+  {
+    key: "FACTORY_RAW_MATERIAL", labelAr: "المصنع والمواد الخام", labelEn: "Factory/raw material", moduleKey: "FACTORY", duplicateKey: ["transactionNumber", "transactionDate", "partyKey", "itemCode"], supportedModes: ["HISTORICAL", "FULL"],
+    fields: [field("transactionNumber", "رقم العملية القديم", "Legacy Transaction Number", "text", ["رقم المستند"], true), field("transactionDate", "تاريخ العملية", "Transaction Date", "date", ["التاريخ"], true), field("transactionType", "نوع العملية", "Transaction Type", "text", ["النوع"], true), field("partyKey", "العميل", "Party", "text", ["customer code"]), field("itemCode", "كود المادة", "Item Code", "text", ["المادة"], true), field("quantity", "الكمية", "Quantity", "number", ["tons", "الطن"], true), field("feePerTon", "أجرة التصنيع للطن", "Fee Per Ton", "number", ["manufacturing fee"]), field("vatRate", "نسبة الضريبة", "VAT Rate", "number", ["vat"]), field("referenceNumber", "المرجع", "Reference", "text", []), field("notes", "ملاحظات", "Notes", "text", [])],
+  },
+  {
+    key: "PROJECTS", labelAr: "المشاريع والمقاولات", labelEn: "Projects and contracting", moduleKey: "PROJECTS", duplicateKey: ["projectNumber"], supportedModes: ["HISTORICAL", "FULL"],
+    fields: [field("projectNumber", "رقم المشروع", "Project Number", "text", ["project code"], true), field("name", "اسم المشروع", "Project Name", "text", ["المشروع"], true), field("partyKey", "العميل", "Customer", "text", ["customer code"], true), field("costCenterCode", "مركز التكلفة", "Cost Center Code", "text", ["cost center"], true), field("startDate", "تاريخ البداية", "Start Date", "date", ["تاريخ المشروع"], true), field("endDate", "تاريخ النهاية", "End Date", "date", []), field("contractValue", "قيمة العقد", "Contract Value", "number", ["contract amount"]), field("advanceAmount", "الدفعة المقدمة", "Advance Amount", "number", []), field("retentionPercent", "نسبة الاستقطاع", "Retention Percent", "number", ["retention"]), field("status", "الحالة", "Status", "text", []), field("legacyCode", "الكود القديم", "Legacy Code", "text", [])],
+  },
+  { key: "INCOME_STATEMENT_REFERENCE", labelAr: "قائمة دخل مرجعية", labelEn: "Income statement reference", moduleKey: "ACCOUNTING", accountingSensitive: true, referenceOnly: true, duplicateKey: ["lineCode", "period"], supportedModes: ["HISTORICAL"], fields: referenceReportFields() },
+  { key: "BALANCE_SHEET_REFERENCE", labelAr: "ميزانية عمومية مرجعية", labelEn: "Balance sheet reference", moduleKey: "ACCOUNTING", accountingSensitive: true, referenceOnly: true, duplicateKey: ["lineCode", "period"], supportedModes: ["HISTORICAL"], fields: referenceReportFields() },
+  { key: "SUMMARY_REPORT_REFERENCE", labelAr: "تقرير ملخص مرجعي", labelEn: "Summary report reference", moduleKey: "CORE", referenceOnly: true, duplicateKey: ["lineCode", "period"], supportedModes: ["HISTORICAL"], fields: referenceReportFields() },
 ];
+
+function partyMasterFields(role: "CUSTOMER" | "SUPPLIER") {
+  const roleAliases = role === "CUSTOMER" ? ["رقم العميل", "كود العميل", "customer code", "customer id", "account no"] : ["رقم المورد", "كود المورد", "supplier code", "vendor id", "account no"];
+  return [field("legacyCode", role === "CUSTOMER" ? "كود العميل القديم" : "كود المورد القديم", "Legacy Code", "text", roleAliases), field("nameAr", "الاسم العربي", "Arabic Name", "text", ["الاسم", role === "CUSTOMER" ? "اسم العميل" : "اسم المورد", role === "CUSTOMER" ? "customer name" : "supplier name"], true), field("nameEn", "الاسم الإنجليزي", "English Name", "text", ["name english"]), field("unifiedNumber", "الرقم الموحد", "Unified Number", "text", ["commercial number", "cr"]), field("vatNumber", "الرقم الضريبي", "VAT Number", "text", ["tax number"]), field("telephone", "الهاتف", "Telephone", "text", ["جوال", "phone", "mobile"]), field("email", "البريد الإلكتروني", "Email", "text", ["بريد"]), field("city", "المدينة", "City", "text", []), field("district", "الحي", "District", "text", []), field("street", "الشارع", "Street", "text", []), field("postalCode", "الرمز البريدي", "Postal Code", "text", ["zip"]), field("notes", "ملاحظات", "Notes", "text", [])];
+}
+
+function voucherImportFields(type: "RECEIPT" | "PAYMENT") {
+  return [field("voucherNumber", type === "RECEIPT" ? "رقم سند القبض" : "رقم سند الصرف", "Voucher Number", "text", ["رقم السند", "voucher no"], true), field("voucherDate", "تاريخ السند", "Voucher Date", "date", ["التاريخ"], true), field("partyKey", "العميل أو المورد", "Party", "text", ["customer code", "supplier code"]), field("bankKey", "البنك أو الصندوق", "Bank/Cash", "text", ["bank account", "cash"], true), field("amount", "المبلغ", "Amount", "number", ["paid", "received"], true), field("currency", "العملة", "Currency", "text", []), field("exchangeRate", "سعر الصرف", "Exchange Rate", "number", ["rate"]), field("paymentMethod", "طريقة الدفع", "Payment Method", "text", ["method"]), field("referenceNumber", "المرجع", "Reference", "text", ["cheque no"]), field("description", "البيان", "Description", "text", ["الوصف"]), field("legacyDocumentNumber", "رقم المستند القديم", "Legacy Document Number", "text", ["document number"])];
+}
+
+function referenceAccountFields() { return [field("accountCode", "كود الحساب", "Account Code", "text", ["account no"], true), field("accountName", "اسم الحساب", "Account Name", "text", [], true), field("openingDebit", "افتتاحي مدين", "Opening Debit", "number", [], false, true), field("openingCredit", "افتتاحي دائن", "Opening Credit", "number", [], false, true), field("periodDebit", "حركة مدين", "Period Debit", "number", [], false, true), field("periodCredit", "حركة دائن", "Period Credit", "number", [], false, true), field("closingDebit", "ختامي مدين", "Closing Debit", "number", [], false, true), field("closingCredit", "ختامي دائن", "Closing Credit", "number", [], false, true), field("asOfDate", "حتى تاريخ", "As Of Date", "date", ["التاريخ"], true)]; }
+function referenceReportFields() { return [field("lineCode", "كود البند", "Line Code", "text", ["account code"]), field("lineName", "اسم البند", "Line Name", "text", ["account name", "البند"], true), field("period", "الفترة", "Period", "text", ["month", "year"], true), field("amount", "المبلغ", "Amount", "number", ["balance", "value"], true, true), field("comparativeAmount", "المبلغ المقارن", "Comparative Amount", "number", ["previous amount"], false, true), field("notes", "ملاحظات", "Notes", "text", [])]; }
 
 function commerceFields(numberKey: string, numberAr: string, numberEn: string, dateKey: string, dateAr: string, dateEn: string, partyAlias: string) {
   return [
@@ -226,6 +285,11 @@ export function normalizeImportHeader(value: unknown) {
   return String(value ?? "")
     .normalize("NFKD")
     .replace(/[\u064B-\u065F\u0670]/g, "")
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/ـ/g, "")
+    .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, "")
     .trim();
@@ -236,16 +300,27 @@ export function getImportTarget(key: string) {
 }
 
 export function suggestImportMapping(headers: string[], target: ImportTargetDefinition) {
-  const normalized = new Map(headers.map((header) => [normalizeImportHeader(header), header]));
+  const normalized = headers.map((header) => ({ raw: header, value: normalizeImportHeader(header) }));
   const mapping: Record<string, string> = {};
   for (const targetField of target.fields) {
-    const match = targetField.aliases
-      .map(normalizeImportHeader)
-      .map((alias) => normalized.get(alias))
-      .find(Boolean);
-    if (match) mapping[targetField.key] = match;
+    const aliases = targetField.aliases.map(normalizeImportHeader).filter(Boolean);
+    const ranked = normalized.map((header) => ({ header: header.raw, score: Math.max(...aliases.map((alias) => alias === header.value ? 100 : alias.length >= 3 && (alias.includes(header.value) || header.value.includes(alias)) ? 82 : tokenSimilarity(alias, header.value))) })).sort((a, b) => b.score - a.score);
+    if (ranked[0]?.score >= 60 && !Object.values(mapping).includes(ranked[0].header)) mapping[targetField.key] = ranked[0].header;
   }
   return mapping;
+}
+
+function tokenSimilarity(left: string, right: string) {
+  const tokens = (value: string) => new Set(value.split(/(?=[a-z])|(?=\d)/).filter((token) => token.length > 1));
+  const a = tokens(left), b = tokens(right); if (!a.size || !b.size) return 0;
+  const intersection = [...a].filter((entry) => b.has(entry)).length;
+  return Math.round(intersection / Math.max(a.size, b.size) * 70);
+}
+
+export function importHeaderFingerprint(headers: string[]) { return headers.map(normalizeImportHeader).filter(Boolean).sort().join("|"); }
+
+export function normalizeArabicDigits(value: unknown) {
+  return String(value ?? "").replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit))).replace(/[۰-۹]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)));
 }
 
 export function coerceImportValue(value: unknown, type: ImportFieldType) {
@@ -253,8 +328,10 @@ export function coerceImportValue(value: unknown, type: ImportFieldType) {
   if (type === "text") return String(value).trim();
   if (type === "number") {
     if (typeof value === "number") return Number.isFinite(value) ? value : null;
-    const normalized = String(value).replace(/[,%،\s]/g, "").replace(/٫/g, ".");
-    const parsed = Number(normalized);
+    let normalized = normalizeArabicDigits(value).trim().replace(/[٪%]/g, "").replace(/[٬،\s]/g, "").replace(/٫/g, ".").replace(/SAR|ر\.؟س|ريال|USD|EUR|GBP/gi, "");
+    const negative = /^\(.*\)$/.test(normalized) || /-$/.test(normalized); normalized = normalized.replace(/[()]/g, "").replace(/-$/, "");
+    if (normalized.includes(",") && !normalized.includes(".")) normalized = normalized.replace(",", "."); else normalized = normalized.replace(/,/g, "");
+    const parsed = Number(normalized) * (negative ? -1 : 1);
     return Number.isFinite(parsed) ? parsed : null;
   }
   if (type === "boolean") {
@@ -269,7 +346,9 @@ export function coerceImportValue(value: unknown, type: ImportFieldType) {
     const date = new Date(excelEpoch.getTime() + value * 86_400_000);
     return Number.isNaN(date.getTime()) ? null : date.toISOString();
   }
-  const parsed = new Date(String(value));
+  const normalized = normalizeArabicDigits(value).trim();
+  const local = normalized.match(/^(\d{1,4})[\/-](\d{1,2})[\/-](\d{1,4})$/);
+  const parsed = local ? (local[1].length === 4 ? new Date(Date.UTC(Number(local[1]), Number(local[2]) - 1, Number(local[3]))) : new Date(Date.UTC(Number(local[3]), Number(local[2]) - 1, Number(local[1])))) : new Date(normalized);
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 

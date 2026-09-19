@@ -71,6 +71,7 @@ const routes = [
   "/reports",
   "/projects",
   "/imports",
+  "/imports/sources",
   "/settings/organization",
   "/settings/configuration",
   "/reports/builder",
@@ -142,6 +143,7 @@ const routes = [
   "/api/analytics",
   "/api/projects",
   "/api/imports",
+  "/api/imports/source-systems",
   "/api/imports/template?target=PARTIES",
   "/api/configuration",
   "/api/custom-fields?entityType=PARTY",
@@ -225,13 +227,17 @@ try {
   const previewImportBody = await previewImport.json();
   assert.equal(previewImport.status, 201, `import preview returned ${previewImport.status}: ${JSON.stringify(previewImportBody)}`);
   assert.equal(previewImportBody.validRows, 1, `unexpected import preview: ${JSON.stringify(previewImportBody)}`);
+  const dryRunImport = await jsonRequest(`/api/imports/${previewImportBody.id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "DRY_RUN" }) });
+  assert.equal(dryRunImport.response.status, 200); assert.equal(dryRunImport.body.status, "DRY_RUN");
+  const approveImport = await jsonRequest(`/api/imports/${previewImportBody.id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "APPROVE" }) });
+  assert.equal(approveImport.response.status, 200); assert.equal(approveImport.body.status, "APPROVED");
   const executeImport = await jsonRequest(`/api/imports/${previewImportBody.id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "EXECUTE" }) });
   assert.equal(executeImport.response.status, 200); assert.equal(executeImport.body.createdRows, 1);
   const importedParty = (await jsonRequest(`/api/parties?q=${encodeURIComponent(`SMOKE-IMP-${suffix}`)}`)).body.parties.find((row) => row.unifiedNumber === `SMOKE-IMP-${suffix}`);
   assert.ok(importedParty);
   const rollbackImport = await jsonRequest(`/api/imports/${previewImportBody.id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "ROLLBACK" }) });
   assert.equal(rollbackImport.response.status, 200); assert.equal(rollbackImport.body.status, "ROLLED_BACK");
-  console.log("PASS production import preview/execute/provenance/rollback");
+  console.log("PASS production import preview/dry-run/approval/execute/reconciliation/rollback");
   const companyResult = await jsonRequest("/api/platform", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
