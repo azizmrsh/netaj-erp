@@ -20,6 +20,8 @@ model Party {
   sales     Sale[]
   purchases Purchase[]
   id        Int        @id @default(autoincrement())
+  tenantId  Int        @default(1)
+  companyId Int        @default(1)
 
   nameAr String
   nameEn String?
@@ -51,6 +53,8 @@ model Party {
   factoryFeeRates     FactoryFeeRate[]
 
   notesDocuments DeliveryReceiptNote[]
+
+  @@index([tenantId, companyId])
 }
 
 // ======================================================
@@ -59,7 +63,9 @@ model Party {
 // ======================================================
 
 model PartyAddress {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   partyId Int @unique
 
@@ -74,6 +80,8 @@ model PartyAddress {
   mapLink         String?
 
   party Party @relation(fields: [partyId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, companyId])
 }
 
 // ======================================================
@@ -82,7 +90,9 @@ model PartyAddress {
 // ======================================================
 
 model ItemCategory {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   nameAr String
   nameEn String?
@@ -93,6 +103,8 @@ model ItemCategory {
   updatedAt DateTime @updatedAt
 
   items Item[]
+
+  @@index([tenantId, companyId])
 }
 
 // ======================================================
@@ -102,7 +114,9 @@ model ItemCategory {
 // ======================================================
 
 model Unit {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   code String @unique
 
@@ -115,6 +129,8 @@ model Unit {
   updatedAt DateTime @updatedAt
 
   items Item[]
+
+  @@index([tenantId, companyId])
 }
 
 // ======================================================
@@ -126,6 +142,8 @@ model Item {
   saleItems     SaleItem[]
   purchaseItems PurchaseItem[]
   id            Int            @id @default(autoincrement())
+  tenantId      Int            @default(1)
+  companyId     Int            @default(1)
 
   code String @unique
 
@@ -170,6 +188,8 @@ model Item {
   factoryFuelMovements FactoryFuelMovement[]
   externalTrades       ExternalTrade[]
   externalLinkedCosts  ExternalLinkedCost[]
+
+  @@index([tenantId, companyId])
 }
 
 // ======================================================
@@ -178,7 +198,9 @@ model Item {
 // ======================================================
 
 model CompanyStock {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   itemId Int @unique
 
@@ -189,6 +211,8 @@ model CompanyStock {
   updatedAt DateTime @updatedAt
 
   item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, companyId])
 }
 
 // ======================================================
@@ -201,7 +225,9 @@ model CompanyStock {
 // ======================================================
 
 model PartyStockAccount {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   partyId Int
   itemId  Int
@@ -216,6 +242,7 @@ model PartyStockAccount {
   item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@unique([partyId, itemId])
+  @@index([tenantId, companyId])
 }
 
 // ======================================================
@@ -242,7 +269,9 @@ model PartyStockAccount {
 // ======================================================
 
 model StockMovement {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   movementNumber String @unique
 
@@ -279,6 +308,7 @@ model StockMovement {
   @@index([movementDate])
   @@index([itemId])
   @@index([partyId])
+  @@index([tenantId, companyId])
 }
 
 // ======================================================
@@ -291,7 +321,9 @@ model StockMovement {
 // ======================================================
 
 model DeliveryReceiptNote {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   noteNumber String @unique
 
@@ -376,6 +408,7 @@ model DeliveryReceiptNote {
   @@index([noteDate])
   @@index([partyId])
   @@index([sourceDocumentId])
+  @@index([tenantId, companyId])
 }
 
 // ======================================================
@@ -385,7 +418,9 @@ model DeliveryReceiptNote {
 // ======================================================
 
 model DeliveryReceiptNoteItem {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   noteId Int
   itemId Int
@@ -405,6 +440,7 @@ model DeliveryReceiptNoteItem {
 
   @@index([noteId])
   @@index([itemId])
+  @@index([tenantId, companyId])
 }
 
 // ======================================================
@@ -414,6 +450,8 @@ model DeliveryReceiptNoteItem {
 
 model Truck {
   id          Int      @id @default(autoincrement())
+  tenantId    Int      @default(1)
+  companyId   Int      @default(1)
   plateNumber String   @unique
   truckType   String?
   model       String?
@@ -435,6 +473,8 @@ model Truck {
   documents     TruckDocument[]
   trips         TransportTrip[]
   deliveryNotes DeliveryReceiptNote[]
+
+  @@index([tenantId, companyId])
 }
 
 // ======================================================
@@ -443,8 +483,10 @@ model Truck {
 // ======================================================
 
 model TruckDocument {
-  id      Int @id @default(autoincrement())
-  truckId Int
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
+  truckId   Int
 
   documentType   String
   documentNumber String?
@@ -461,6 +503,7 @@ model TruckDocument {
 
   @@index([truckId])
   @@index([expiryDate])
+  @@index([tenantId, companyId])
 }
 
 // ======================================================
@@ -469,7 +512,9 @@ model TruckDocument {
 // ======================================================
 
 model Driver {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   name        String
   idNumber    String? @unique
@@ -496,10 +541,14 @@ model Driver {
   trips         TransportTrip[]
   deliveryNotes DeliveryReceiptNote[]
   employee      Employee?             @relation(fields: [employeeId], references: [id])
+
+  @@index([tenantId, companyId])
 }
 
 model Employee {
   id                 Int       @id @default(autoincrement())
+  tenantId           Int       @default(1)
+  companyId          Int       @default(1)
   employeeNumber     String    @unique
   nameAr             String
   nameEn             String?
@@ -538,10 +587,13 @@ model Employee {
 
   @@index([department])
   @@index([status])
+  @@index([tenantId, companyId])
 }
 
 model ExternalWorker {
   id               Int       @id @default(autoincrement())
+  tenantId         Int       @default(1)
+  companyId        Int       @default(1)
   workerNumber     String    @unique
   name             String
   affiliatedEntity String?
@@ -559,10 +611,14 @@ model ExternalWorker {
   updatedAt        DateTime  @updatedAt
 
   costs ExternalWorkerCost[]
+
+  @@index([tenantId, companyId])
 }
 
 model AttendanceRecord {
   id             Int      @id @default(autoincrement())
+  tenantId       Int      @default(1)
+  companyId      Int      @default(1)
   employeeId     Int
   attendanceDate DateTime
   status         String
@@ -579,10 +635,13 @@ model AttendanceRecord {
 
   @@unique([employeeId, attendanceDate])
   @@index([attendanceDate])
+  @@index([tenantId, companyId])
 }
 
 model LeaveRequest {
   id         Int      @id @default(autoincrement())
+  tenantId   Int      @default(1)
+  companyId  Int      @default(1)
   employeeId Int
   leaveType  String
   startDate  DateTime
@@ -596,10 +655,13 @@ model LeaveRequest {
   employee Employee @relation(fields: [employeeId], references: [id])
 
   @@index([startDate, endDate])
+  @@index([tenantId, companyId])
 }
 
 model EmployeeAdvance {
   id              Int      @id @default(autoincrement())
+  tenantId        Int      @default(1)
+  companyId       Int      @default(1)
   advanceNumber   String   @unique
   employeeId      Int
   advanceDate     DateTime @default(now())
@@ -618,10 +680,13 @@ model EmployeeAdvance {
   journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
 
   @@index([employeeId])
+  @@index([tenantId, companyId])
 }
 
 model PayrollRun {
   id              Int       @id @default(autoincrement())
+  tenantId        Int       @default(1)
+  companyId       Int       @default(1)
   payrollNumber   String    @unique
   year            Int
   month           Int
@@ -639,10 +704,13 @@ model PayrollRun {
   journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
 
   @@unique([year, month])
+  @@index([tenantId, companyId])
 }
 
 model PayrollLine {
   id                 Int      @id @default(autoincrement())
+  tenantId           Int      @default(1)
+  companyId          Int      @default(1)
   payrollRunId       Int
   employeeId         Int
   basicSalary        Decimal  @default(0)
@@ -672,10 +740,13 @@ model PayrollLine {
 
   @@unique([payrollRunId, employeeId])
   @@index([employeeId])
+  @@index([tenantId, companyId])
 }
 
 model PayrollPayment {
   id             Int      @id @default(autoincrement())
+  tenantId       Int      @default(1)
+  companyId      Int      @default(1)
   payrollLineId  Int      @unique
   paymentNumber  String   @unique
   paymentDate    DateTime @default(now())
@@ -688,10 +759,14 @@ model PayrollPayment {
   payrollLine  PayrollLine   @relation(fields: [payrollLineId], references: [id])
   bankAccount  BankAccount   @relation(fields: [bankAccountId], references: [id])
   journalEntry JournalEntry? @relation(fields: [journalEntryId], references: [id])
+
+  @@index([tenantId, companyId])
 }
 
 model ExternalWorkerCost {
   id               Int      @id @default(autoincrement())
+  tenantId         Int      @default(1)
+  companyId        Int      @default(1)
   costNumber       String   @unique
   externalWorkerId Int
   costDate         DateTime @default(now())
@@ -707,10 +782,13 @@ model ExternalWorkerCost {
   expense Expense?       @relation(fields: [expenseId], references: [id])
 
   @@index([costDate])
+  @@index([tenantId, companyId])
 }
 
 model ExternalTrade {
   id              Int      @id @default(autoincrement())
+  tenantId        Int      @default(1)
+  companyId       Int      @default(1)
   tradeNumber     String   @unique
   tradeDate       DateTime @default(now())
   tradeType       String
@@ -729,10 +807,13 @@ model ExternalTrade {
 
   @@index([tradeDate])
   @@index([itemId, tradeType])
+  @@index([tenantId, companyId])
 }
 
 model ExternalLinkedCost {
   id              Int      @id @default(autoincrement())
+  tenantId        Int      @default(1)
+  companyId       Int      @default(1)
   costNumber      String   @unique
   costDate        DateTime @default(now())
   externalTradeId Int?
@@ -750,10 +831,13 @@ model ExternalLinkedCost {
 
   @@index([costDate])
   @@index([itemId])
+  @@index([tenantId, companyId])
 }
 
 model ExternalExpense {
   id              Int      @id @default(autoincrement())
+  tenantId        Int      @default(1)
+  companyId       Int      @default(1)
   expenseNumber   String   @unique
   expenseDate     DateTime @default(now())
   entityName      String?
@@ -768,6 +852,7 @@ model ExternalExpense {
 
   @@index([expenseDate])
   @@index([category])
+  @@index([tenantId, companyId])
 }
 
 // ======================================================
@@ -776,8 +861,10 @@ model ExternalExpense {
 // ======================================================
 
 model DriverDocument {
-  id       Int @id @default(autoincrement())
-  driverId Int
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
+  driverId  Int
 
   documentType   String
   documentNumber String?
@@ -794,6 +881,7 @@ model DriverDocument {
 
   @@index([driverId])
   @@index([expiryDate])
+  @@index([tenantId, companyId])
 }
 
 // ======================================================
@@ -805,7 +893,9 @@ model DriverDocument {
 // ======================================================
 
 model TransportTrip {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   tripNumber String   @unique
   tripDate   DateTime @default(now())
@@ -890,6 +980,7 @@ model TransportTrip {
   @@index([itemId])
   @@index([truckId])
   @@index([driverId])
+  @@index([tenantId, companyId])
 }
 
 // ======================================================
@@ -898,7 +989,9 @@ model TransportTrip {
 // ======================================================
 
 model TransportTripExpense {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   tripId Int
 
@@ -916,6 +1009,7 @@ model TransportTripExpense {
   trip TransportTrip @relation(fields: [tripId], references: [id], onDelete: Cascade)
 
   @@index([tripId])
+  @@index([tenantId, companyId])
 }
 
 // ============================================================
@@ -924,7 +1018,9 @@ model TransportTripExpense {
 // ============================================================
 
 model Sale {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   invoiceNumber String   @unique
   invoiceDate   DateTime @default(now())
@@ -961,10 +1057,13 @@ model Sale {
   @@index([invoiceDate])
   @@index([partyId])
   @@index([sourceOrderId])
+  @@index([tenantId, companyId])
 }
 
 model SaleItem {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   saleId        Int
   itemId        Int
@@ -983,6 +1082,7 @@ model SaleItem {
 
   @@index([saleId])
   @@index([itemId])
+  @@index([tenantId, companyId])
 }
 
 // ============================================================
@@ -991,7 +1091,9 @@ model SaleItem {
 // ============================================================
 
 model Purchase {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   purchaseNumber String   @unique
   purchaseDate   DateTime @default(now())
@@ -1026,10 +1128,13 @@ model Purchase {
   @@index([purchaseDate])
   @@index([partyId])
   @@index([sourceOrderId])
+  @@index([tenantId, companyId])
 }
 
 model PurchaseItem {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   purchaseId     Int
   itemId         Int
@@ -1049,6 +1154,7 @@ model PurchaseItem {
 
   @@index([purchaseId])
   @@index([itemId])
+  @@index([tenantId, companyId])
 }
 
 // ============================================================
@@ -1057,7 +1163,9 @@ model PurchaseItem {
 // ============================================================
 
 model FactoryTransaction {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   transactionNumber String   @unique
   transactionDate   DateTime @default(now())
@@ -1096,10 +1204,13 @@ model FactoryTransaction {
   @@index([transactionDate])
   @@index([partyId])
   @@index([itemId])
+  @@index([tenantId, companyId])
 }
 
 model FactoryFeeRate {
   id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1)
+  companyId Int      @default(1)
   partyId   Int
   itemId    Int
   feePerTon Decimal
@@ -1112,10 +1223,13 @@ model FactoryFeeRate {
   item  Item  @relation(fields: [itemId], references: [id])
 
   @@unique([partyId, itemId])
+  @@index([tenantId, companyId])
 }
 
 model FactoryFuelMovement {
   id               Int      @id @default(autoincrement())
+  tenantId         Int      @default(1)
+  companyId        Int      @default(1)
   movementNumber   String   @unique
   movementDate     DateTime @default(now())
   itemId           Int
@@ -1142,10 +1256,13 @@ model FactoryFuelMovement {
   @@index([movementDate])
   @@index([itemId])
   @@index([productionItemId])
+  @@index([tenantId, companyId])
 }
 
 model FactoryMaintenance {
   id                Int      @id @default(autoincrement())
+  tenantId          Int      @default(1)
+  companyId         Int      @default(1)
   maintenanceNumber String   @unique
   maintenanceDate   DateTime @default(now())
   equipment         String
@@ -1164,10 +1281,13 @@ model FactoryMaintenance {
   expense Expense? @relation(fields: [expenseId], references: [id])
 
   @@index([maintenanceDate])
+  @@index([tenantId, companyId])
 }
 
 model FactoryExpense {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   expenseDate DateTime @default(now())
   expenseType String
@@ -1184,6 +1304,7 @@ model FactoryExpense {
 
   @@index([expenseDate])
   @@index([expenseType])
+  @@index([tenantId, companyId])
 }
 
 // ============================================================
@@ -1192,7 +1313,9 @@ model FactoryExpense {
 // ============================================================
 
 model JournalEntry {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   entryNumber String   @unique
   entryDate   DateTime @default(now())
@@ -1224,10 +1347,13 @@ model JournalEntry {
 
   @@unique([referenceType, referenceId])
   @@index([entryDate])
+  @@index([tenantId, companyId])
 }
 
 model JournalEntryLine {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   journalEntryId Int
 
@@ -1248,6 +1374,7 @@ model JournalEntryLine {
   @@index([journalEntryId])
   @@index([partyId])
   @@index([accountId])
+  @@index([tenantId, companyId])
 }
 
 // ============================================================
@@ -1257,6 +1384,8 @@ model JournalEntryLine {
 
 model BusinessDocument {
   id               Int       @id @default(autoincrement())
+  tenantId         Int       @default(1)
+  companyId        Int       @default(1)
   documentNumber   String    @unique
   documentType     String
   direction        String
@@ -1301,10 +1430,13 @@ model BusinessDocument {
   @@index([documentType, documentDate])
   @@index([partyId])
   @@index([status])
+  @@index([tenantId, companyId])
 }
 
 model BusinessDocumentLine {
   id             Int     @id @default(autoincrement())
+  tenantId       Int     @default(1)
+  companyId      Int     @default(1)
   documentId     Int
   sequence       Int
   lineType       String  @default("ITEM")
@@ -1324,10 +1456,13 @@ model BusinessDocumentLine {
 
   @@index([documentId])
   @@index([itemId])
+  @@index([tenantId, companyId])
 }
 
 model DocumentSequence {
   id           Int      @id @default(autoincrement())
+  tenantId     Int      @default(1)
+  companyId    Int      @default(1)
   code         String
   year         Int
   currentValue Int      @default(0)
@@ -1336,10 +1471,13 @@ model DocumentSequence {
   updatedAt    DateTime @updatedAt
 
   @@unique([code, year])
+  @@index([tenantId, companyId])
 }
 
 model Attachment {
   id           Int      @id @default(autoincrement())
+  tenantId     Int      @default(1)
+  companyId    Int      @default(1)
   entityType   String
   entityId     Int
   originalName String
@@ -1352,10 +1490,13 @@ model Attachment {
   notes        String?
 
   @@index([entityType, entityId])
+  @@index([tenantId, companyId])
 }
 
 model AuditLog {
   id         Int      @id @default(autoincrement())
+  tenantId   Int      @default(1)
+  companyId  Int      @default(1)
   action     String
   entityType String
   entityId   Int?
@@ -1365,10 +1506,13 @@ model AuditLog {
 
   @@index([entityType, entityId])
   @@index([createdAt])
+  @@index([tenantId, companyId])
 }
 
 model Account {
   id           Int      @id @default(autoincrement())
+  tenantId     Int      @default(1)
+  companyId    Int      @default(1)
   code         String   @unique
   nameAr       String
   nameEn       String?
@@ -1388,20 +1532,27 @@ model Account {
   revenueCategories RevenueCategory[]
 
   @@index([parentId])
+  @@index([tenantId, companyId])
 }
 
 model AccountingMapping {
   id          Int      @id @default(autoincrement())
+  tenantId    Int      @default(1)
+  companyId   Int      @default(1)
   key         String   @unique
   accountId   Int
   description String?
   updatedAt   DateTime @updatedAt
 
   account Account @relation(fields: [accountId], references: [id])
+
+  @@index([tenantId, companyId])
 }
 
 model AccountingPeriod {
   id        Int       @id @default(autoincrement())
+  tenantId  Int       @default(1)
+  companyId Int       @default(1)
   name      String
   startDate DateTime
   endDate   DateTime
@@ -1410,10 +1561,13 @@ model AccountingPeriod {
   createdAt DateTime  @default(now())
 
   @@unique([startDate, endDate])
+  @@index([tenantId, companyId])
 }
 
 model Expense {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   voucherNumber String   @unique
   expenseDate   DateTime @default(now())
@@ -1453,10 +1607,13 @@ model Expense {
 
   @@index([expenseDate])
   @@index([expenseType])
+  @@index([tenantId, companyId])
 }
 
 model Revenue {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
 
   voucherNumber String   @unique
   revenueDate   DateTime @default(now())
@@ -1494,10 +1651,12 @@ model Revenue {
 
   @@index([revenueDate])
   @@index([partyId])
+  @@index([tenantId, companyId])
 }
 
 model CostCenter {
   id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1)
   companyId Int      @default(1)
   code      String   @unique
   nameAr    String
@@ -1509,10 +1668,13 @@ model CostCenter {
   company Company @relation(fields: [companyId], references: [id])
 
   @@index([companyId])
+  @@index([tenantId, companyId])
 }
 
 model ExpenseCategory {
   id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1)
+  companyId Int      @default(1)
   code      String   @unique
   nameAr    String
   nameEn    String?
@@ -1523,10 +1685,14 @@ model ExpenseCategory {
 
   account  Account   @relation(fields: [accountId], references: [id])
   expenses Expense[]
+
+  @@index([tenantId, companyId])
 }
 
 model RevenueCategory {
   id        Int      @id @default(autoincrement())
+  tenantId  Int      @default(1)
+  companyId Int      @default(1)
   code      String   @unique
   nameAr    String
   nameEn    String?
@@ -1537,10 +1703,14 @@ model RevenueCategory {
 
   account  Account   @relation(fields: [accountId], references: [id])
   revenues Revenue[]
+
+  @@index([tenantId, companyId])
 }
 
 model BankAccount {
   id              Int      @id @default(autoincrement())
+  tenantId        Int      @default(1)
+  companyId       Int      @default(1)
   name            String
   bankName        String?
   accountNumber   String?
@@ -1563,10 +1733,14 @@ model BankAccount {
   incomingTransfers BankTransfer[]     @relation("IncomingBankTransfers")
   employeeAdvances  EmployeeAdvance[]
   payrollPayments   PayrollPayment[]
+
+  @@index([tenantId, companyId])
 }
 
 model BankTransaction {
   id              Int      @id @default(autoincrement())
+  tenantId        Int      @default(1)
+  companyId       Int      @default(1)
   bankAccountId   Int
   transactionDate DateTime @default(now())
   transactionType String
@@ -1583,10 +1757,13 @@ model BankTransaction {
 
   @@unique([bankAccountId, referenceType, referenceId])
   @@index([bankAccountId, transactionDate])
+  @@index([tenantId, companyId])
 }
 
 model BankTransfer {
   id                Int       @id @default(autoincrement())
+  tenantId          Int       @default(1)
+  companyId         Int       @default(1)
   transferNumber    String    @unique
   transferDate      DateTime  @default(now())
   fromBankAccountId Int
@@ -1606,10 +1783,13 @@ model BankTransfer {
   journalEntry    JournalEntry? @relation(fields: [journalEntryId], references: [id])
 
   @@index([transferDate])
+  @@index([tenantId, companyId])
 }
 
 model FinancialVoucher {
   id              Int       @id @default(autoincrement())
+  tenantId        Int       @default(1)
+  companyId       Int       @default(1)
   voucherNumber   String    @unique
   voucherType     String
   voucherDate     DateTime  @default(now())
@@ -1635,10 +1815,13 @@ model FinancialVoucher {
   @@index([voucherDate])
   @@index([partyId])
   @@index([status])
+  @@index([tenantId, companyId])
 }
 
 model VoucherAllocation {
   id         Int      @id @default(autoincrement())
+  tenantId   Int      @default(1)
+  companyId  Int      @default(1)
   voucherId  Int
   saleId     Int?
   purchaseId Int?
@@ -1653,6 +1836,7 @@ model VoucherAllocation {
   @@unique([voucherId, purchaseId])
   @@index([saleId])
   @@index([purchaseId])
+  @@index([tenantId, companyId])
 }
 
 // ============================================================
@@ -1728,6 +1912,8 @@ model Company {
   modules       CompanyModule[]
   entitlements  CompanyEntitlement[]
   roles         Role[]
+  userAccess    CompanyAccess[]
+  sessions      AuthSession[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -2037,6 +2223,7 @@ model PlatformUser {
   updatedAt    DateTime @updatedAt
 
   memberships TenantMembership[]
+  sessions    AuthSession[]
 }
 
 model TenantMembership {
@@ -2048,12 +2235,49 @@ model TenantMembership {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  tenant Tenant           @relation(fields: [tenantId], references: [id])
-  user   PlatformUser     @relation(fields: [userId], references: [id])
-  roles  MembershipRole[]
+  tenant    Tenant           @relation(fields: [tenantId], references: [id])
+  user      PlatformUser     @relation(fields: [userId], references: [id])
+  roles     MembershipRole[]
+  companies CompanyAccess[]
+  sessions  AuthSession[]
 
   @@unique([tenantId, userId])
   @@index([userId])
+}
+
+model CompanyAccess {
+  membershipId Int
+  companyId    Int
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  membership TenantMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  company    Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@id([membershipId, companyId])
+  @@index([companyId])
+}
+
+model AuthSession {
+  id           String    @id
+  tokenHash    String    @unique
+  userId       Int
+  membershipId Int
+  companyId    Int
+  expiresAt    DateTime
+  lastSeenAt   DateTime  @default(now())
+  revokedAt    DateTime?
+  userAgent    String?
+  ipAddress    String?
+  createdAt    DateTime  @default(now())
+
+  user       PlatformUser     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  membership TenantMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  company    Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([membershipId, companyId])
+  @@index([expiresAt, revokedAt])
 }
 
 model Role {

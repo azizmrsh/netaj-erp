@@ -30,12 +30,15 @@ function requiredText(value: unknown, label: string) {
   return result;
 }
 
-export async function getTenantWorkspace(tx: Prisma.TransactionClient, tenantId: number) {
+export async function getTenantWorkspace(tx: Prisma.TransactionClient, tenantId: number, membershipId?: number) {
+  const companyIds = membershipId
+    ? (await tx.companyAccess.findMany({ where: { membershipId }, select: { companyId: true } })).map((row) => row.companyId)
+    : undefined;
   const tenant = await tx.tenant.findUnique({
     where: { id: tenantId },
     include: {
       groups: { orderBy: { code: "asc" } },
-      companies: { include: companyInclude, orderBy: { code: "asc" } },
+      companies: { where: companyIds ? { id: { in: companyIds } } : undefined, include: companyInclude, orderBy: { code: "asc" } },
       subscriptions: {
         where: { status: { in: ["ACTIVE", "TRIAL"] } },
         include: { plan: { include: { modules: { include: { module: true } } } } },

@@ -9,9 +9,12 @@ import {
   postNote,
   updateDraftNote,
 } from "@/lib/notes";
+import { authorizeRequest, authErrorResponse } from "@/lib/api-auth";
+import { AuthError } from "@/lib/auth";
 
 function responseForError(error: unknown) {
   console.error(error);
+  if (error instanceof AuthError) { const response = authErrorResponse(error); return NextResponse.json({ error: response.message, code: response.code }, { status: response.status }); }
   if (error instanceof NoteWorkflowError) {
     return NextResponse.json(
       { error: error.message },
@@ -30,10 +33,11 @@ function noteId(value: string) {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await authorizeRequest(request, { moduleKey: "NOTES", action: "READ" });
     const { id } = await params;
     const note = await prisma.deliveryReceiptNote.findUnique({
       where: { id: noteId(id) },
@@ -55,6 +59,7 @@ export async function PATCH(
     const idNumber = noteId(id);
     const body = (await request.json()) as Record<string, unknown>;
     const action = String(body.action ?? "UPDATE").toUpperCase();
+    await authorizeRequest(request, { moduleKey: "NOTES", action: action === "POST" ? "POST" : action === "CANCEL" ? "CANCEL" : action === "APPROVE" ? "APPROVE" : "UPDATE" });
 
     if (action === "POST") {
       const result = await prisma.$transaction((tx) => postNote(tx, idNumber));

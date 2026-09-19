@@ -4,6 +4,9 @@ import { extname, join, resolve } from "node:path";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
+import { authorizeAttachmentEntity } from "@/lib/attachment-authorization";
+import { AuthError } from "@/lib/auth";
+import { authErrorResponse } from "@/lib/api-auth";
 
 const maximumSize = 10 * 1024 * 1024;
 const allowed = new Map([
@@ -39,7 +42,13 @@ export async function GET(request: Request) {
   const entityType = params.get("entityType")?.toUpperCase();
   const entityId = Number(params.get("entityId"));
   if (!entityType || !Number.isInteger(entityId)) return NextResponse.json({ error: "مرجع المرفقات غير صحيح" }, { status: 400 });
-  return NextResponse.json(await prisma.attachment.findMany({ where: { entityType, entityId }, orderBy: { uploadedAt: "desc" } }));
+  try {
+    await authorizeAttachmentEntity(request, entityType, entityId, "READ");
+    return NextResponse.json(await prisma.attachment.findMany({ where: { entityType, entityId }, orderBy: { uploadedAt: "desc" } }));
+  } catch (error) {
+    const response = authErrorResponse(error);
+    return NextResponse.json({ error: response.message, code: response.code }, { status: response.status });
+  }
 }
 
 export async function POST(request: Request) {
@@ -53,6 +62,7 @@ export async function POST(request: Request) {
     if (!(file instanceof File) || !knownEntities.has(entityType) || !Number.isInteger(entityId) || entityId <= 0) {
       return NextResponse.json({ error: "الملف أو مرجع المستند غير صحيح" }, { status: 400 });
     }
+    await authorizeAttachmentEntity(request, entityType, entityId, "CREATE");
     if (!(await entityExists(entityType, entityId))) {
       return NextResponse.json({ error: "المستند المرتبط بالمرفق غير موجود" }, { status: 404 });
     }
@@ -79,6 +89,10 @@ export async function POST(request: Request) {
   } catch (error) {
     console.error(error);
     if (fullPath) await unlink(fullPath).catch(() => undefined);
+    if (error instanceof AuthError) {
+      const response = authErrorResponse(error);
+      return NextResponse.json({ error: response.message, code: response.code }, { status: response.status });
+    }
     return NextResponse.json({ error: "تعذر رفع المرفق" }, { status: 500 });
   }
 }

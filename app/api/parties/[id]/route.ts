@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { authorizeRequest, authErrorResponse } from "@/lib/api-auth";
+import { AuthError } from "@/lib/auth";
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await authorizeRequest(request, { moduleKey: "CORE", action: "READ" });
+    const canRead = async (moduleKey: string) => authorizeRequest(request, { moduleKey, action: "READ" }).then(() => true).catch(() => false);
+    const [inventoryAccess, notesAccess, transportAccess, salesAccess, purchasesAccess, accountingAccess, factoryAccess] = await Promise.all([
+      canRead("INVENTORY"), canRead("NOTES"), canRead("TRANSPORT"), canRead("SALES"), canRead("PURCHASES"), canRead("ACCOUNTING"), canRead("FACTORY"),
+    ]);
     const { id } = await params;
     const partyId = Number(id);
 
@@ -42,59 +49,59 @@ export async function GET(
       factoryFeeRates,
     ] =
       await Promise.all([
-        prisma.partyStockAccount.findMany({
+        inventoryAccess ? prisma.partyStockAccount.findMany({
           where: { partyId },
           include: { item: true },
           orderBy: { itemId: "asc" },
-        }),
+        }) : [],
 
-        prisma.stockMovement.findMany({
+        inventoryAccess ? prisma.stockMovement.findMany({
           where: { partyId },
           include: { item: true },
           orderBy: { movementDate: "desc" },
-        }),
+        }) : [],
 
-        prisma.deliveryReceiptNote.findMany({
+        notesAccess ? prisma.deliveryReceiptNote.findMany({
           where: { partyId },
           include: { items: { include: { item: true } } },
           orderBy: { noteDate: "desc" },
-        }),
+        }) : [],
 
-        prisma.transportTrip.findMany({
+        transportAccess ? prisma.transportTrip.findMany({
           where: { partyId },
           orderBy: { tripDate: "desc" },
-        }),
+        }) : [],
 
-        prisma.sale.findMany({
+        salesAccess ? prisma.sale.findMany({
           where: { partyId },
           include: { items: { include: { item: true } } },
           orderBy: [{ invoiceDate: "desc" }, { id: "desc" }],
-        }),
+        }) : [],
 
-        prisma.purchase.findMany({
+        purchasesAccess ? prisma.purchase.findMany({
           where: { partyId },
           include: { items: { include: { item: true } } },
           orderBy: [{ purchaseDate: "desc" }, { id: "desc" }],
-        }),
+        }) : [],
 
         prisma.businessDocument.findMany({
-          where: { partyId },
+          where: { partyId, direction: { in: [...(salesAccess ? ["SALES"] : []), ...(purchasesAccess ? ["PURCHASE"] : [])] } },
           include: { lines: { include: { item: true } } },
           orderBy: [{ documentDate: "desc" }, { id: "desc" }],
         }),
 
-        prisma.journalEntry.findMany({
+        accountingAccess ? prisma.journalEntry.findMany({
           where: { lines: { some: { partyId } } },
           include: { lines: { where: { partyId } } },
           orderBy: [{ entryDate: "desc" }, { id: "desc" }],
-        }),
+        }) : [],
 
         prisma.attachment.findMany({
           where: { entityType: "PARTY", entityId: partyId },
           orderBy: { uploadedAt: "desc" },
         }),
-        prisma.factoryTransaction.findMany({ where: { partyId }, include: { item: true }, orderBy: [{ transactionDate: "desc" }, { id: "desc" }] }),
-        prisma.factoryFeeRate.findMany({ where: { partyId, isActive: true }, include: { item: true }, orderBy: { itemId: "asc" } }),
+        factoryAccess ? prisma.factoryTransaction.findMany({ where: { partyId }, include: { item: true }, orderBy: [{ transactionDate: "desc" }, { id: "desc" }] }) : [],
+        factoryAccess ? prisma.factoryFeeRate.findMany({ where: { partyId, isActive: true }, include: { item: true }, orderBy: { itemId: "asc" } }) : [],
       ]);
 
     return NextResponse.json({
@@ -114,6 +121,11 @@ export async function GET(
   } catch (error) {
     console.error(error);
 
+    if (error instanceof AuthError) {
+      const response = authErrorResponse(error);
+      return NextResponse.json({ error: response.message, code: response.code }, { status: response.status });
+    }
+
     return NextResponse.json(
       { error: "تعذر تحميل ملف العميل أو المورد" },
       { status: 500 }
@@ -126,6 +138,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await authorizeRequest(request, { moduleKey: "CORE", action: "UPDATE" });
     const { id } = await params;
     const partyId = Number(id);
     const body = await request.json();
@@ -158,6 +171,11 @@ export async function PATCH(
     return NextResponse.json(party);
   } catch (error) {
     console.error(error);
+
+    if (error instanceof AuthError) {
+      const response = authErrorResponse(error);
+      return NextResponse.json({ error: response.message, code: response.code }, { status: response.status });
+    }
 
     return NextResponse.json(
       { error: "تعذر تحديث العميل أو المورد" },

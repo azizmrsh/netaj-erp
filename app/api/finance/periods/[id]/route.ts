@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
+import { authorizeRequest, authErrorResponse } from "@/lib/api-auth";import{AuthError}from"@/lib/auth";
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params, periodId = Number(id), body = await request.json(), action = String(body.action ?? "").toUpperCase();
+    await authorizeRequest(request, { moduleKey: "ACCOUNTING", action: "APPROVE" });
     if (!Number.isInteger(periodId) || !["CLOSE", "REOPEN"].includes(action)) return NextResponse.json({ error: "الطلب غير صحيح" }, { status: 400 });
     const period = await prisma.$transaction(async (tx) => {
       const existing = await tx.accountingPeriod.findUnique({ where: { id: periodId } });
@@ -14,5 +16,5 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       return row;
     });
     return NextResponse.json(period);
-  } catch (error) { console.error(error); return NextResponse.json({ error: error instanceof Error && error.message === "NOT_FOUND" ? "الفترة غير موجودة" : "تعذر تحديث الفترة" }, { status: error instanceof Error && error.message === "NOT_FOUND" ? 404 : 500 }); }
+  } catch (error) { console.error(error); if(error instanceof AuthError){const response=authErrorResponse(error);return NextResponse.json({error:response.message,code:response.code},{status:response.status})} return NextResponse.json({ error: error instanceof Error && error.message === "NOT_FOUND" ? "الفترة غير موجودة" : "تعذر تحديث الفترة" }, { status: error instanceof Error && error.message === "NOT_FOUND" ? 404 : 500 }); }
 }

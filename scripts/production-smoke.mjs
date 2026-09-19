@@ -8,6 +8,9 @@ const port = 3147;
 const temporaryDirectory = mkdtempSync(join(tmpdir(), "netaj-production-smoke-"));
 const databasePath = join(temporaryDirectory, "production-smoke.db");
 copyFileSync("prisma/netaj.db", databasePath);
+const bootstrapToken = "production-smoke-bootstrap-token";
+const smokeEmail = "production-smoke@netaj.test";
+const smokePassword = "ProductionSmoke123";
 const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "-p", String(port)], {
   stdio: ["ignore", "pipe", "pipe"],
   env: {
@@ -15,8 +18,17 @@ const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "star
     NODE_ENV: "production",
     DATABASE_URL: `file:${databasePath}`,
     ATTACHMENT_STORAGE_DIR: join(temporaryDirectory, "attachments"),
+    AUTH_BOOTSTRAP_TOKEN: bootstrapToken,
   },
 });
+
+const nativeFetch = globalThis.fetch;
+let sessionCookie = "";
+globalThis.fetch = (input, init = {}) => {
+  const headers = new Headers(init.headers);
+  if (sessionCookie) headers.set("cookie", sessionCookie);
+  return nativeFetch(input, { ...init, headers });
+};
 
 let logs = "";
 server.stdout.on("data", (chunk) => (logs += chunk.toString()));
@@ -26,7 +38,7 @@ async function waitUntilReady() {
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/units`);
+      const response = await fetch(`http://127.0.0.1:${port}/login`);
       if (response.ok) return;
     } catch {
       // Server is still starting.
@@ -99,6 +111,21 @@ async function jsonRequest(route, init) {
 
 try {
   await waitUntilReady();
+  const setup = await nativeFetch(`http://127.0.0.1:${port}/api/auth/setup`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: smokeEmail, password: smokePassword, setupToken: bootstrapToken }),
+  });
+  assert.equal(setup.status, 201, `Auth setup returned ${setup.status}: ${await setup.text()}`);
+  const login = await nativeFetch(`http://127.0.0.1:${port}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: smokeEmail, password: smokePassword }),
+  });
+  assert.equal(login.status, 200, `Auth login returned ${login.status}: ${await login.text()}`);
+  sessionCookie = (login.headers.get("set-cookie") ?? "").split(";")[0];
+  assert.match(sessionCookie, /^netaj_session=/);
+
   for (const route of routes) {
     const response = await fetch(`http://127.0.0.1:${port}${route}`);
     assert.equal(response.status, 200, `${route} returned ${response.status}`);
@@ -133,6 +160,72 @@ try {
     }),
   });
   assert.equal(partyResult.response.status, 201);
+
+  const switchToSecond = await jsonRequest("/api/auth/switch-company", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ companyId: companyResult.body.id }),
+  });
+  assert.equal(switchToSecond.response.status, 200);
+  const secondParty = await jsonRequest("/api/parties", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ nameAr: "عميل الشركة الثانية", isCustomer: true }),
+  });
+  assert.equal(secondParty.response.status, 201);
+  const secondPartyList = await jsonRequest("/api/parties");
+  assert.equal(secondPartyList.body.some((row) => row.id === partyResult.body.id), false);
+  const forbiddenDirectRead = await jsonRequest(`/api/parties/${partyResult.body.id}`);
+  assert.equal(forbiddenDirectRead.response.status, 404);
+  const forbiddenDirectUpdate = await jsonRequest(`/api/parties/${partyResult.body.id}`, {
+    method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ isActive: false }),
+  });
+  assert.notEqual(forbiddenDirectUpdate.response.status, 200);
+  const spoofedRead = await jsonRequest(`/api/parties/${partyResult.body.id}`, {
+    headers: { "x-netaj-tenant-id": "1", "x-netaj-company-id": "1", "x-netaj-scope-verified": "1" },
+  });
+  assert.equal(spoofedRead.response.status, 404);
+  const disabledInventory = await jsonRequest("/api/inventory");
+  assert.equal(disabledInventory.response.status, 403);
+  assert.equal(disabledInventory.body.code, "MODULE_DISABLED");
+  const secondCompanyHome = await (await fetch(`http://127.0.0.1:${port}/`)).text();
+  assert.equal(secondCompanyHome.includes('href="/inventory"'), false);
+  const switchBack = await jsonRequest("/api/auth/switch-company", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ companyId: 1 }),
+  });
+  assert.equal(switchBack.response.status, 200);
+  const firstPartyList = await jsonRequest("/api/parties");
+  assert.equal(firstPartyList.body.some((row) => row.id === secondParty.body.id), false);
+  assert.equal(firstPartyList.body.find((row) => row.id === partyResult.body.id)?.isActive, true);
+  const forbiddenReverseRead = await jsonRequest(`/api/parties/${secondParty.body.id}`);
+  assert.equal(forbiddenReverseRead.response.status, 404);
+  console.log("PASS production tenant isolation, IDOR defense, header spoofing defense, and module entitlements");
+
+  const limitedEmail = `reader-${suffix.toLowerCase()}@netaj.test`;
+  const limitedPassword = "LimitedReader123";
+  const limitedUser = await jsonRequest("/api/platform/users", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "قارئ محدود", email: limitedEmail, password: limitedPassword, companyId: 1, permissionKeys: ["CORE.READ"] }),
+  });
+  assert.equal(limitedUser.response.status, 201);
+  const limitedLogin = await nativeFetch(`http://127.0.0.1:${port}/api/auth/login`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: limitedEmail, password: limitedPassword }),
+  });
+  assert.equal(limitedLogin.status, 200);
+  const adminCookie = sessionCookie;
+  sessionCookie = (limitedLogin.headers.get("set-cookie") ?? "").split(";")[0];
+  assert.equal((await jsonRequest("/api/parties")).response.status, 200);
+  const forbiddenCreate = await jsonRequest("/api/parties", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ nameAr: "ممنوع" }),
+  });
+  assert.equal(forbiddenCreate.response.status, 403);
+  assert.equal(forbiddenCreate.body.code, "PERMISSION_DENIED");
+  const forbiddenModule = await jsonRequest("/api/inventory");
+  assert.equal(forbiddenModule.response.status, 403);
+  assert.equal(forbiddenModule.body.code, "PERMISSION_DENIED");
+  const forbiddenUserAdmin = await jsonRequest("/api/platform/users");
+  assert.equal(forbiddenUserAdmin.response.status, 403);
+  sessionCookie = adminCookie;
+  console.log("PASS production granular RBAC for read-only user");
 
   const itemResult = await jsonRequest("/api/items", {
     method: "POST",
@@ -308,7 +401,7 @@ try {
     return result.body;
   };
   const quote = await jsonRequest("/api/workflows", { method: "POST", headers: movementHeaders, body: JSON.stringify(workflowBody("QUOTATION")) });
-  assert.equal(quote.response.status, 201);
+  assert.equal(quote.response.status, 201, `Workflow quote failed: ${JSON.stringify(quote.body)}`);
   await approve(quote.body.id);
   const pi = await convert(quote.body.id, "PROFORMA_INVOICE"); await approve(pi.document.id);
   const order = await convert(pi.document.id, "SALES_ORDER"); await approve(order.document.id);
@@ -336,6 +429,9 @@ try {
   console.log("PASS production sales and purchase workflows, accounting idempotency, and attachment upload");
   console.log("PASS production note to stock to transport flow on isolated database");
   console.log("PASS production inventory write/read flow on isolated database");
+} catch (error) {
+  console.error(logs);
+  throw error;
 } finally {
   server.kill("SIGTERM");
   await new Promise((resolve) => {

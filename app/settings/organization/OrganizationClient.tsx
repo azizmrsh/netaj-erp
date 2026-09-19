@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
 type ModuleRow = { moduleKey: string; enabled: boolean; module: { nameAr: string; isCore: boolean } };
@@ -24,7 +25,8 @@ type Workspace = {
   timeZones: Array<{ name: string; label: string }>;
 };
 
-export default function OrganizationClient({ initialWorkspace }: { initialWorkspace: Workspace }) {
+export default function OrganizationClient({ initialWorkspace, currentCompanyId }: { initialWorkspace: Workspace; currentCompanyId: number }) {
+  const router = useRouter();
   const [workspace, setWorkspace] = useState<Workspace>(initialWorkspace);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -73,6 +75,14 @@ export default function OrganizationClient({ initialWorkspace }: { initialWorksp
     await load();
   }
 
+  async function switchCompany(companyId: number) {
+    const response = await fetch("/api/auth/switch-company", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ companyId }) });
+    const payload = await response.json();
+    if (!response.ok) { setError(payload.error || "تعذر تبديل الشركة"); return; }
+    router.push("/");
+    router.refresh();
+  }
+
   return (
     <main dir="rtl" className="min-h-screen bg-slate-950 p-6 text-slate-100 md:p-10">
       <div className="mx-auto max-w-7xl space-y-8">
@@ -95,7 +105,7 @@ export default function OrganizationClient({ initialWorkspace }: { initialWorksp
                   <h2 className="text-xl font-semibold">{company.legalNameAr}</h2>
                   <p className="text-sm text-slate-400">{company.code} · {company.legalNameEn || "بدون اسم إنجليزي"}</p>
                 </div>
-                <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs text-emerald-300">نشطة</span>
+                {company.id === currentCompanyId ? <span className="rounded-full bg-emerald-500/15 px-3 py-1 text-xs text-emerald-300">الشركة الحالية</span> : <button type="button" onClick={() => switchCompany(company.id)} className="rounded-full border border-slate-700 px-3 py-1 text-xs hover:bg-slate-800">تبديل إليها</button>}
               </div>
               <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">
                 <div><dt className="text-slate-500">الدولة</dt><dd>{company.country.nameAr}</dd></div>

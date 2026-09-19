@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { createBusinessDocument, parseWorkflowInput, WorkflowError, workflowInclude } from "@/lib/workflows";
+import { authorizeRequest, authErrorResponse } from "@/lib/api-auth";
+import { AuthError } from "@/lib/auth";
 
 function errorResponse(error: unknown) {
   console.error(error);
+  if (error instanceof AuthError) { const response = authErrorResponse(error); return NextResponse.json({ error: response.message, code: response.code }, { status: response.status }); }
   if (error instanceof WorkflowError) return NextResponse.json({ error: error.message }, { status: error.code === "NOT_FOUND" ? 404 : 400 });
   return NextResponse.json({ error: "تعذر تنفيذ عملية المستند" }, { status: 500 });
 }
@@ -13,6 +16,10 @@ export async function GET(request: Request) {
   try {
     const params = new URL(request.url).searchParams;
     const direction = params.get("direction")?.toUpperCase();
+    const allowedDirections: string[] = [];
+    if (!direction || direction === "SALES") await authorizeRequest(request, { moduleKey: "SALES", action: "READ" }).then(() => allowedDirections.push("SALES")).catch(() => undefined);
+    if (!direction || direction === "PURCHASE") await authorizeRequest(request, { moduleKey: "PURCHASES", action: "READ" }).then(() => allowedDirections.push("PURCHASE")).catch(() => undefined);
+    if (allowedDirections.length === 0) throw new AuthError("لا توجد صلاحية لقراءة المستندات", "PERMISSION_DENIED", 403);
     const documentType = params.get("documentType")?.toUpperCase();
     const status = params.get("status")?.toUpperCase();
     const partyId = Number(params.get("partyId"));
@@ -24,7 +31,7 @@ export async function GET(request: Request) {
     const from = params.get("from");
     const to = params.get("to");
     const where: Prisma.BusinessDocumentWhereInput = {
-      ...(direction === "SALES" || direction === "PURCHASE" ? { direction } : {}),
+      direction: { in: allowedDirections },
       ...(documentType ? { documentType } : {}), ...(status ? { status } : {}),
       ...(Number.isInteger(partyId) && partyId > 0 ? { partyId } : {}),
       ...(Number.isInteger(itemId) && itemId > 0 ? { lines: { some: { itemId } } } : {}),
@@ -47,6 +54,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const input = parseWorkflowInput(await request.json());
+    const isPurchase = input.documentType === "PURCHASE_REQUEST" || input.documentType === "PURCHASE_ORDER";
+    await authorizeRequest(request, { moduleKey: isPurchase ? "PURCHASES" : "SALES", action: "CREATE" });
     const document = await prisma.$transaction((tx) => createBusinessDocument(tx, input));
     return NextResponse.json(document, { status: 201 });
   } catch (error) { return errorResponse(error); }
