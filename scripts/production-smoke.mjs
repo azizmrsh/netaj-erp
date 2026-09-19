@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { copyFileSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -62,6 +62,7 @@ const routes = [
   "/factory",
   "/hr",
   "/external",
+  "/reports",
   "/settings/organization",
   "/api/units",
   "/api/item-categories",
@@ -109,6 +110,8 @@ const routes = [
   "/api/external/costs",
   "/api/external/expenses",
   "/api/platform",
+  "/api/analytics",
+  "/api/reports/legacy?report=monthly-comparison&from=2026-01-01&to=2026-12-31",
 ];
 
 async function jsonRequest(route, init) {
@@ -145,6 +148,17 @@ try {
     assert.equal(response.status, 200, `financial ${format} export returned ${response.status}`);
     assert.equal(format === "xlsx" ? String.fromCharCode(...bytes.slice(0, 2)) : String.fromCharCode(...bytes.slice(0, 4)), format === "xlsx" ? "PK" : "%PDF");
     console.log(`PASS production financial ${format.toUpperCase()} export (${bytes.length} bytes)`);
+  }
+  for (const format of ["xlsx", "pdf"]) {
+    const response = await fetch(`http://127.0.0.1:${port}/api/reports/legacy/export?report=monthly-comparison&from=2026-01-01&to=2026-12-31&format=${format}`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    assert.equal(response.status, 200, `legacy report ${format} export returned ${response.status}`);
+    assert.equal(format === "xlsx" ? String.fromCharCode(...bytes.slice(0, 2)) : String.fromCharCode(...bytes.slice(0, 4)), format === "xlsx" ? "PK" : "%PDF");
+    if (process.env.SMOKE_ARTIFACT_DIR) {
+      mkdirSync(process.env.SMOKE_ARTIFACT_DIR, { recursive: true });
+      writeFileSync(join(process.env.SMOKE_ARTIFACT_DIR, `phase-e-monthly-comparison.${format}`), bytes);
+    }
+    console.log(`PASS production Phase E ${format.toUpperCase()} export (${bytes.length} bytes)`);
   }
 
   const units = await (await fetch(`http://127.0.0.1:${port}/api/units`)).json();
@@ -262,6 +276,12 @@ try {
   assert.equal(forbiddenUserAdmin.response.status, 403);
   const forbiddenFinancialExport = await fetch(`http://127.0.0.1:${port}/api/finance/reports/export?report=trial-balance&format=xlsx`);
   assert.equal(forbiddenFinancialExport.status, 403);
+  const limitedDashboard = await jsonRequest("/api/analytics?from=2026-01-01&to=2026-12-31");
+  assert.equal(limitedDashboard.response.status, 200);
+  assert.equal(Number(limitedDashboard.body.kpis.sales), 0);
+  assert.equal(limitedDashboard.body.materials.length, 0);
+  const forbiddenLegacyReport = await jsonRequest("/api/reports/legacy?report=payroll&from=2026-01-01&to=2026-12-31");
+  assert.equal(forbiddenLegacyReport.response.status, 403);
   sessionCookie = adminCookie;
   console.log("PASS production granular RBAC for read-only user");
 
@@ -275,6 +295,16 @@ try {
     }),
   });
   assert.equal(itemResult.response.status, 201);
+  const physicalReading = await jsonRequest("/api/reports/readings", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "READING", readingDate: "2026-09-19", assetType: "TANK", assetName: "Smoke Tank", readingType: "DAILY", unit: "L", openingValue: 100, usedValue: 20, closingValue: 80 }),
+  });
+  assert.equal(physicalReading.response.status, 201);
+  const productionTarget = await jsonRequest("/api/reports/readings", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type: "TARGET", year: 2026, month: 9, itemId: itemResult.body.id, targetTons: 25 }),
+  });
+  assert.equal(productionTarget.response.status, 200);
 
   const movementHeaders = { "Content-Type": "application/json" };
   const companyIn = await jsonRequest("/api/inventory/movements", {
@@ -539,6 +569,17 @@ try {
   });
   assert.equal(reopenedPeriod.response.status, 200);
   assert.equal(reopenedPeriod.body.status, "OPEN");
+  const executiveDashboard = await jsonRequest("/api/analytics?from=2026-09-01&to=2026-09-30");
+  assert.equal(executiveDashboard.response.status, 200);
+  assert.ok(Number(executiveDashboard.body.kpis.sales) > 0);
+  assert.ok(executiveDashboard.body.materials.some((row) => row.itemId === itemResult.body.id));
+  const readingReport = await jsonRequest("/api/reports/legacy?report=equipment-readings&from=2026-09-01&to=2026-09-30");
+  assert.equal(readingReport.response.status, 200);
+  assert.ok(readingReport.body.rows.some((row) => row.id === physicalReading.body.id));
+  const monthlyReport = await jsonRequest("/api/reports/legacy?report=monthly-comparison&from=2026-09-01&to=2026-09-30");
+  assert.equal(monthlyReport.response.status, 200);
+  assert.equal(monthlyReport.body.rows[0].month, "2026-09");
+  console.log("PASS production executive dashboard, legacy reports, readings, filters, and drill-down data");
   console.log("PASS production fiscal calendar, guarded period close, and audited reopen");
   console.log("PASS production credit note, accrual adjustment, journals, and VAT integration");
   console.log("PASS production VAT reconciliation, filing, settlement, and bank reconciliation");

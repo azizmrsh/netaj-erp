@@ -1,0 +1,4 @@
+import Link from "next/link";
+import ReportsClient from "./ReportsClient";
+
+export default async function ReportsPage({searchParams}:{searchParams:Promise<Record<string,string|string[]|undefined>>}){const params=await searchParams,initial=Object.fromEntries(Object.entries(params).flatMap(([key,value])=>typeof value==="string"?[[key,value]]:[]));return <main dir="rtl" className="min-h-screen bg-slate-100 text-slate-900"><header className="bg-slate-950 px-6 py-5 text-white"><div className="mx-auto flex max-w-[1500px] items-center justify-between"><div><h1 className="text-2xl font-bold">تقارير نتاج والتحليلات</h1><p className="text-sm text-slate-300">تقارير مولدة من المستندات والدفاتر التشغيلية دون إدخال مكرر</p></div><Link href="/" className="rounded-lg border border-slate-600 px-4 py-2">لوحة الإدارة</Link></div></header><ReportsClient initial={initial}/></main>}

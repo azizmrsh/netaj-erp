@@ -189,6 +189,7 @@ model Item {
   factoryFuelMovements FactoryFuelMovement[]
   externalTrades       ExternalTrade[]
   externalLinkedCosts  ExternalLinkedCost[]
+  factoryTargets       FactoryProductionTarget[]
 
   @@index([tenantId, companyId])
 }
@@ -1319,6 +1320,48 @@ model FactoryExpense {
 
   @@index([expenseDate])
   @@index([expenseType])
+  @@index([tenantId, companyId])
+}
+
+model FactoryProductionTarget {
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
+
+  year       Int
+  month      Int
+  itemId     Int
+  targetTons Decimal @default(0)
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  item Item @relation(fields: [itemId], references: [id])
+
+  @@unique([tenantId, companyId, year, month, itemId])
+  @@index([tenantId, companyId])
+}
+
+model EquipmentReading {
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
+
+  readingDate DateTime @default(now())
+  assetType   String
+  assetName   String
+  readingType String
+  unit        String
+  openingValue Decimal?
+  usedValue    Decimal?
+  closingValue Decimal?
+  readingValue Decimal?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([readingDate])
+  @@index([assetType, assetName])
   @@index([tenantId, companyId])
 }
 

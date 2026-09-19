@@ -76,7 +76,7 @@ export function createPdf(table: ReportTable) {
   const catalogId = add(""), pagesId = add(""), fontId = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
   const pageIds: number[] = [];
   pages.forEach((rows, pageIndex) => {
-    const width = 760 / Math.max(1, table.columns.length), commands = ["0.09 0.21 0.36 rg", "40 548 762 28 re f", "1 1 1 rg", `BT /F1 16 Tf 50 557 Td (${pdfText(table.title)}) Tj ET`, "0 0 0 rg", `BT /F1 9 Tf 50 535 Td (${pdfText(table.subtitle ?? "")}) Tj ET`, "0.12 0.31 0.47 rg", "40 503 762 22 re f", "1 1 1 rg"];
+    const width = 760 / Math.max(1, table.columns.length), commands = ["1 1 1 rg", "0 0 842 595 re f", "0.09 0.21 0.36 rg", "40 548 762 28 re f", "1 1 1 rg", `BT /F1 16 Tf 50 557 Td (${pdfText(table.title)}) Tj ET`, "0 0 0 rg", `BT /F1 9 Tf 50 535 Td (${pdfText(table.subtitle ?? "")}) Tj ET`, "0.12 0.31 0.47 rg", "40 503 762 22 re f", "1 1 1 rg"];
     table.columns.forEach((column, index) => commands.push(`BT /F1 7 Tf ${42 + index * width} 511 Td (${pdfText(column).slice(0, 24)}) Tj ET`));
     rows.forEach((row, rowIndex) => { const y = 488 - rowIndex * 18; if (rowIndex % 2 === 0) commands.push("0.95 0.97 0.98 rg", `40 ${y - 5} 762 17 re f`); commands.push("0 0 0 rg"); row.forEach((cell, index) => commands.push(`BT /F1 7 Tf ${42 + index * width} ${y} Td (${pdfText(typeof cell === "number" ? cell.toLocaleString("en-US", { maximumFractionDigits: 2 }) : cell).slice(0, 24)}) Tj ET`)); });
     commands.push(`BT /F1 7 Tf 730 22 Td (Page ${pageIndex + 1} of ${pages.length}) Tj ET`, `BT /F1 7 Tf 40 22 Td (NETAj ERP - Generated ${new Date().toISOString().slice(0, 10)}) Tj ET`);
@@ -90,4 +90,3 @@ export function createPdf(table: ReportTable) {
   const xref = position, lines = [`xref`, `0 ${objects.length + 1}`, "0000000000 65535 f ", ...offsets.slice(1).map((offset) => `${String(offset).padStart(10, "0")} 00000 n `), `trailer << /Size ${objects.length + 1} /Root ${catalogId} 0 R >>`, "startxref", String(xref), "%%EOF"];
   chunks.push(Buffer.from(lines.join("\n"))); return Buffer.concat(chunks);
 }
-
