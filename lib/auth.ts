@@ -18,7 +18,20 @@ export class AuthError extends Error {
 
 export type AuthRequirement = {
   moduleKey: string;
-  action: "READ" | "CREATE" | "UPDATE" | "POST" | "CANCEL" | "APPROVE" | "MANAGE";
+  action:
+    | "READ"
+    | "CREATE"
+    | "UPDATE"
+    | "POST"
+    | "CANCEL"
+    | "APPROVE"
+    | "MANAGE"
+    | "UPLOAD"
+    | "PREVIEW"
+    | "EXECUTE"
+    | "UPDATE_EXISTING"
+    | "ACCOUNTING_IMPORT"
+    | "ROLLBACK";
 };
 
 function normalizeEmail(value: unknown) {

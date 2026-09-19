@@ -2277,32 +2277,149 @@ model Company {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  tenant         Tenant                @relation(fields: [tenantId], references: [id])
-  group          CompanyGroup?         @relation(fields: [groupId], references: [id])
-  country        Country               @relation(fields: [countryCode], references: [code])
-  baseCurrency   Currency              @relation(fields: [baseCurrencyCode], references: [code])
-  language       Language              @relation(fields: [defaultLanguageCode], references: [code])
-  timeZone       TimeZone              @relation(fields: [timeZoneName], references: [name])
-  branches       Branch[]
-  warehouses     Warehouse[]
-  departments    Department[]
-  costCenters    CostCenter[]
-  fiscalYears    FiscalYear[]
-  exchangeRates  ExchangeRate[]
-  budgets        Budget[]
-  fxRevaluations FxRevaluation[]
-  projects       Project[]
-  costCodes      CostCode[]
-  localizations  CompanyLocalization[]
-  modules        CompanyModule[]
-  entitlements   CompanyEntitlement[]
-  roles          Role[]
-  userAccess     CompanyAccess[]
-  sessions       AuthSession[]
+  tenant          Tenant                @relation(fields: [tenantId], references: [id])
+  group           CompanyGroup?         @relation(fields: [groupId], references: [id])
+  country         Country               @relation(fields: [countryCode], references: [code])
+  baseCurrency    Currency              @relation(fields: [baseCurrencyCode], references: [code])
+  language        Language              @relation(fields: [defaultLanguageCode], references: [code])
+  timeZone        TimeZone              @relation(fields: [timeZoneName], references: [name])
+  branches        Branch[]
+  warehouses      Warehouse[]
+  departments     Department[]
+  costCenters     CostCenter[]
+  fiscalYears     FiscalYear[]
+  exchangeRates   ExchangeRate[]
+  budgets         Budget[]
+  fxRevaluations  FxRevaluation[]
+  projects        Project[]
+  costCodes       CostCode[]
+  localizations   CompanyLocalization[]
+  modules         CompanyModule[]
+  entitlements    CompanyEntitlement[]
+  roles           Role[]
+  userAccess      CompanyAccess[]
+  sessions        AuthSession[]
+  importBatches   ImportBatch[]
+  importTemplates ImportTemplate[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
   @@index([groupId])
+}
+
+// ============================================================
+// DATA IMPORT AND LEGACY MIGRATION CENTER
+// Uploaded source rows are retained with immutable provenance so
+// every created ERP record can be traced to its file, sheet and row.
+// ============================================================
+
+model ImportBatch {
+  id                Int       @id @default(autoincrement())
+  tenantId          Int       @default(1)
+  companyId         Int       @default(1)
+  batchNumber       String    @unique
+  targetType        String
+  importMode        String    @default("FULL")
+  duplicateStrategy String    @default("SKIP")
+  sourceFile        String
+  fileHash          String
+  status            String    @default("PREVIEW")
+  mappingJson       String    @default("{}")
+  sheetsJson        String    @default("[]")
+  summaryJson       String    @default("{}")
+  totalRows         Int       @default(0)
+  validRows         Int       @default(0)
+  invalidRows       Int       @default(0)
+  duplicateRows     Int       @default(0)
+  createdRows       Int       @default(0)
+  updatedRows       Int       @default(0)
+  skippedRows       Int       @default(0)
+  createdBy         String?
+  executedAt        DateTime?
+  rolledBackAt      DateTime?
+  failureReason     String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  company Company            @relation(fields: [companyId], references: [id])
+  rows    ImportRow[]
+  links   LegacyRecordLink[]
+
+  @@index([tenantId, companyId, createdAt])
+  @@index([tenantId, companyId, status])
+  @@index([fileHash, targetType])
+}
+
+model ImportRow {
+  id             Int       @id @default(autoincrement())
+  tenantId       Int       @default(1)
+  companyId      Int       @default(1)
+  importBatchId  Int
+  sourceSheet    String
+  sourceRow      Int
+  rawDataJson    String
+  mappedDataJson String    @default("{}")
+  status         String    @default("PENDING")
+  errorsJson     String    @default("[]")
+  warningsJson   String    @default("[]")
+  duplicateKey   String?
+  entityType     String?
+  entityId       Int?
+  operation      String?
+  importedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  batch ImportBatch       @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  link  LegacyRecordLink?
+
+  @@unique([importBatchId, sourceSheet, sourceRow])
+  @@index([tenantId, companyId, status])
+  @@index([entityType, entityId])
+}
+
+model LegacyRecordLink {
+  id                   Int      @id @default(autoincrement())
+  tenantId             Int      @default(1)
+  companyId            Int      @default(1)
+  importBatchId        Int
+  importRowId          Int      @unique
+  entityType           String
+  entityId             Int
+  legacySource         String
+  legacyDocumentNumber String?
+  sourceFile           String
+  sourceSheet          String
+  sourceRow            Int
+  importedBy           String?
+  importedAt           DateTime @default(now())
+  wasCreated           Boolean  @default(true)
+  beforeDataJson       String?
+
+  batch ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Cascade)
+  row   ImportRow   @relation(fields: [importRowId], references: [id], onDelete: Cascade)
+
+  @@unique([importBatchId, entityType, entityId, sourceRow])
+  @@index([tenantId, companyId, entityType, entityId])
+  @@index([legacySource, legacyDocumentNumber])
+}
+
+model ImportTemplate {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int      @default(1)
+  companyId   Int      @default(1)
+  targetType  String
+  name        String
+  mappingJson String   @default("{}")
+  isDefault   Boolean  @default(false)
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@unique([tenantId, companyId, targetType, name])
+  @@index([tenantId, companyId, targetType])
 }
 
 model Branch {

@@ -64,6 +64,7 @@ const routes = [
   "/external",
   "/reports",
   "/projects",
+  "/imports",
   "/settings/organization",
   "/api/units",
   "/api/item-categories",
@@ -113,6 +114,8 @@ const routes = [
   "/api/platform",
   "/api/analytics",
   "/api/projects",
+  "/api/imports",
+  "/api/imports/template?target=PARTIES",
   "/api/reports/legacy?report=monthly-comparison&from=2026-01-01&to=2026-12-31",
 ];
 
@@ -165,6 +168,22 @@ try {
 
   const units = await (await fetch(`http://127.0.0.1:${port}/api/units`)).json();
   const suffix = Date.now().toString(36).toUpperCase();
+  const importCsv = new File([`الاسم العربي,الرقم الموحد,عميل\nعميل استيراد الإنتاج,SMOKE-IMP-${suffix},نعم\n`], "production-import.csv", { type: "text/csv" });
+  const inspectForm = new FormData(); inspectForm.set("file", importCsv); inspectForm.set("targetType", "PARTIES");
+  const inspectImport = await fetch(`http://127.0.0.1:${port}/api/imports/inspect`, { method: "POST", body: inspectForm });
+  assert.equal(inspectImport.status, 200, `import inspect returned ${inspectImport.status}: ${await inspectImport.text()}`);
+  const previewForm = new FormData(); previewForm.set("file", importCsv); previewForm.set("targetType", "PARTIES"); previewForm.set("importMode", "FULL"); previewForm.set("duplicateStrategy", "SKIP");
+  const previewImport = await fetch(`http://127.0.0.1:${port}/api/imports`, { method: "POST", body: previewForm });
+  const previewImportBody = await previewImport.json();
+  assert.equal(previewImport.status, 201, `import preview returned ${previewImport.status}: ${JSON.stringify(previewImportBody)}`);
+  assert.equal(previewImportBody.validRows, 1, `unexpected import preview: ${JSON.stringify(previewImportBody)}`);
+  const executeImport = await jsonRequest(`/api/imports/${previewImportBody.id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "EXECUTE" }) });
+  assert.equal(executeImport.response.status, 200); assert.equal(executeImport.body.createdRows, 1);
+  const importedParty = (await jsonRequest("/api/parties")).body.find((row) => row.unifiedNumber === `SMOKE-IMP-${suffix}`);
+  assert.ok(importedParty);
+  const rollbackImport = await jsonRequest(`/api/imports/${previewImportBody.id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "ROLLBACK" }) });
+  assert.equal(rollbackImport.response.status, 200); assert.equal(rollbackImport.body.status, "ROLLED_BACK");
+  console.log("PASS production import preview/execute/provenance/rollback");
   const companyResult = await jsonRequest("/api/platform", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
