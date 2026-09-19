@@ -68,6 +68,8 @@ const routes = [
   "/settings/organization",
   "/settings/configuration",
   "/reports/builder",
+  "/settings/design",
+  "/dashboards",
   "/api/units",
   "/api/item-categories",
   "/api/items",
@@ -121,6 +123,9 @@ const routes = [
   "/api/configuration",
   "/api/custom-fields?entityType=PARTY",
   "/api/custom-reports",
+  "/api/design",
+  "/api/design/runtime",
+  "/api/design/branding",
   "/api/reports/legacy?report=monthly-comparison&from=2026-01-01&to=2026-12-31",
 ];
 
@@ -240,6 +245,18 @@ try {
     assert.equal(format === "xlsx" ? String.fromCharCode(...bytes.slice(0, 2)) : String.fromCharCode(...bytes.slice(0, 4)), format === "xlsx" ? "PK" : "%PDF");
   }
   console.log("PASS production Phase H custom fields, filtered reports, Excel/PDF exports");
+  const themeProfile = await jsonRequest("/api/design", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "THEME", themePreset: "MODERN", mode: "LIGHT", primaryColor: "#1d4ed8", secondaryColor: "#0f172a", accentColor: "#059669", fontArabic: "Arial", fontEnglish: "Arial", sidebarStyle: "SOFT", cardStyle: "ELEVATED", tableStyle: "BORDERED", menuOrder: ["/dashboards", "/parties"], loginBranding: { title: "دخول اختبار الإنتاج" } }) });
+  assert.equal(themeProfile.response.status, 201, JSON.stringify(themeProfile.body));
+  const customDashboard = await jsonRequest("/api/design", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "DASHBOARD", code: `SMOKE_DASH_${suffix}`, name: "لوحة اختبار الإنتاج", roleCodes: ["ADMIN"], widgets: [{ widgetType: "KPI", title: "المبيعات", dataSource: "kpis.sales", width: 1 }, { widgetType: "TABLE", title: "نشاط العملاء", dataSource: "customerActivity", width: 2 }] }) });
+  assert.equal(customDashboard.response.status, 201, JSON.stringify(customDashboard.body));
+  const documentTemplate = await jsonRequest("/api/design", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "TEMPLATE_VERSION", code: `SMOKE_NOTE_${suffix}`, name: "قالب اختبار الإنتاج", documentType: "DELIVERY_NOTE", isDefault: true, design: { page: { size: "A4" }, colors: { primary: "#112233", accent: "#445566" }, body: { fieldOrder: ["documentNumber", "transport", "items", "totals", "notes"] }, features: { qr: true, barcode: true, signatures: true, stamp: true } } }) });
+  assert.equal(documentTemplate.response.status, 201, JSON.stringify(documentTemplate.body));
+  const publishedTemplate = await jsonRequest("/api/design", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "PUBLISH_VERSION", versionId: documentTemplate.body.version.id }) });
+  assert.equal(publishedTemplate.response.status, 201, JSON.stringify(publishedTemplate.body));
+  const designRuntime = await jsonRequest("/api/design/runtime");
+  assert.equal(designRuntime.response.status, 200);
+  assert.equal(designRuntime.body.dashboards.some((row) => row.id === customDashboard.body.id), true);
+  console.log("PASS production Phase I theme, versioned template publish, role dashboard runtime");
 
   const switchToSecond = await jsonRequest("/api/auth/switch-company", {
     method: "POST", headers: { "content-type": "application/json" },
@@ -269,6 +286,9 @@ try {
   const disabledAccounting = await jsonRequest("/api/finance/vat-returns");
   assert.equal(disabledAccounting.response.status, 403);
   assert.equal(disabledAccounting.body.code, "MODULE_DISABLED");
+  const disabledDesign = await jsonRequest("/api/design");
+  assert.equal(disabledDesign.response.status, 403);
+  assert.equal(disabledDesign.body.code, "MODULE_DISABLED");
   const secondCompanyHome = await (await fetch(`http://127.0.0.1:${port}/`)).text();
   assert.equal(secondCompanyHome.includes('href="/inventory"'), false);
   const switchBack = await jsonRequest("/api/auth/switch-company", {
@@ -502,6 +522,12 @@ try {
   });
   assert.equal(postedNote.response.status, 200);
   assert.equal(postedNote.body.trip.noteId, note.body.id);
+  const printedNote = await fetch(`http://127.0.0.1:${port}/notes/${note.body.id}/print`);
+  const printedNoteHtml = await printedNote.text();
+  assert.equal(printedNote.status, 200);
+  assert.match(printedNoteHtml, /قالب v1 محفوظ تاريخيًا/);
+  assert.match(printedNoteHtml, /data:image\/png;base64/);
+  console.log("PASS production issued document snapshot, immutable template link, QR and Barcode render");
   const updatedTrip = await jsonRequest(`/api/transport/trips/${postedNote.body.trip.id}`, {
     method: "PATCH", headers: movementHeaders,
     body: JSON.stringify({

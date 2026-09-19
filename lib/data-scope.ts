@@ -21,6 +21,8 @@ export const scopedModels = new Set([
   "ImportBatch", "ImportRow", "LegacyRecordLink", "ImportTemplate",
   "CustomFieldDefinition", "CustomFieldValue", "CompanyConfiguration", "ApprovalRule",
   "CustomReportDefinition", "CompanyIndustryProfile",
+  "DocumentTemplate", "IssuedDocumentPresentation", "CompanyThemeProfile",
+  "DashboardDefinition", "DashboardWidget",
 ]);
 
 export async function getVerifiedDataScope(): Promise<DataScope> {

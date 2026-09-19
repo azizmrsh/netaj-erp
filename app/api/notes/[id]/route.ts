@@ -11,6 +11,7 @@ import {
 } from "@/lib/notes";
 import { authorizeRequest, authErrorResponse } from "@/lib/api-auth";
 import { AuthError } from "@/lib/auth";
+import { issueDocumentPresentation } from "@/lib/design";
 
 function responseForError(error: unknown) {
   console.error(error);
@@ -59,10 +60,14 @@ export async function PATCH(
     const idNumber = noteId(id);
     const body = (await request.json()) as Record<string, unknown>;
     const action = String(body.action ?? "UPDATE").toUpperCase();
-    await authorizeRequest(request, { moduleKey: "NOTES", action: action === "POST" ? "POST" : action === "CANCEL" ? "CANCEL" : action === "APPROVE" ? "APPROVE" : "UPDATE" });
+    const auth = await authorizeRequest(request, { moduleKey: "NOTES", action: action === "POST" ? "POST" : action === "CANCEL" ? "CANCEL" : action === "APPROVE" ? "APPROVE" : "UPDATE" });
 
     if (action === "POST") {
-      const result = await prisma.$transaction((tx) => postNote(tx, idNumber));
+      const result = await prisma.$transaction(async (tx) => {
+        const posted = await postNote(tx, idNumber);
+        await issueDocumentPresentation(tx, { entityType: "DELIVERY_RECEIPT_NOTE", entityId: posted.note.id, documentType: posted.note.noteType === "RECEIPT" ? "RECEIPT_NOTE" : "DELIVERY_NOTE", documentNumber: posted.note.noteNumber, data: posted.note }, String(auth.userId));
+        return posted;
+      });
       return NextResponse.json(result);
     }
     if (action === "SUBMIT" || action === "APPROVE") {

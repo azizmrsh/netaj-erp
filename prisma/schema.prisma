@@ -2277,12 +2277,12 @@ model Company {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  tenant                 Tenant                   @relation(fields: [tenantId], references: [id])
-  group                  CompanyGroup?            @relation(fields: [groupId], references: [id])
-  country                Country                  @relation(fields: [countryCode], references: [code])
-  baseCurrency           Currency                 @relation(fields: [baseCurrencyCode], references: [code])
-  language               Language                 @relation(fields: [defaultLanguageCode], references: [code])
-  timeZone               TimeZone                 @relation(fields: [timeZoneName], references: [name])
+  tenant                 Tenant                       @relation(fields: [tenantId], references: [id])
+  group                  CompanyGroup?                @relation(fields: [groupId], references: [id])
+  country                Country                      @relation(fields: [countryCode], references: [code])
+  baseCurrency           Currency                     @relation(fields: [baseCurrencyCode], references: [code])
+  language               Language                     @relation(fields: [defaultLanguageCode], references: [code])
+  timeZone               TimeZone                     @relation(fields: [timeZoneName], references: [name])
   branches               Branch[]
   warehouses             Warehouse[]
   departments            Department[]
@@ -2307,6 +2307,11 @@ model Company {
   approvalRules          ApprovalRule[]
   customReports          CustomReportDefinition[]
   industryProfile        CompanyIndustryProfile?
+  documentTemplates      DocumentTemplate[]
+  issuedDocuments        IssuedDocumentPresentation[]
+  themeProfile           CompanyThemeProfile?
+  dashboards             DashboardDefinition[]
+  dashboardWidgets       DashboardWidget[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -2570,6 +2575,141 @@ model CompanyIndustryProfile {
   template IndustryTemplateDefinition @relation(fields: [templateCode], references: [code])
 
   @@index([tenantId, companyId])
+}
+
+// ============================================================
+// DOCUMENT DESIGN, WHITE-LABEL THEME AND CONFIGURABLE DASHBOARDS
+// Presentation definitions are versioned and remain separate from
+// operational/accounting data. Issued documents retain an immutable snapshot.
+// ============================================================
+
+model DocumentTemplate {
+  id           Int      @id @default(autoincrement())
+  tenantId     Int      @default(1)
+  companyId    Int      @default(1)
+  code         String
+  name         String
+  documentType String
+  language     String   @default("AR")
+  isDefault    Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  company  Company                   @relation(fields: [companyId], references: [id])
+  versions DocumentTemplateVersion[]
+
+  @@unique([tenantId, companyId, code])
+  @@index([tenantId, companyId, documentType, isActive])
+}
+
+model DocumentTemplateVersion {
+  id          Int       @id @default(autoincrement())
+  templateId  Int
+  version     Int
+  status      String    @default("DRAFT")
+  designJson  String
+  changeNotes String?
+  createdBy   String?
+  createdAt   DateTime  @default(now())
+  publishedAt DateTime?
+
+  template        DocumentTemplate             @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  issuedDocuments IssuedDocumentPresentation[]
+
+  @@unique([templateId, version])
+  @@index([templateId, status])
+}
+
+model IssuedDocumentPresentation {
+  id                Int      @id @default(autoincrement())
+  tenantId          Int      @default(1)
+  companyId         Int      @default(1)
+  entityType        String
+  entityId          Int
+  documentNumber    String?
+  issueDate         DateTime @default(now())
+  templateVersionId Int
+  dataSnapshotJson  String
+  checksum          String
+  createdBy         String?
+  createdAt         DateTime @default(now())
+
+  company         Company                 @relation(fields: [companyId], references: [id])
+  templateVersion DocumentTemplateVersion @relation(fields: [templateVersionId], references: [id])
+
+  @@unique([tenantId, companyId, entityType, entityId])
+  @@index([tenantId, companyId, documentNumber])
+}
+
+model CompanyThemeProfile {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int      @default(1)
+  companyId          Int      @unique
+  themePreset        String   @default("CORPORATE")
+  mode               String   @default("LIGHT")
+  logoUrl            String?
+  loginLogoUrl       String?
+  primaryColor       String   @default("#1d4ed8")
+  secondaryColor     String   @default("#0f172a")
+  accentColor        String   @default("#059669")
+  fontArabic         String   @default("Arial")
+  fontEnglish        String   @default("Arial")
+  sidebarStyle       String   @default("SOLID")
+  cardStyle          String   @default("ROUNDED")
+  tableStyle         String   @default("STRIPED")
+  menuOrderJson      String   @default("[]")
+  dashboardStyleJson String   @default("{}")
+  loginBrandingJson  String   @default("{}")
+  updatedBy          String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([tenantId, companyId])
+}
+
+model DashboardDefinition {
+  id            Int      @id @default(autoincrement())
+  tenantId      Int      @default(1)
+  companyId     Int      @default(1)
+  code          String
+  name          String
+  roleCodesJson String   @default("[]")
+  isDefault     Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  createdBy     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  company Company           @relation(fields: [companyId], references: [id])
+  widgets DashboardWidget[]
+
+  @@unique([tenantId, companyId, code])
+  @@index([tenantId, companyId, isActive])
+}
+
+model DashboardWidget {
+  id          Int      @id @default(autoincrement())
+  tenantId    Int      @default(1)
+  companyId   Int      @default(1)
+  dashboardId Int
+  widgetType  String
+  title       String
+  dataSource  String
+  configJson  String   @default("{}")
+  position    Int      @default(0)
+  width       Int      @default(1)
+  height      Int      @default(1)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company   Company             @relation(fields: [companyId], references: [id])
+  dashboard DashboardDefinition @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, companyId, dashboardId, position])
 }
 
 model Branch {

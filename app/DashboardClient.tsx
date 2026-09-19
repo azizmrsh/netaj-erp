@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 
 type Row = Record<string, unknown>;
@@ -12,6 +13,7 @@ const menu = [
   ["المشاريع والمقاولات", "/projects", "PROJECTS"],
   ["مركز استيراد البيانات", "/imports", "IMPORT"],
   ["التخصيص بدون كود", "/settings/configuration", "CONFIG"], ["منشئ التقارير", "/reports/builder", "CONFIG"],
+  ["مصمم المستندات والهوية", "/settings/design", "DESIGN"], ["لوحاتي", "/dashboards", "DESIGN"],
   ["المستخدمون والصلاحيات", "/settings/users", "CORE"], ["إعدادات المؤسسة", "/settings/organization", "CORE"],
 ] as const;
 const money=(value:unknown)=>`${Number(value??0).toLocaleString("ar-SA",{minimumFractionDigits:2,maximumFractionDigits:2})} ر.س`;
@@ -21,12 +23,15 @@ const today=new Date(),initialFrom=`${today.getFullYear()}-01-01`,initialTo=toda
 export default function DashboardClient({ enabledModules, companyName, userName }: { enabledModules: string[]; companyName: string; userName: string }) {
   const [filters,setFilters]=useState({from:initialFrom,to:initialTo,inactiveDays:"60"}),[data,setData]=useState<DashboardData|null>(null),[message,setMessage]=useState("");
   const [selectedMaterials,setSelectedMaterials]=useState<[string,string]>(["",""]);
+  const [branding,setBranding]=useState<{logoUrl?:string|null;menuOrder?:string[];secondaryColor?:string}|null>(null);
   useEffect(()=>{const controller=new AbortController(),params=new URLSearchParams(filters);fetch(`/api/analytics?${params}`,{cache:"no-store",signal:controller.signal}).then(async response=>{const body=await response.json();if(!response.ok)throw new Error(body.error);setMessage("");setData(body)}).catch(error=>{if(error.name!=="AbortError")setMessage(error.message)});return()=>controller.abort()},[filters]);
+  useEffect(()=>{const controller=new AbortController();fetch("/api/design/runtime",{cache:"no-store",signal:controller.signal}).then(response=>response.ok?response.json():null).then(payload=>payload?.theme&&setBranding(payload.theme)).catch(()=>undefined);return()=>controller.abort()},[]);
   const effectiveMaterials:[string,string]=selectedMaterials[0]?selectedMaterials:[String(data?.materials[0]?.itemId??""),String(data?.materials[1]?.itemId??data?.materials[0]?.itemId??"")];
   const materialCards=effectiveMaterials.map(id=>data?.materials.find(row=>String(row.itemId)===id)).filter(Boolean) as Row[];
   const maxMonthly=useMemo(()=>Math.max(1,...(data?.monthly??[]).map(row=>Math.abs(Number(row.netProfit??0)))),[data]);
+  const order=new Map((branding?.menuOrder??[]).map((href,index)=>[href,index])),effectiveMenu=menu.filter(([, ,module])=>enabledModules.includes(module)).sort((left,right)=>(order.get(left[1])??999)-(order.get(right[1])??999));
   return <main dir="rtl" className="min-h-screen bg-slate-100 text-slate-900"><div className="flex min-h-screen">
-    <aside className="hidden w-72 shrink-0 bg-slate-950 p-5 text-white lg:block"><div className="mb-8"><div className="text-3xl font-black tracking-wide">NETAJ</div><div className="text-sm text-slate-400">نظام إدارة الأعمال</div></div><nav className="space-y-1">{menu.filter(([, ,module])=>enabledModules.includes(module)).map(([label,href])=><Link key={href+label} href={href} className="block rounded-xl px-4 py-2.5 text-slate-300 hover:bg-slate-800 hover:text-white">{label}</Link>)}</nav></aside>
+    <aside className="hidden w-72 shrink-0 bg-slate-950 p-5 text-white lg:block" style={{backgroundColor:branding?.secondaryColor}}><div className="mb-8">{branding?.logoUrl?<Image src={branding.logoUrl} width={170} height={70} unoptimized alt={companyName} className="mb-2 object-contain"/>:<div className="text-3xl font-black tracking-wide">NETAJ</div>}<div className="text-sm text-slate-400">نظام إدارة الأعمال</div></div><nav className="space-y-1">{effectiveMenu.map(([label,href])=><Link key={href+label} href={href} className="block rounded-xl px-4 py-2.5 text-slate-300 hover:bg-slate-800 hover:text-white">{label}</Link>)}</nav></aside>
     <section className="min-w-0 flex-1"><header className="border-b bg-white px-5 py-5 md:px-8"><div className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-bold">لوحة الإدارة التنفيذية</h1><p className="text-sm text-slate-500">{companyName} · بيانات فعلية من دفتر الأستاذ والتشغيل</p></div><div className="rounded-xl bg-slate-900 px-4 py-2 text-white">{userName}</div></div></header>
       <div className="space-y-6 p-5 md:p-8"><section className="grid gap-3 rounded-2xl border bg-white p-4 md:grid-cols-4"><Field label="من" type="date" value={filters.from} onChange={from=>setFilters({...filters,from})}/><Field label="إلى" type="date" value={filters.to} onChange={to=>setFilters({...filters,to})}/><Field label="خمول العميل بالأيام" type="number" value={filters.inactiveDays} onChange={inactiveDays=>setFilters({...filters,inactiveDays})}/><Link href={`/reports?from=${filters.from}&to=${filters.to}`} className="mt-6 rounded-xl bg-blue-700 px-4 py-2.5 text-center font-bold text-white">مركز التقارير والتصدير</Link></section>
       {message&&<div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">{message}</div>}{!data?<div className="rounded-2xl border bg-white p-16 text-center">جارٍ احتساب المؤشرات…</div>:<>

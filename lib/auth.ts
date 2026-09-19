@@ -31,7 +31,8 @@ export type AuthRequirement = {
     | "EXECUTE"
     | "UPDATE_EXISTING"
     | "ACCOUNTING_IMPORT"
-    | "ROLLBACK";
+    | "ROLLBACK"
+    | "PUBLISH";
 };
 
 function normalizeEmail(value: unknown) {
