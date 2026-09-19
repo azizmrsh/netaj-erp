@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { changeWorkflowStatus, WorkflowError, workflowInclude } from "@/lib/workflows";
+import { changeWorkflowStatus, parseWorkflowInput, updateBusinessDocument, WorkflowError, workflowInclude, type WorkflowDocumentType } from "@/lib/workflows";
 import { authorizeRequest, authErrorResponse } from "@/lib/api-auth";
 import { AuthError } from "@/lib/auth";
 
@@ -21,11 +21,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   try {
     const body = await request.json();
     const id = idFrom((await params).id);
-    const existing = await prisma.businessDocument.findUnique({ where: { id }, select: { direction: true } });
+    const existing = await prisma.businessDocument.findUnique({ where: { id }, select: { direction: true, documentType: true } });
     if (!existing) throw new WorkflowError("NOT_FOUND", "المستند غير موجود");
     const action = String(body.action ?? "").toUpperCase();
     await authorizeRequest(request, { moduleKey: existing.direction === "PURCHASE" ? "PURCHASES" : "SALES", action: action === "APPROVE" ? "APPROVE" : action === "CANCEL" ? "CANCEL" : "UPDATE" });
-    const document = await prisma.$transaction((tx) => changeWorkflowStatus(tx, id, action));
+    const document = action === "UPDATE"
+      ? await prisma.$transaction((tx) => updateBusinessDocument(tx, id, parseWorkflowInput(body, existing.documentType as WorkflowDocumentType)))
+      : await prisma.$transaction((tx) => changeWorkflowStatus(tx, id, action));
     return NextResponse.json(document);
   } catch (error) { return respond(error); }
 }

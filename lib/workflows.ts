@@ -115,7 +115,7 @@ export function parseWorkflowInput(value: unknown, forcedType?: WorkflowDocument
   });
   const documentDate = date(body.documentDate) ?? new Date();
   const currency = String(body.currency ?? "SAR").toUpperCase();
-  if (!['SAR','USD'].includes(currency)) throw new WorkflowError("INVALID_INPUT", "العملة غير مدعومة");
+  if (!/^[A-Z]{3}$/.test(currency)) throw new WorkflowError("INVALID_INPUT", "رمز العملة غير صحيح");
   return {
     documentType, documentDate, expiryDate: date(body.expiryDate), neededDate: date(body.neededDate), partyId,
     referenceNumber: clean(body.referenceNumber), salesperson: clean(body.salesperson), requester: clean(body.requester),
@@ -152,6 +152,8 @@ async function validatePartyAndItems(tx: Prisma.TransactionClient, input: Workfl
   if (ids.length && await tx.item.count({ where: { id: { in: ids }, isActive: true } }) !== ids.length) {
     throw new WorkflowError("INVALID_INPUT", "توجد مادة غير موجودة أو غير نشطة");
   }
+  const currency = await tx.currency.findUnique({ where: { code: input.currency } });
+  if (!currency?.isActive) throw new WorkflowError("INVALID_INPUT", "العملة غير معرفة أو غير نشطة");
 }
 
 export async function createBusinessDocument(tx: Prisma.TransactionClient, input: WorkflowInput, sourceDocumentId?: number | null) {
@@ -172,6 +174,24 @@ export async function createBusinessDocument(tx: Prisma.TransactionClient, input
     include: workflowInclude,
   });
   await audit(tx, { action: "CREATE", entityType: input.documentType, entityId: document.id, metadata: { documentNumber: number, sourceDocumentId } });
+  return document;
+}
+
+export async function updateBusinessDocument(tx: Prisma.TransactionClient, id: number, input: WorkflowInput) {
+  const existing = await tx.businessDocument.findUnique({ where: { id } });
+  if (!existing) throw new WorkflowError("NOT_FOUND", "المستند غير موجود");
+  if (existing.status !== "DRAFT") throw new WorkflowError("INVALID_STATUS", "يسمح بتعديل المستند وهو مسودة فقط");
+  if (existing.documentType !== input.documentType) throw new WorkflowError("INVALID_INPUT", "لا يمكن تغيير نوع المستند بعد إنشائه");
+  await validatePartyAndItems(tx, input);
+  const document = await tx.businessDocument.update({ where: { id }, data: {
+    documentDate: input.documentDate, expiryDate: input.expiryDate, neededDate: input.neededDate, partyId: input.partyId,
+    referenceNumber: input.referenceNumber, salesperson: input.salesperson, requester: input.requester, department: input.department,
+    costCenter: input.costCenter, priority: input.priority, currency: input.currency, bankDetails: input.bankDetails,
+    paymentTerms: input.paymentTerms, deliveryTime: input.deliveryTime, deliveryPlace: input.deliveryPlace,
+    deliveryTerms: input.deliveryTerms, notes: input.notes, ...totals(input.lines),
+    lines: { deleteMany: {}, create: input.lines.map((line, index) => ({ sequence: index + 1, ...line })) },
+  }, include: workflowInclude });
+  await audit(tx, { action: "UPDATE", entityType: existing.documentType, entityId: id, metadata: { documentNumber: existing.documentNumber, lineCount: input.lines.length } });
   return document;
 }
 

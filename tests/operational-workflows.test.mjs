@@ -6,16 +6,25 @@ import { join } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { applyStockMovement } from "../lib/inventory.ts";
-import { changeWorkflowStatus, convertBusinessDocument, createBusinessDocument, createFinalInvoiceFromNote, parseWorkflowInput } from "../lib/workflows.ts";
+import { changeWorkflowStatus, convertBusinessDocument, createBusinessDocument, createFinalInvoiceFromNote, parseWorkflowInput, updateBusinessDocument } from "../lib/workflows.ts";
 import { cancelPostedNote, createNote, postNote } from "../lib/notes.ts";
 
 const directory=mkdtempSync(join(tmpdir(),"netaj-workflow-test-"));const databasePath=join(directory,"workflow.db");copyFileSync("prisma/netaj.db",databasePath);
 const prisma=new PrismaClient({adapter:new PrismaBetterSqlite3({url:`file:${databasePath}`})});
 let partyId,itemId,truckId,driverId;
-before(async()=>{const suffix=Date.now().toString(36).toUpperCase();const unit=await prisma.unit.create({data:{code:`W${suffix}`,nameAr:"وحدة تدفق",nameEn:"Workflow"}});itemId=(await prisma.item.create({data:{code:`WF-${suffix}`,nameAr:"مادة تدفق متكامل",unitId:unit.id}})).id;partyId=(await prisma.party.create({data:{nameAr:"جهة تدفق متكامل",isCustomer:true,isSupplier:true}})).id;truckId=(await prisma.truck.create({data:{plateNumber:`WF-${suffix}`}})).id;driverId=(await prisma.driver.create({data:{name:"سائق التدفق",idNumber:`WF-${suffix}`}})).id;await prisma.$transaction(tx=>applyStockMovement(tx,{itemId,ownershipType:"COMPANY",movementType:"OPENING",quantityIn:100,unitCost:20}))});
+before(async()=>{const suffix=Date.now().toString(36).toUpperCase();await prisma.currency.upsert({where:{code:"EUR"},update:{isActive:true},create:{code:"EUR",nameAr:"اليورو",nameEn:"Euro",symbol:"€",isActive:true}});const unit=await prisma.unit.create({data:{code:`W${suffix}`,nameAr:"وحدة تدفق",nameEn:"Workflow"}});itemId=(await prisma.item.create({data:{code:`WF-${suffix}`,nameAr:"مادة تدفق متكامل",unitId:unit.id}})).id;partyId=(await prisma.party.create({data:{nameAr:"جهة تدفق متكامل",isCustomer:true,isSupplier:true}})).id;truckId=(await prisma.truck.create({data:{plateNumber:`WF-${suffix}`}})).id;driverId=(await prisma.driver.create({data:{name:"سائق التدفق",idNumber:`WF-${suffix}`}})).id;await prisma.$transaction(tx=>applyStockMovement(tx,{itemId,ownershipType:"COMPANY",movementType:"OPENING",quantityIn:100,unitCost:20}))});
 after(async()=>{await prisma.$disconnect();rmSync(directory,{recursive:true,force:true})});
 const body=(documentType)=>({documentType,documentDate:"2026-09-19",partyId,currency:"SAR",referenceNumber:"E2E-REF",paymentTerms:"30 days",items:[{itemId,quantity:5,unitPrice:100,discount:25,vatRate:15,description:"بند متكامل",materialGrade:"A"}]});
 async function approve(id){return prisma.$transaction(tx=>changeWorkflowStatus(tx,id,"APPROVE"))}
+
+test("تحرير المسودة يدعم العملات المهيأة ويعيد حساب البنود ويحفظ التدقيق",async()=>{
+  const draft=await prisma.$transaction(tx=>createBusinessDocument(tx,parseWorkflowInput({...body("QUOTATION"),currency:"EUR"})));
+  const updated=await prisma.$transaction(tx=>updateBusinessDocument(tx,draft.id,parseWorkflowInput({...body("QUOTATION"),currency:"EUR",referenceNumber:"EDITED",items:[{itemId,quantity:2,unitPrice:200,discount:10,vatRate:15,description:"بند معدل"}]})));
+  assert.equal(updated.currency,"EUR");assert.equal(updated.referenceNumber,"EDITED");assert.equal(updated.lines.length,1);assert.equal(updated.totalAmount.toString(),"448.5");
+  assert.equal(await prisma.auditLog.count({where:{action:"UPDATE",entityType:"QUOTATION",entityId:draft.id}}),1);
+  await approve(draft.id);
+  await assert.rejects(()=>prisma.$transaction(tx=>updateBusinessDocument(tx,draft.id,parseWorkflowInput({...body("QUOTATION"),currency:"EUR"}))),/مسودة فقط/);
+});
 
 test("Scenario A: QT -> PI -> SO -> DN -> Stock -> Trip -> Invoice -> Journal دون تكرار",async()=>{
   const quote=await prisma.$transaction(tx=>createBusinessDocument(tx,parseWorkflowInput(body("QUOTATION"))));assert.match(quote.documentNumber,/^QT-2026-\d{6}$/);await approve(quote.id);

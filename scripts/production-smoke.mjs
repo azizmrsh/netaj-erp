@@ -440,6 +440,13 @@ try {
   };
   const quote = await jsonRequest("/api/workflows", { method: "POST", headers: movementHeaders, body: JSON.stringify(workflowBody("QUOTATION")) });
   assert.equal(quote.response.status, 201, `Workflow quote failed: ${JSON.stringify(quote.body)}`);
+  const editedQuote = await jsonRequest(`/api/workflows/${quote.body.id}`, {
+    method: "PATCH", headers: movementHeaders,
+    body: JSON.stringify({ ...workflowBody("QUOTATION", 3), action: "UPDATE", referenceNumber: `FLOW-EDIT-${suffix}` }),
+  });
+  assert.equal(editedQuote.response.status, 200, `Workflow draft edit failed: ${JSON.stringify(editedQuote.body)}`);
+  assert.equal(editedQuote.body.referenceNumber, `FLOW-EDIT-${suffix}`);
+  assert.equal(Number(editedQuote.body.lines[0].quantity), 3);
   await approve(quote.body.id);
   const pi = await convert(quote.body.id, "PROFORMA_INVOICE"); await approve(pi.document.id);
   const order = await convert(pi.document.id, "SALES_ORDER"); await approve(order.document.id);
