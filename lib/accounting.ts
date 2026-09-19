@@ -2,6 +2,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { audit } from "@/lib/audit";
 import { nextDocumentNumber } from "@/lib/document-numbering";
 import { getVerifiedDataScope } from "@/lib/data-scope";
+import { exchangeRateAt, functionalAmount } from "@/lib/currency";
 
 type TransactionClient = Prisma.TransactionClient;
 
@@ -18,6 +19,10 @@ const defaults = [
   { key: "COST_OF_GOODS_SOLD", code: "510100", nameAr: "تكلفة البضاعة المباعة", type: "EXPENSE" },
   { key: "OPENING_BALANCE_EQUITY", code: "310100", nameAr: "حقوق الملكية - أرصدة افتتاحية", type: "EQUITY" },
   { key: "RETAINED_EARNINGS", code: "310200", nameAr: "الأرباح المبقاة", type: "EQUITY" },
+  { key: "REALIZED_FX_GAIN", code: "430100", nameAr: "أرباح فروق عملة محققة", type: "REVENUE" },
+  { key: "REALIZED_FX_LOSS", code: "530100", nameAr: "خسائر فروق عملة محققة", type: "EXPENSE" },
+  { key: "UNREALIZED_FX_GAIN", code: "430200", nameAr: "أرباح فروق عملة غير محققة", type: "REVENUE" },
+  { key: "UNREALIZED_FX_LOSS", code: "530200", nameAr: "خسائر فروق عملة غير محققة", type: "EXPENSE" },
   { key: "FACTORY_MANUFACTURING_REVENUE", code: "420003", nameAr: "رسوم التصنيع والتحسين", type: "REVENUE" },
   { key: "FACTORY_FUEL_EXPENSE", code: "520013", nameAr: "مواد تشغيل ووقود المصنع", type: "EXPENSE" },
   { key: "EMPLOYEE_ADVANCES", code: "110300", nameAr: "سلف الموظفين", type: "ASSET" },
@@ -105,7 +110,13 @@ export type JournalLineInput = {
   accountId?: number;
   debit?: Prisma.Decimal.Value;
   credit?: Prisma.Decimal.Value;
+  transactionDebit?: Prisma.Decimal.Value;
+  transactionCredit?: Prisma.Decimal.Value;
   partyId?: number | null;
+  costCenter?: string | null;
+  costCenterId?: number | null;
+  departmentId?: number | null;
+  projectCode?: string | null;
   description?: string;
 };
 
@@ -117,6 +128,10 @@ export async function createBalancedJournal(
     referenceType: string;
     referenceId: number;
     referenceNumber: string;
+    transactionCurrencyCode?: string;
+    functionalCurrencyCode?: string;
+    exchangeRate?: Prisma.Decimal.Value;
+    rateDate?: Date | null;
     lines: JournalLineInput[];
   }
 ) {
@@ -129,6 +144,8 @@ export async function createBalancedJournal(
   const resolved = [];
   let totalDebit = new Prisma.Decimal(0);
   let totalCredit = new Prisma.Decimal(0);
+  let totalTransactionDebit = new Prisma.Decimal(0);
+  let totalTransactionCredit = new Prisma.Decimal(0);
   for (const line of input.lines) {
     const account = line.accountId
       ? await tx.account.findUnique({ where: { id: line.accountId } })
@@ -140,15 +157,22 @@ export async function createBalancedJournal(
     }
     const debit = new Prisma.Decimal(line.debit ?? 0).toDecimalPlaces(2);
     const credit = new Prisma.Decimal(line.credit ?? 0).toDecimalPlaces(2);
+    const transactionDebit = new Prisma.Decimal(line.transactionDebit ?? debit).toDecimalPlaces(2);
+    const transactionCredit = new Prisma.Decimal(line.transactionCredit ?? credit).toDecimalPlaces(2);
     if (debit.isNegative() || credit.isNegative() || (debit.isZero() && credit.isZero())) {
       throw new AccountingError("قيمة سطر القيد غير صحيحة");
     }
     totalDebit = totalDebit.plus(debit);
     totalCredit = totalCredit.plus(credit);
-    resolved.push({ account, debit, credit, line });
+    totalTransactionDebit = totalTransactionDebit.plus(transactionDebit);
+    totalTransactionCredit = totalTransactionCredit.plus(transactionCredit);
+    resolved.push({ account, debit, credit, transactionDebit, transactionCredit, line });
   }
   if (!totalDebit.equals(totalCredit)) {
     throw new AccountingError("القيد المحاسبي غير متوازن");
+  }
+  if (!totalTransactionDebit.equals(totalTransactionCredit)) {
+    throw new AccountingError("القيد غير متوازن بعملة المعاملة");
   }
   const entryNumber = await nextDocumentNumber(tx, "JE", input.entryDate);
   const journal = await tx.journalEntry.create({
@@ -162,15 +186,29 @@ export async function createBalancedJournal(
       status: "POSTED",
       totalDebit,
       totalCredit,
+      transactionCurrencyCode: input.transactionCurrencyCode ?? input.functionalCurrencyCode ?? "SAR",
+      functionalCurrencyCode: input.functionalCurrencyCode ?? "SAR",
+      exchangeRate: input.exchangeRate ?? 1,
+      rateDate: input.rateDate ?? input.entryDate,
+      totalTransactionDebit,
+      totalTransactionCredit,
       postedAt: new Date(),
       lines: {
-        create: resolved.map(({ account, debit, credit, line }) => ({
+        create: resolved.map(({ account, debit, credit, transactionDebit, transactionCredit, line }) => ({
           accountId: account.id,
           accountCode: account.code,
           accountName: account.nameAr,
           debit,
           credit,
+          transactionDebit,
+          transactionCredit,
+          transactionCurrencyCode: input.transactionCurrencyCode ?? input.functionalCurrencyCode ?? "SAR",
+          exchangeRate: input.exchangeRate ?? 1,
           partyId: line.partyId ?? null,
+          costCenter: line.costCenter ?? null,
+          costCenterId: line.costCenterId ?? null,
+          departmentId: line.departmentId ?? null,
+          projectCode: line.projectCode ?? null,
           description: line.description ?? input.description,
         })),
       },
@@ -211,10 +249,17 @@ export async function reverseJournalEntry(
       entryNumber, entryDate: new Date(), description: input.description,
       referenceType: input.referenceType, referenceId: input.referenceId,
       referenceNumber: input.referenceNumber ?? original.referenceNumber,
-      status: "POSTED", totalDebit: original.totalCredit, totalCredit: original.totalDebit, postedAt: new Date(),
+      status: "POSTED", totalDebit: original.totalCredit, totalCredit: original.totalDebit,
+      transactionCurrencyCode: original.transactionCurrencyCode, functionalCurrencyCode: original.functionalCurrencyCode,
+      exchangeRate: original.exchangeRate, rateDate: original.rateDate,
+      totalTransactionDebit: original.totalTransactionCredit, totalTransactionCredit: original.totalTransactionDebit,
+      postedAt: new Date(),
       lines: { create: original.lines.map((line) => ({ accountId: line.accountId, accountCode: line.accountCode,
         accountName: line.accountName, debit: line.credit, credit: line.debit, partyId: line.partyId,
-        costCenter: line.costCenter, description: `عكس ${line.description ?? original.description ?? "القيد"}` })) },
+        transactionDebit: line.transactionCredit, transactionCredit: line.transactionDebit,
+        transactionCurrencyCode: line.transactionCurrencyCode, exchangeRate: line.exchangeRate,
+        costCenter: line.costCenter, costCenterId: line.costCenterId, departmentId: line.departmentId, projectCode: line.projectCode,
+        description: `عكس ${line.description ?? original.description ?? "القيد"}` })) },
     },
     include: { lines: true },
   });
@@ -229,16 +274,27 @@ export async function postSalesInvoiceJournal(tx: TransactionClient, saleId: num
   if (!sale) throw new AccountingError("فاتورة المبيعات غير موجودة");
   await assertOpenAccountingPeriod(tx, sale.invoiceDate);
   const beforeVat = new Prisma.Decimal(sale.subtotal).minus(sale.discount).toDecimalPlaces(2);
+  const fx = await exchangeRateAt(tx, sale.currency, sale.invoiceDate);
+  const functionalBeforeVat = functionalAmount(beforeVat, fx.rate);
+  const functionalVat = functionalAmount(sale.vatAmount, fx.rate);
+  const functionalTotal = functionalAmount(sale.totalAmount, fx.rate);
+  await tx.sale.update({ where: { id: sale.id }, data: { exchangeRate: fx.rate, rateDate: fx.rateDate,
+    functionalSubtotal: functionalAmount(sale.subtotal, fx.rate), functionalDiscount: functionalAmount(sale.discount, fx.rate),
+    functionalVatAmount: functionalVat, functionalTotalAmount: functionalTotal } });
   return createBalancedJournal(tx, {
     entryDate: sale.invoiceDate,
     description: `فاتورة مبيعات ${sale.invoiceNumber}`,
     referenceType: "SALES_INVOICE",
     referenceId: sale.id,
     referenceNumber: sale.invoiceNumber,
+    transactionCurrencyCode: sale.currency,
+    functionalCurrencyCode: fx.company.baseCurrencyCode,
+    exchangeRate: fx.rate,
+    rateDate: fx.rateDate,
     lines: [
-      { mappingKey: "ACCOUNTS_RECEIVABLE", debit: sale.totalAmount, partyId: sale.partyId },
-      { mappingKey: sale.factoryTransactionId ? "FACTORY_MANUFACTURING_REVENUE" : "SALES_REVENUE", credit: beforeVat },
-      { mappingKey: "VAT_PAYABLE", credit: sale.vatAmount },
+      { mappingKey: "ACCOUNTS_RECEIVABLE", debit: functionalTotal, transactionDebit: sale.totalAmount, partyId: sale.partyId },
+      { mappingKey: sale.factoryTransactionId ? "FACTORY_MANUFACTURING_REVENUE" : "SALES_REVENUE", credit: functionalBeforeVat, transactionCredit: beforeVat },
+      { mappingKey: "VAT_PAYABLE", credit: functionalVat, transactionCredit: sale.vatAmount },
     ].filter((line) => !new Prisma.Decimal(line.debit ?? line.credit ?? 0).isZero()),
   });
 }
@@ -249,16 +305,27 @@ export async function postSupplierInvoiceJournal(tx: TransactionClient, purchase
   if (!purchase) throw new AccountingError("فاتورة المورد غير موجودة");
   await assertOpenAccountingPeriod(tx, purchase.purchaseDate);
   const beforeVat = new Prisma.Decimal(purchase.subtotal).minus(purchase.discount).toDecimalPlaces(2);
+  const fx = await exchangeRateAt(tx, purchase.currency, purchase.purchaseDate);
+  const functionalBeforeVat = functionalAmount(beforeVat, fx.rate);
+  const functionalVat = functionalAmount(purchase.vatAmount, fx.rate);
+  const functionalTotal = functionalAmount(purchase.totalAmount, fx.rate);
+  await tx.purchase.update({ where: { id: purchase.id }, data: { exchangeRate: fx.rate, rateDate: fx.rateDate,
+    functionalSubtotal: functionalAmount(purchase.subtotal, fx.rate), functionalDiscount: functionalAmount(purchase.discount, fx.rate),
+    functionalVatAmount: functionalVat, functionalTotalAmount: functionalTotal } });
   return createBalancedJournal(tx, {
     entryDate: purchase.purchaseDate,
     description: `فاتورة مورد ${purchase.purchaseNumber}`,
     referenceType: "SUPPLIER_INVOICE",
     referenceId: purchase.id,
     referenceNumber: purchase.purchaseNumber,
+    transactionCurrencyCode: purchase.currency,
+    functionalCurrencyCode: fx.company.baseCurrencyCode,
+    exchangeRate: fx.rate,
+    rateDate: fx.rateDate,
     lines: [
-      { mappingKey: "INVENTORY_PURCHASES", debit: beforeVat },
-      { mappingKey: "INPUT_VAT", debit: purchase.vatAmount },
-      { mappingKey: "ACCOUNTS_PAYABLE", credit: purchase.totalAmount, partyId: purchase.partyId },
+      { mappingKey: "INVENTORY_PURCHASES", debit: functionalBeforeVat, transactionDebit: beforeVat },
+      { mappingKey: "INPUT_VAT", debit: functionalVat, transactionDebit: purchase.vatAmount },
+      { mappingKey: "ACCOUNTS_PAYABLE", credit: functionalTotal, transactionCredit: purchase.totalAmount, partyId: purchase.partyId },
     ].filter((line) => !new Prisma.Decimal(line.debit ?? line.credit ?? 0).isZero()),
   });
 }

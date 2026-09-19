@@ -88,6 +88,9 @@ const routes = [
   "/api/finance/fiscal-calendar",
   "/api/finance/credit-debit-notes",
   "/api/finance/adjustments",
+  "/api/finance/exchange-rates",
+  "/api/finance/fx-revaluations",
+  "/api/finance/budgets",
   "/api/finance/reports?report=trial-balance",
   "/api/factory",
   "/api/factory/transactions",
@@ -135,6 +138,13 @@ try {
     const response = await fetch(`http://127.0.0.1:${port}${route}`);
     assert.equal(response.status, 200, `${route} returned ${response.status}`);
     console.log(`PASS ${route} (${response.status})`);
+  }
+  for (const format of ["xlsx", "pdf"]) {
+    const response = await fetch(`http://127.0.0.1:${port}/api/finance/reports/export?report=trial-balance&format=${format}`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    assert.equal(response.status, 200, `financial ${format} export returned ${response.status}`);
+    assert.equal(format === "xlsx" ? String.fromCharCode(...bytes.slice(0, 2)) : String.fromCharCode(...bytes.slice(0, 4)), format === "xlsx" ? "PK" : "%PDF");
+    console.log(`PASS production financial ${format.toUpperCase()} export (${bytes.length} bytes)`);
   }
 
   const units = await (await fetch(`http://127.0.0.1:${port}/api/units`)).json();
@@ -205,6 +215,24 @@ try {
   assert.equal(firstPartyList.body.find((row) => row.id === partyResult.body.id)?.isActive, true);
   const forbiddenReverseRead = await jsonRequest(`/api/parties/${secondParty.body.id}`);
   assert.equal(forbiddenReverseRead.response.status, 404);
+  const financeWorkspace = await jsonRequest("/api/finance");
+  assert.equal(financeWorkspace.response.status, 200);
+  const budget = await jsonRequest("/api/finance/budgets", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({
+    name: `Smoke Budget ${suffix}`, fiscalYearId: financeWorkspace.body.fiscalYears[0].id,
+    lines: [{ accountId: financeWorkspace.body.accounts[0].id, periodType: "ANNUAL", amount: 1000 }],
+  }) });
+  assert.equal(budget.response.status, 201);
+  const enableSecondAccounting = await jsonRequest(`/api/platform/companies/${companyResult.body.id}/modules`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ moduleKey: "ACCOUNTING", enabled: true }) });
+  assert.equal(enableSecondAccounting.response.status, 200);
+  const switchForFinanceIsolation = await jsonRequest("/api/auth/switch-company", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ companyId: companyResult.body.id }) });
+  assert.equal(switchForFinanceIsolation.response.status, 200);
+  const secondBudgets = await jsonRequest("/api/finance/budgets");
+  assert.equal(secondBudgets.response.status, 200);
+  assert.equal(secondBudgets.body.some((row) => row.id === budget.body.id), false);
+  const forbiddenBudgetApproval = await jsonRequest(`/api/finance/budgets/${budget.body.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "APPROVE" }) });
+  assert.notEqual(forbiddenBudgetApproval.response.status, 200);
+  const switchBackAfterFinance = await jsonRequest("/api/auth/switch-company", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ companyId: 1 }) });
+  assert.equal(switchBackAfterFinance.response.status, 200);
   console.log("PASS production tenant isolation, IDOR defense, header spoofing defense, and module entitlements");
 
   const limitedEmail = `reader-${suffix.toLowerCase()}@netaj.test`;
@@ -232,6 +260,8 @@ try {
   assert.equal(forbiddenModule.body.code, "PERMISSION_DENIED");
   const forbiddenUserAdmin = await jsonRequest("/api/platform/users");
   assert.equal(forbiddenUserAdmin.response.status, 403);
+  const forbiddenFinancialExport = await fetch(`http://127.0.0.1:${port}/api/finance/reports/export?report=trial-balance&format=xlsx`);
+  assert.equal(forbiddenFinancialExport.status, 403);
   sessionCookie = adminCookie;
   console.log("PASS production granular RBAC for read-only user");
 

@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { agingReport, cashFlow, statementReport } from "@/lib/financial-reports";
 import { ensureFinanceFoundation } from "@/lib/finance";
+import { authorizeRequest } from "@/lib/api-auth";
+import { AuthError, authErrorResponse } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const auth = await authorizeRequest(request, { moduleKey: "ACCOUNTING", action: "READ" });
     await prisma.$transaction((tx) => ensureFinanceFoundation(tx));
     const [banks, receivables, payables, statements, cash, recentVouchers, categories, parties, accounts, periods, journals, transfers, reconciliations, vatReturns, creditDebitNotes, adjustments, invoices] = await Promise.all([
       prisma.bankAccount.findMany({ where: { isActive: true }, include: { ledgerAccount: true }, orderBy: { name: "asc" } }),
@@ -22,7 +25,19 @@ export async function GET() {
       prisma.accountingAdjustment.findMany({ include: { lines: { include: { account: true } } }, orderBy: [{ adjustmentDate: "desc" }, { id: "desc" }], take: 50 }),
       Promise.all([prisma.sale.findMany({ where: { status: "COMPLETED" }, select: { id: true, invoiceNumber: true, partyId: true, totalAmount: true }, orderBy: { invoiceDate: "desc" }, take: 200 }), prisma.purchase.findMany({ where: { status: "COMPLETED" }, select: { id: true, purchaseNumber: true, partyId: true, totalAmount: true }, orderBy: { purchaseDate: "desc" }, take: 200 })]),
     ]);
+    const [fiscalYears, departments, currencies, exchangeRates, budgets, fxRevaluations] = await Promise.all([
+      prisma.fiscalYear.findMany({ where: { companyId: auth.companyId }, include: { periods: { orderBy: { periodNumber: "asc" } } }, orderBy: { startDate: "desc" } }),
+      prisma.department.findMany({ where: { companyId: auth.companyId }, orderBy: { nameAr: "asc" } }),
+      prisma.currency.findMany({ where: { isActive: true }, orderBy: { code: "asc" } }),
+      prisma.exchangeRate.findMany({ orderBy: [{ rateDate: "desc" }, { id: "desc" }], take: 100 }),
+      prisma.budget.findMany({ include: { fiscalYear: true, lines: { include: { account: true, fiscalPeriod: true } } }, orderBy: { createdAt: "desc" }, take: 100 }),
+      prisma.fxRevaluation.findMany({ include: { lines: true, journalEntry: true, reversalJournal: true }, orderBy: { revaluationDate: "desc" }, take: 100 }),
+    ]);
     return NextResponse.json({ banks, receivables, payables, statements, cash, recentVouchers,
-      expenseCategories: categories[0], revenueCategories: categories[1], costCenters: categories[2], parties, accounts, periods, journals, transfers, reconciliations, vatReturns, creditDebitNotes, adjustments, salesInvoices: invoices[0], purchaseInvoices: invoices[1] });
-  } catch (error) { console.error(error); return NextResponse.json({ error: "تعذر تحميل البيانات المالية" }, { status: 500 }); }
+      expenseCategories: categories[0], revenueCategories: categories[1], costCenters: categories[2], parties, accounts, periods, journals, transfers, reconciliations, vatReturns, creditDebitNotes, adjustments, salesInvoices: invoices[0], purchaseInvoices: invoices[1],
+      fiscalYears, departments, currencies, exchangeRates, budgets, fxRevaluations });
+  } catch (error) {
+    if (error instanceof AuthError) { const value = authErrorResponse(error); return NextResponse.json({ error: value.message, code: value.code }, { status: value.status }); }
+    console.error(error); return NextResponse.json({ error: "تعذر تحميل البيانات المالية" }, { status: 500 });
+  }
 }

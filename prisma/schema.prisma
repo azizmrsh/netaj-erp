@@ -1031,11 +1031,17 @@ model Sale {
   deliveryNoteId       Int? @unique
   factoryTransactionId Int? @unique
 
-  referenceNumber     String?
-  purchaseOrderNumber String?
-  paymentMethod       String?
-  dueDate             DateTime?
-  currency            String    @default("SAR")
+  referenceNumber       String?
+  purchaseOrderNumber   String?
+  paymentMethod         String?
+  dueDate               DateTime?
+  currency              String    @default("SAR")
+  exchangeRate          Decimal   @default(1)
+  rateDate              DateTime?
+  functionalSubtotal    Decimal   @default(0)
+  functionalDiscount    Decimal   @default(0)
+  functionalVatAmount   Decimal   @default(0)
+  functionalTotalAmount Decimal   @default(0)
 
   subtotal    Decimal @default(0)
   discount    Decimal @default(0)
@@ -1100,12 +1106,18 @@ model Purchase {
   purchaseNumber String   @unique
   purchaseDate   DateTime @default(now())
 
-  partyId       Int
-  sourceOrderId Int?
-  receiptNoteId Int?      @unique
-  dueDate       DateTime?
-  paymentMethod String?
-  currency      String    @default("SAR")
+  partyId               Int
+  sourceOrderId         Int?
+  receiptNoteId         Int?      @unique
+  dueDate               DateTime?
+  paymentMethod         String?
+  currency              String    @default("SAR")
+  exchangeRate          Decimal   @default(1)
+  rateDate              DateTime?
+  functionalSubtotal    Decimal   @default(0)
+  functionalDiscount    Decimal   @default(0)
+  functionalVatAmount   Decimal   @default(0)
+  functionalTotalAmount Decimal   @default(0)
 
   supplierInvoiceNumber String?
   referenceNumber       String?
@@ -1328,30 +1340,38 @@ model JournalEntry {
   referenceId     Int?
   referenceNumber String?
 
-  status      String    @default("DRAFT")
-  totalDebit  Decimal   @default(0)
-  totalCredit Decimal   @default(0)
-  postedAt    DateTime?
-  cancelledAt DateTime?
+  status                  String    @default("DRAFT")
+  totalDebit              Decimal   @default(0)
+  totalCredit             Decimal   @default(0)
+  transactionCurrencyCode String    @default("SAR")
+  functionalCurrencyCode  String    @default("SAR")
+  exchangeRate            Decimal   @default(1)
+  rateDate                DateTime?
+  totalTransactionDebit   Decimal   @default(0)
+  totalTransactionCredit  Decimal   @default(0)
+  postedAt                DateTime?
+  cancelledAt             DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  lines                JournalEntryLine[]
-  financialVoucher     FinancialVoucher?
-  expense              Expense?
-  revenue              Revenue?
-  bankTransfer         BankTransfer?
-  factoryTransaction   FactoryTransaction?
-  factoryFuelMovement  FactoryFuelMovement?
-  employeeAdvance      EmployeeAdvance?
-  payrollRun           PayrollRun?
-  payrollPayment       PayrollPayment?
-  vatReturnFiling      VatReturn?            @relation("VatReturnFilingJournal")
-  vatReturnSettlement  VatReturn?            @relation("VatReturnSettlementJournal")
-  fiscalYearClosing    FiscalYear?           @relation("FiscalYearClosingJournal")
-  creditDebitNote      CreditDebitNote?
-  accountingAdjustment AccountingAdjustment?
+  lines                 JournalEntryLine[]
+  financialVoucher      FinancialVoucher?
+  expense               Expense?
+  revenue               Revenue?
+  bankTransfer          BankTransfer?
+  factoryTransaction    FactoryTransaction?
+  factoryFuelMovement   FactoryFuelMovement?
+  employeeAdvance       EmployeeAdvance?
+  payrollRun            PayrollRun?
+  payrollPayment        PayrollPayment?
+  vatReturnFiling       VatReturn?            @relation("VatReturnFilingJournal")
+  vatReturnSettlement   VatReturn?            @relation("VatReturnSettlementJournal")
+  fiscalYearClosing     FiscalYear?           @relation("FiscalYearClosingJournal")
+  creditDebitNote       CreditDebitNote?
+  accountingAdjustment  AccountingAdjustment?
+  fxRevaluation         FxRevaluation?        @relation("FxRevaluationJournal")
+  fxRevaluationReversal FxRevaluation?        @relation("FxRevaluationReversalJournal")
 
   @@unique([referenceType, referenceId])
   @@index([entryDate])
@@ -1369,12 +1389,19 @@ model JournalEntryLine {
   accountName String
   accountId   Int?
 
-  debit  Decimal @default(0)
-  credit Decimal @default(0)
+  debit                   Decimal @default(0)
+  credit                  Decimal @default(0)
+  transactionDebit        Decimal @default(0)
+  transactionCredit       Decimal @default(0)
+  transactionCurrencyCode String  @default("SAR")
+  exchangeRate            Decimal @default(1)
 
-  partyId     Int?
-  costCenter  String?
-  description String?
+  partyId      Int?
+  costCenter   String?
+  costCenterId Int?
+  departmentId Int?
+  projectCode  String?
+  description  String?
 
   journalEntry JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
   account      Account?     @relation(fields: [accountId], references: [id])
@@ -1539,6 +1566,7 @@ model Account {
   expenseCategories ExpenseCategory[]
   revenueCategories RevenueCategory[]
   adjustmentLines   AccountingAdjustmentLine[]
+  budgetLines       BudgetLine[]
 
   @@index([parentId])
   @@index([tenantId, companyId])
@@ -1585,9 +1613,15 @@ model Expense {
   description String?
   beneficiary String?
 
-  amountBeforeVat Decimal @default(0)
-  vatAmount       Decimal @default(0)
-  totalAmount     Decimal @default(0)
+  amountBeforeVat           Decimal   @default(0)
+  vatAmount                 Decimal   @default(0)
+  totalAmount               Decimal   @default(0)
+  currency                  String    @default("SAR")
+  exchangeRate              Decimal   @default(1)
+  rateDate                  DateTime?
+  functionalAmountBeforeVat Decimal   @default(0)
+  functionalVatAmount       Decimal   @default(0)
+  functionalTotalAmount     Decimal   @default(0)
 
   paymentMethod       String?
   cashBankAccount     String?
@@ -1632,9 +1666,15 @@ model Revenue {
 
   description String?
 
-  amountBeforeVat Decimal @default(0)
-  vatAmount       Decimal @default(0)
-  totalAmount     Decimal @default(0)
+  amountBeforeVat           Decimal   @default(0)
+  vatAmount                 Decimal   @default(0)
+  totalAmount               Decimal   @default(0)
+  currency                  String    @default("SAR")
+  exchangeRate              Decimal   @default(1)
+  rateDate                  DateTime?
+  functionalAmountBeforeVat Decimal   @default(0)
+  functionalVatAmount       Decimal   @default(0)
+  functionalTotalAmount     Decimal   @default(0)
 
   collectionMethod String?
   cashBankAccount  String?
@@ -1674,7 +1714,8 @@ model CostCenter {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  company Company @relation(fields: [companyId], references: [id])
+  company     Company      @relation(fields: [companyId], references: [id])
+  budgetLines BudgetLine[]
 
   @@index([companyId])
   @@index([tenantId, companyId])
@@ -1749,20 +1790,24 @@ model BankAccount {
 }
 
 model BankTransaction {
-  id              Int      @id @default(autoincrement())
-  tenantId        Int      @default(1)
-  companyId       Int      @default(1)
-  bankAccountId   Int
-  transactionDate DateTime @default(now())
-  transactionType String
-  amountIn        Decimal  @default(0)
-  amountOut       Decimal  @default(0)
-  balanceAfter    Decimal
-  referenceType   String
-  referenceId     Int
-  referenceNumber String?
-  description     String?
-  createdAt       DateTime @default(now())
+  id                     Int      @id @default(autoincrement())
+  tenantId               Int      @default(1)
+  companyId              Int      @default(1)
+  bankAccountId          Int
+  transactionDate        DateTime @default(now())
+  transactionType        String
+  amountIn               Decimal  @default(0)
+  amountOut              Decimal  @default(0)
+  balanceAfter           Decimal
+  functionalAmountIn     Decimal  @default(0)
+  functionalAmountOut    Decimal  @default(0)
+  functionalBalanceAfter Decimal  @default(0)
+  exchangeRate           Decimal  @default(1)
+  referenceType          String
+  referenceId            Int
+  referenceNumber        String?
+  description            String?
+  createdAt              DateTime @default(now())
 
   bankAccount        BankAccount             @relation(fields: [bankAccountId], references: [id])
   reconciliationLine BankReconciliationLine?
@@ -1847,25 +1892,29 @@ model BankTransfer {
 }
 
 model FinancialVoucher {
-  id              Int       @id @default(autoincrement())
-  tenantId        Int       @default(1)
-  companyId       Int       @default(1)
-  voucherNumber   String    @unique
-  voucherType     String
-  voucherDate     DateTime  @default(now())
-  partyId         Int?
-  amount          Decimal
-  paymentMethod   String
-  bankAccountId   Int
-  referenceNumber String?
-  description     String?
-  status          String    @default("DRAFT")
-  journalEntryId  Int?      @unique
-  postedAt        DateTime?
-  cancelledAt     DateTime?
-  notes           String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id               Int       @id @default(autoincrement())
+  tenantId         Int       @default(1)
+  companyId        Int       @default(1)
+  voucherNumber    String    @unique
+  voucherType      String
+  voucherDate      DateTime  @default(now())
+  partyId          Int?
+  amount           Decimal
+  currency         String    @default("SAR")
+  exchangeRate     Decimal   @default(1)
+  rateDate         DateTime?
+  functionalAmount Decimal   @default(0)
+  paymentMethod    String
+  bankAccountId    Int
+  referenceNumber  String?
+  description      String?
+  status           String    @default("DRAFT")
+  journalEntryId   Int?      @unique
+  postedAt         DateTime?
+  cancelledAt      DateTime?
+  notes            String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   party        Party?              @relation(fields: [partyId], references: [id])
   bankAccount  BankAccount         @relation(fields: [bankAccountId], references: [id])
@@ -1879,14 +1928,17 @@ model FinancialVoucher {
 }
 
 model VoucherAllocation {
-  id         Int      @id @default(autoincrement())
-  tenantId   Int      @default(1)
-  companyId  Int      @default(1)
-  voucherId  Int
-  saleId     Int?
-  purchaseId Int?
-  amount     Decimal
-  createdAt  DateTime @default(now())
+  id                       Int      @id @default(autoincrement())
+  tenantId                 Int      @default(1)
+  companyId                Int      @default(1)
+  voucherId                Int
+  saleId                   Int?
+  purchaseId               Int?
+  amount                   Decimal
+  functionalAmount         Decimal  @default(0)
+  carryingFunctionalAmount Decimal  @default(0)
+  realizedFxAmount         Decimal  @default(0)
+  createdAt                DateTime @default(now())
 
   voucher  FinancialVoucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
   sale     Sale?            @relation(fields: [saleId], references: [id])
@@ -1904,24 +1956,30 @@ model CreditDebitNote {
   tenantId  Int @default(1)
   companyId Int @default(1)
 
-  noteNumber      String    @unique
-  noteDate        DateTime  @default(now())
-  noteType        String
-  direction       String
-  partyId         Int
-  saleId          Int?
-  purchaseId      Int?
-  amountBeforeVat Decimal   @default(0)
-  vatAmount       Decimal   @default(0)
-  totalAmount     Decimal   @default(0)
-  reason          String
-  status          String    @default("DRAFT")
-  journalEntryId  Int?      @unique
-  postedAt        DateTime?
-  cancelledAt     DateTime?
-  notes           String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  noteNumber                String    @unique
+  noteDate                  DateTime  @default(now())
+  noteType                  String
+  direction                 String
+  currency                  String    @default("SAR")
+  exchangeRate              Decimal   @default(1)
+  rateDate                  DateTime?
+  partyId                   Int
+  saleId                    Int?
+  purchaseId                Int?
+  amountBeforeVat           Decimal   @default(0)
+  vatAmount                 Decimal   @default(0)
+  totalAmount               Decimal   @default(0)
+  functionalAmountBeforeVat Decimal   @default(0)
+  functionalVatAmount       Decimal   @default(0)
+  functionalTotalAmount     Decimal   @default(0)
+  reason                    String
+  status                    String    @default("DRAFT")
+  journalEntryId            Int?      @unique
+  postedAt                  DateTime?
+  cancelledAt               DateTime?
+  notes                     String?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
   party        Party         @relation(fields: [partyId], references: [id])
   sale         Sale?         @relation(fields: [saleId], references: [id])
@@ -2098,24 +2156,26 @@ model Company {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  tenant        Tenant                @relation(fields: [tenantId], references: [id])
-  group         CompanyGroup?         @relation(fields: [groupId], references: [id])
-  country       Country               @relation(fields: [countryCode], references: [code])
-  baseCurrency  Currency              @relation(fields: [baseCurrencyCode], references: [code])
-  language      Language              @relation(fields: [defaultLanguageCode], references: [code])
-  timeZone      TimeZone              @relation(fields: [timeZoneName], references: [name])
-  branches      Branch[]
-  warehouses    Warehouse[]
-  departments   Department[]
-  costCenters   CostCenter[]
-  fiscalYears   FiscalYear[]
-  exchangeRates ExchangeRate[]
-  localizations CompanyLocalization[]
-  modules       CompanyModule[]
-  entitlements  CompanyEntitlement[]
-  roles         Role[]
-  userAccess    CompanyAccess[]
-  sessions      AuthSession[]
+  tenant         Tenant                @relation(fields: [tenantId], references: [id])
+  group          CompanyGroup?         @relation(fields: [groupId], references: [id])
+  country        Country               @relation(fields: [countryCode], references: [code])
+  baseCurrency   Currency              @relation(fields: [baseCurrencyCode], references: [code])
+  language       Language              @relation(fields: [defaultLanguageCode], references: [code])
+  timeZone       TimeZone              @relation(fields: [timeZoneName], references: [name])
+  branches       Branch[]
+  warehouses     Warehouse[]
+  departments    Department[]
+  costCenters    CostCenter[]
+  fiscalYears    FiscalYear[]
+  exchangeRates  ExchangeRate[]
+  budgets        Budget[]
+  fxRevaluations FxRevaluation[]
+  localizations  CompanyLocalization[]
+  modules        CompanyModule[]
+  entitlements   CompanyEntitlement[]
+  roles          Role[]
+  userAccess     CompanyAccess[]
+  sessions       AuthSession[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -2172,9 +2232,10 @@ model Department {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  company  Company      @relation(fields: [companyId], references: [id])
-  parent   Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
-  children Department[] @relation("DepartmentHierarchy")
+  company     Company      @relation(fields: [companyId], references: [id])
+  parent      Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children    Department[] @relation("DepartmentHierarchy")
+  budgetLines BudgetLine[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -2194,9 +2255,11 @@ model FiscalYear {
   reopenedAt            DateTime?
   createdAt             DateTime  @default(now())
 
-  company        Company        @relation(fields: [companyId], references: [id])
+  company        Company         @relation(fields: [companyId], references: [id])
   periods        FiscalPeriod[]
-  closingJournal JournalEntry?  @relation("FiscalYearClosingJournal", fields: [closingJournalEntryId], references: [id])
+  closingJournal JournalEntry?   @relation("FiscalYearClosingJournal", fields: [closingJournalEntryId], references: [id])
+  budgets        Budget[]
+  fxRevaluations FxRevaluation[]
 
   @@unique([companyId, startDate, endDate])
   @@index([companyId, status])
@@ -2215,7 +2278,9 @@ model FiscalPeriod {
   reopenedAt   DateTime?
   createdAt    DateTime  @default(now())
 
-  fiscalYear FiscalYear @relation(fields: [fiscalYearId], references: [id])
+  fiscalYear     FiscalYear      @relation(fields: [fiscalYearId], references: [id])
+  budgetLines    BudgetLine[]
+  fxRevaluations FxRevaluation[]
 
   @@unique([fiscalYearId, periodNumber])
   @@index([startDate, endDate])
@@ -2237,12 +2302,14 @@ model Currency {
 
 model ExchangeRate {
   id                Int      @id @default(autoincrement())
+  tenantId          Int      @default(1)
   companyId         Int
   baseCurrencyCode  String
   quoteCurrencyCode String
   rateDate          DateTime
   rate              Decimal
   source            String?
+  createdBy         String?
   createdAt         DateTime @default(now())
 
   company       Company  @relation(fields: [companyId], references: [id])
@@ -2251,6 +2318,116 @@ model ExchangeRate {
 
   @@unique([companyId, baseCurrencyCode, quoteCurrencyCode, rateDate])
   @@index([companyId, rateDate])
+  @@index([tenantId, companyId])
+}
+
+model FxRevaluation {
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
+
+  revaluationNumber      String    @unique
+  revaluationDate        DateTime
+  fiscalYearId           Int
+  fiscalPeriodId         Int
+  currencyCode           String
+  exchangeRate           Decimal
+  status                 String    @default("DRAFT")
+  totalGain              Decimal   @default(0)
+  totalLoss              Decimal   @default(0)
+  journalEntryId         Int?      @unique
+  reversalJournalEntryId Int?      @unique
+  reversalDate           DateTime?
+  postedAt               DateTime?
+  postedBy               String?
+  reversedAt             DateTime?
+  reversedBy             String?
+  notes                  String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  company         Company             @relation(fields: [companyId], references: [id])
+  fiscalYear      FiscalYear          @relation(fields: [fiscalYearId], references: [id])
+  fiscalPeriod    FiscalPeriod        @relation(fields: [fiscalPeriodId], references: [id])
+  journalEntry    JournalEntry?       @relation("FxRevaluationJournal", fields: [journalEntryId], references: [id])
+  reversalJournal JournalEntry?       @relation("FxRevaluationReversalJournal", fields: [reversalJournalEntryId], references: [id])
+  lines           FxRevaluationLine[]
+
+  @@unique([tenantId, companyId, fiscalPeriodId, currencyCode])
+  @@index([tenantId, companyId, revaluationDate])
+}
+
+model FxRevaluationLine {
+  id                       Int      @id @default(autoincrement())
+  tenantId                 Int      @default(1)
+  companyId                Int      @default(1)
+  revaluationId            Int
+  accountId                Int
+  partyId                  Int?
+  sourceType               String
+  sourceId                 Int
+  sourceNumber             String
+  transactionBalance       Decimal
+  carryingFunctionalAmount Decimal
+  revaluedFunctionalAmount Decimal
+  difference               Decimal
+  createdAt                DateTime @default(now())
+
+  revaluation FxRevaluation @relation(fields: [revaluationId], references: [id], onDelete: Cascade)
+
+  @@unique([revaluationId, sourceType, sourceId, accountId])
+  @@index([tenantId, companyId])
+  @@index([revaluationId])
+}
+
+model Budget {
+  id           Int       @id @default(autoincrement())
+  tenantId     Int       @default(1)
+  companyId    Int       @default(1)
+  fiscalYearId Int
+  budgetNumber String    @unique
+  name         String
+  currencyCode String    @default("SAR")
+  status       String    @default("DRAFT")
+  notes        String?
+  approvedAt   DateTime?
+  approvedBy   String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  company    Company      @relation(fields: [companyId], references: [id])
+  fiscalYear FiscalYear   @relation(fields: [fiscalYearId], references: [id])
+  lines      BudgetLine[]
+
+  @@unique([tenantId, companyId, fiscalYearId, name])
+  @@index([tenantId, companyId, status])
+}
+
+model BudgetLine {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int      @default(1)
+  companyId      Int      @default(1)
+  budgetId       Int
+  accountId      Int
+  periodType     String   @default("MONTHLY")
+  fiscalPeriodId Int?
+  costCenterId   Int?
+  departmentId   Int?
+  projectCode    String?
+  amount         Decimal
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  budget       Budget        @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  account      Account       @relation(fields: [accountId], references: [id])
+  fiscalPeriod FiscalPeriod? @relation(fields: [fiscalPeriodId], references: [id])
+  costCenter   CostCenter?   @relation(fields: [costCenterId], references: [id])
+  department   Department?   @relation(fields: [departmentId], references: [id])
+
+  @@index([tenantId, companyId])
+  @@index([budgetId, accountId, fiscalPeriodId])
+  @@index([costCenterId, departmentId, projectCode])
 }
 
 model Language {

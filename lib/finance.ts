@@ -8,6 +8,7 @@ import {
   reverseJournalEntry,
 } from "@/lib/accounting";
 import { nextDocumentNumber } from "@/lib/document-numbering";
+import { exchangeRateAt, functionalAmount } from "@/lib/currency";
 
 type Tx = Prisma.TransactionClient;
 
@@ -67,7 +68,7 @@ export async function createBankAccount(tx: Tx, input: Record<string, unknown>) 
   const name = clean(input.name);
   if (!name) throw new FinanceError("INVALID_INPUT", "اسم الحساب مطلوب");
   const currency = String(input.currency ?? "SAR").toUpperCase();
-  if (!["SAR", "USD"].includes(currency)) throw new FinanceError("INVALID_INPUT", "العملة غير مدعومة");
+  if (!(await tx.currency.findUnique({ where: { code: currency } }))?.isActive) throw new FinanceError("INVALID_INPUT", "العملة غير مدعومة");
   const ledgerCode = `1020${String((await tx.bankAccount.count()) + 1).padStart(3, "0")}`;
   const ledger = await tx.account.create({ data: { code: ledgerCode, nameAr: name, accountType: "ASSET" } });
   const openingBalance = money(input.openingBalance);
@@ -76,8 +77,12 @@ export async function createBankAccount(tx: Tx, input: Record<string, unknown>) 
   if (openingBalance.gt(0)) {
     const openedAt = new Date();
     await assertOpenAccountingPeriod(tx, openedAt);
+    const fx = await exchangeRateAt(tx, currency, openedAt);
+    const functionalOpening = functionalAmount(openingBalance, fx.rate);
     await createBalancedJournal(tx, { entryDate: openedAt, description: `رصيد افتتاحي ${name}`, referenceType: "BANK_OPENING_BALANCE",
-      referenceId: bank.id, referenceNumber: `BANK-${bank.id}`, lines: [{ accountId: ledger.id, debit: openingBalance }, { mappingKey: "OPENING_BALANCE_EQUITY", credit: openingBalance }] });
+      referenceId: bank.id, referenceNumber: `BANK-${bank.id}`, transactionCurrencyCode: currency,
+      functionalCurrencyCode: fx.company.baseCurrencyCode, exchangeRate: fx.rate, rateDate: fx.rateDate,
+      lines: [{ accountId: ledger.id, debit: functionalOpening, transactionDebit: openingBalance }, { mappingKey: "OPENING_BALANCE_EQUITY", credit: functionalOpening, transactionCredit: openingBalance }] });
     await recordBankMovement(tx, { bankAccountId: bank.id, date: openedAt, type: "OPENING_BALANCE", amountIn: openingBalance,
       referenceType: "BANK_OPENING_BALANCE", referenceId: bank.id, referenceNumber: `BANK-${bank.id}`, description: `رصيد افتتاحي ${name}` });
   }
@@ -85,7 +90,7 @@ export async function createBankAccount(tx: Tx, input: Record<string, unknown>) 
   return tx.bankAccount.findUniqueOrThrow({ where: { id: bank.id }, include: { ledgerAccount: true } });
 }
 
-type AllocationInput = { saleId?: number | null; purchaseId?: number | null; amount: Prisma.Decimal };
+type AllocationInput = { saleId?: number | null; purchaseId?: number | null; amount: Prisma.Decimal; functionalAmount?: Prisma.Decimal; carryingFunctionalAmount?: Prisma.Decimal; realizedFxAmount?: Prisma.Decimal };
 export async function createVoucher(tx: Tx, input: Record<string, unknown>) {
   const voucherType = String(input.voucherType ?? "").toUpperCase();
   if (!["CUSTOMER_RECEIPT", "SUPPLIER_PAYMENT"].includes(voucherType)) throw new FinanceError("INVALID_INPUT", "نوع السند المالي غير صحيح");
@@ -96,6 +101,10 @@ export async function createVoucher(tx: Tx, input: Record<string, unknown>) {
   if (!amount.gt(0) || !Number.isInteger(partyId) || !Number.isInteger(bankAccountId)) throw new FinanceError("INVALID_INPUT", "بيانات السند المالي غير مكتملة");
   const [party, bank] = await Promise.all([tx.party.findUnique({ where: { id: partyId } }), tx.bankAccount.findUnique({ where: { id: bankAccountId } })]);
   if (!party || !bank?.isActive) throw new FinanceError("NOT_FOUND", "الجهة أو الحساب البنكي غير موجود");
+  const currency = String(input.currency ?? bank.currency).trim().toUpperCase();
+  if (currency !== bank.currency) throw new FinanceError("INVALID_INPUT", "عملة السند يجب أن تطابق عملة الحساب البنكي");
+  const fx = await exchangeRateAt(tx, currency, voucherDate);
+  const voucherFunctionalAmount = functionalAmount(amount, fx.rate);
   const rawAllocations = Array.isArray(input.allocations) ? input.allocations : [];
   const allocations: AllocationInput[] = rawAllocations.map((raw) => {
     const row = raw as Record<string, unknown>;
@@ -120,17 +129,26 @@ export async function createVoucher(tx: Tx, input: Record<string, unknown>) {
         if (!invoice || invoice.partyId !== partyId || invoice.status !== "COMPLETED") throw new FinanceError("INVALID_INPUT", "فاتورة المبيعات غير صالحة لهذا العميل");
         const paid = invoice.allocations.reduce((sum, row) => sum.plus(row.amount), new Prisma.Decimal(0));
         if (paid.plus(allocation.amount).gt(invoice.totalAmount)) throw new FinanceError("INVALID_INPUT", `التخصيص يتجاوز رصيد الفاتورة ${invoice.invoiceNumber}`);
+        if (invoice.currency !== currency) throw new FinanceError("INVALID_INPUT", `عملة السند لا تطابق الفاتورة ${invoice.invoiceNumber}`);
+        allocation.functionalAmount = functionalAmount(allocation.amount, fx.rate);
+        allocation.carryingFunctionalAmount = functionalAmount(allocation.amount, invoice.exchangeRate);
+        allocation.realizedFxAmount = allocation.functionalAmount.minus(allocation.carryingFunctionalAmount).toDecimalPlaces(2);
       }
       if (allocation.purchaseId) {
         const invoice = purchasesById.get(allocation.purchaseId);
         if (!invoice || invoice.partyId !== partyId || invoice.status !== "COMPLETED") throw new FinanceError("INVALID_INPUT", "فاتورة المورد غير صالحة لهذا المورد");
         const paid = invoice.allocations.reduce((sum, row) => sum.plus(row.amount), new Prisma.Decimal(0));
         if (paid.plus(allocation.amount).gt(invoice.totalAmount)) throw new FinanceError("INVALID_INPUT", `التخصيص يتجاوز رصيد الفاتورة ${invoice.purchaseNumber}`);
+        if (invoice.currency !== currency) throw new FinanceError("INVALID_INPUT", `عملة السند لا تطابق الفاتورة ${invoice.purchaseNumber}`);
+        allocation.functionalAmount = functionalAmount(allocation.amount, fx.rate);
+        allocation.carryingFunctionalAmount = functionalAmount(allocation.amount, invoice.exchangeRate);
+        allocation.realizedFxAmount = allocation.functionalAmount.minus(allocation.carryingFunctionalAmount).toDecimalPlaces(2);
       }
     }
   }
   const voucherNumber = await nextDocumentNumber(tx, voucherType === "CUSTOMER_RECEIPT" ? "RV" : "PV", voucherDate);
-  const voucher = await tx.financialVoucher.create({ data: { voucherNumber, voucherType, voucherDate, partyId, amount,
+  const voucher = await tx.financialVoucher.create({ data: { voucherNumber, voucherType, voucherDate, partyId, amount, currency,
+    exchangeRate: fx.rate, rateDate: fx.rateDate, functionalAmount: voucherFunctionalAmount,
     paymentMethod: String(input.paymentMethod ?? "BANK").toUpperCase(), bankAccountId, referenceNumber: clean(input.referenceNumber),
     description: clean(input.description), notes: clean(input.notes), allocations: { create: allocations } },
     include: { party: true, bankAccount: true, allocations: true } });
@@ -144,10 +162,14 @@ export async function recordBankMovement(tx: Tx, input: { bankAccountId: number;
   const bank = await tx.bankAccount.findUnique({ where: { id: input.bankAccountId } });
   if (!bank) throw new FinanceError("NOT_FOUND", "الحساب البنكي غير موجود");
   const amountIn = input.amountIn ?? new Prisma.Decimal(0), amountOut = input.amountOut ?? new Prisma.Decimal(0);
+  const fx = await exchangeRateAt(tx, bank.currency, input.date);
   const balanceAfter = new Prisma.Decimal(bank.currentBalance).plus(amountIn).minus(amountOut).toDecimalPlaces(2);
+  const functionalAmountIn = functionalAmount(amountIn, fx.rate), functionalAmountOut = functionalAmount(amountOut, fx.rate);
+  const functionalBalanceAfter = functionalAmount(balanceAfter, fx.rate);
   await tx.bankAccount.update({ where: { id: bank.id }, data: { currentBalance: balanceAfter } });
   return tx.bankTransaction.create({ data: { bankAccountId: bank.id, transactionDate: input.date, transactionType: input.type,
-    amountIn, amountOut, balanceAfter, referenceType: input.referenceType, referenceId: input.referenceId,
+    amountIn, amountOut, balanceAfter, functionalAmountIn, functionalAmountOut, functionalBalanceAfter, exchangeRate: fx.rate,
+    referenceType: input.referenceType, referenceId: input.referenceId,
     referenceNumber: input.referenceNumber, description: input.description } });
 }
 
@@ -158,12 +180,29 @@ export async function postVoucher(tx: Tx, voucherId: number) {
   if (voucher.status !== "DRAFT") throw new FinanceError("INVALID_STATUS", "لا يمكن ترحيل السند في حالته الحالية");
   await assertOpenAccountingPeriod(tx, voucher.voucherDate);
   const receipt = voucher.voucherType === "CUSTOMER_RECEIPT";
+  const allocatedTransaction = voucher.allocations.reduce((sum, row) => sum.plus(row.amount), new Prisma.Decimal(0));
+  const carryingAllocated = voucher.allocations.reduce((sum, row) => sum.plus(row.carryingFunctionalAmount), new Prisma.Decimal(0));
+  const unallocatedFunctional = functionalAmount(new Prisma.Decimal(voucher.amount).minus(allocatedTransaction), voucher.exchangeRate);
+  const carryingFunctional = carryingAllocated.plus(unallocatedFunctional).toDecimalPlaces(2);
+  const realizedFx = new Prisma.Decimal(voucher.functionalAmount).minus(carryingFunctional).toDecimalPlaces(2);
+  const transactionLines = receipt
+    ? [
+        { accountId: voucher.bankAccount.ledgerAccountId, debit: voucher.functionalAmount, transactionDebit: voucher.amount },
+        { mappingKey: "ACCOUNTS_RECEIVABLE", credit: carryingFunctional, transactionCredit: voucher.amount, partyId: voucher.partyId },
+        ...(realizedFx.gt(0) ? [{ mappingKey: "REALIZED_FX_GAIN", credit: realizedFx, transactionCredit: 0 }] : []),
+        ...(realizedFx.lt(0) ? [{ mappingKey: "REALIZED_FX_LOSS", debit: realizedFx.abs(), transactionDebit: 0 }] : []),
+      ]
+    : [
+        { mappingKey: "ACCOUNTS_PAYABLE", debit: carryingFunctional, transactionDebit: voucher.amount, partyId: voucher.partyId },
+        ...(realizedFx.gt(0) ? [{ mappingKey: "REALIZED_FX_LOSS", debit: realizedFx, transactionDebit: 0 }] : []),
+        ...(realizedFx.lt(0) ? [{ mappingKey: "REALIZED_FX_GAIN", credit: realizedFx.abs(), transactionCredit: 0 }] : []),
+        { accountId: voucher.bankAccount.ledgerAccountId, credit: voucher.functionalAmount, transactionCredit: voucher.amount },
+      ];
   const journal = await createBalancedJournal(tx, { entryDate: voucher.voucherDate,
     description: receipt ? `سند قبض ${voucher.voucherNumber}` : `سند صرف ${voucher.voucherNumber}`,
     referenceType: "FINANCIAL_VOUCHER", referenceId: voucher.id, referenceNumber: voucher.voucherNumber,
-    lines: receipt
-      ? [{ accountId: voucher.bankAccount.ledgerAccountId, debit: voucher.amount }, { mappingKey: "ACCOUNTS_RECEIVABLE", credit: voucher.amount, partyId: voucher.partyId }]
-      : [{ mappingKey: "ACCOUNTS_PAYABLE", debit: voucher.amount, partyId: voucher.partyId }, { accountId: voucher.bankAccount.ledgerAccountId, credit: voucher.amount }],
+    transactionCurrencyCode: voucher.currency, functionalCurrencyCode: (await exchangeRateAt(tx, voucher.currency, voucher.voucherDate)).company.baseCurrencyCode,
+    exchangeRate: voucher.exchangeRate, rateDate: voucher.rateDate, lines: transactionLines,
   });
   await recordBankMovement(tx, { bankAccountId: voucher.bankAccountId, date: voucher.voucherDate, type: voucher.voucherType,
     ...(receipt ? { amountIn: voucher.amount } : { amountOut: voucher.amount }), referenceType: "FINANCIAL_VOUCHER", referenceId: voucher.id,
@@ -197,13 +236,17 @@ export async function createAndPostExpense(tx: Tx, input: Record<string, unknown
   await assertOpenAccountingPeriod(tx, expenseDate);
   const [category, bank] = await Promise.all([tx.expenseCategory.findUnique({ where: { id: categoryId } }), tx.bankAccount.findUnique({ where: { id: bankAccountId } })]);
   if (!category || !bank) throw new FinanceError("NOT_FOUND", "التصنيف أو الحساب البنكي غير موجود");
+  const fx = await exchangeRateAt(tx, bank.currency, expenseDate), functionalBeforeVat = functionalAmount(beforeVat, fx.rate), functionalVat = functionalAmount(vat, fx.rate), functionalTotal = functionalAmount(total, fx.rate);
   const voucherNumber = await nextDocumentNumber(tx, "PV", expenseDate);
   const expense = await tx.expense.create({ data: { voucherNumber, expenseDate, expenseType: category.code, categoryId, description: clean(input.description),
-    beneficiary: clean(input.beneficiary), amountBeforeVat: beforeVat, vatAmount: vat, totalAmount: total, paymentMethod: clean(input.paymentMethod),
+    beneficiary: clean(input.beneficiary), amountBeforeVat: beforeVat, vatAmount: vat, totalAmount: total,
+    currency: bank.currency, exchangeRate: fx.rate, rateDate: fx.rateDate, functionalAmountBeforeVat: functionalBeforeVat, functionalVatAmount: functionalVat, functionalTotalAmount: functionalTotal, paymentMethod: clean(input.paymentMethod),
     bankAccountId, cashBankAccount: bank.name, costCenter: clean(input.costCenter), project: clean(input.project),
     responsibleEmployee: clean(input.responsibleEmployee), referenceNumber: clean(input.referenceNumber), notes: clean(input.notes), status: "POSTED", postedAt: new Date() } });
-  const lines = [{ accountId: category.accountId, debit: beforeVat }, ...(vat.isZero() ? [] : [{ mappingKey: "INPUT_VAT", debit: vat }]), { accountId: bank.ledgerAccountId, credit: total }];
-  const journal = await createBalancedJournal(tx, { entryDate: expenseDate, description: `مصروف ${voucherNumber}`, referenceType: "EXPENSE", referenceId: expense.id, referenceNumber: voucherNumber, lines });
+  const dimension = { costCenter: clean(input.costCenter), projectCode: clean(input.project) };
+  const lines = [{ accountId: category.accountId, debit: functionalBeforeVat, transactionDebit: beforeVat, ...dimension }, ...(vat.isZero() ? [] : [{ mappingKey: "INPUT_VAT", debit: functionalVat, transactionDebit: vat, ...dimension }]), { accountId: bank.ledgerAccountId, credit: functionalTotal, transactionCredit: total, ...dimension }];
+  const journal = await createBalancedJournal(tx, { entryDate: expenseDate, description: `مصروف ${voucherNumber}`, referenceType: "EXPENSE", referenceId: expense.id, referenceNumber: voucherNumber,
+    transactionCurrencyCode: bank.currency, functionalCurrencyCode: fx.company.baseCurrencyCode, exchangeRate: fx.rate, rateDate: fx.rateDate, lines });
   await tx.expense.update({ where: { id: expense.id }, data: { journalEntryId: journal.id } });
   await recordBankMovement(tx, { bankAccountId, date: expenseDate, type: "EXPENSE", amountOut: total, referenceType: "EXPENSE", referenceId: expense.id, referenceNumber: voucherNumber, description: expense.description });
   await audit(tx, { action: "POST", entityType: "EXPENSE", entityId: expense.id, metadata: { journalId: journal.id } });
@@ -218,14 +261,18 @@ export async function createAndPostRevenue(tx: Tx, input: Record<string, unknown
   await assertOpenAccountingPeriod(tx, revenueDate);
   const [category, bank] = await Promise.all([tx.revenueCategory.findUnique({ where: { id: categoryId } }), tx.bankAccount.findUnique({ where: { id: bankAccountId } })]);
   if (!category || !bank) throw new FinanceError("NOT_FOUND", "التصنيف أو الحساب البنكي غير موجود");
+  const fx = await exchangeRateAt(tx, bank.currency, revenueDate), functionalBeforeVat = functionalAmount(beforeVat, fx.rate), functionalVat = functionalAmount(vat, fx.rate), functionalTotal = functionalAmount(total, fx.rate);
   const voucherNumber = await nextDocumentNumber(tx, "RV", revenueDate);
   const partyId = input.partyId ? Number(input.partyId) : null;
   const revenue = await tx.revenue.create({ data: { voucherNumber, revenueDate, revenueType: category.code, categoryId, partyId, description: clean(input.description),
-    amountBeforeVat: beforeVat, vatAmount: vat, totalAmount: total, collectionMethod: clean(input.collectionMethod), bankAccountId,
+    amountBeforeVat: beforeVat, vatAmount: vat, totalAmount: total, currency: bank.currency, exchangeRate: fx.rate, rateDate: fx.rateDate,
+    functionalAmountBeforeVat: functionalBeforeVat, functionalVatAmount: functionalVat, functionalTotalAmount: functionalTotal, collectionMethod: clean(input.collectionMethod), bankAccountId,
     cashBankAccount: bank.name, activity: clean(input.activity), costCenter: clean(input.costCenter), referenceNumber: clean(input.referenceNumber),
     notes: clean(input.notes), status: "POSTED", postedAt: new Date() } });
-  const lines = [{ accountId: bank.ledgerAccountId, debit: total }, { accountId: category.accountId, credit: beforeVat }, ...(vat.isZero() ? [] : [{ mappingKey: "VAT_PAYABLE", credit: vat }])];
-  const journal = await createBalancedJournal(tx, { entryDate: revenueDate, description: `إيراد ${voucherNumber}`, referenceType: "REVENUE", referenceId: revenue.id, referenceNumber: voucherNumber, lines });
+  const dimension = { costCenter: clean(input.costCenter) };
+  const lines = [{ accountId: bank.ledgerAccountId, debit: functionalTotal, transactionDebit: total, ...dimension }, { accountId: category.accountId, credit: functionalBeforeVat, transactionCredit: beforeVat, ...dimension }, ...(vat.isZero() ? [] : [{ mappingKey: "VAT_PAYABLE", credit: functionalVat, transactionCredit: vat, ...dimension }])];
+  const journal = await createBalancedJournal(tx, { entryDate: revenueDate, description: `إيراد ${voucherNumber}`, referenceType: "REVENUE", referenceId: revenue.id, referenceNumber: voucherNumber,
+    transactionCurrencyCode: bank.currency, functionalCurrencyCode: fx.company.baseCurrencyCode, exchangeRate: fx.rate, rateDate: fx.rateDate, lines });
   await tx.revenue.update({ where: { id: revenue.id }, data: { journalEntryId: journal.id } });
   await recordBankMovement(tx, { bankAccountId, date: revenueDate, type: "REVENUE", amountIn: total, referenceType: "REVENUE", referenceId: revenue.id, referenceNumber: voucherNumber, description: revenue.description });
   await audit(tx, { action: "POST", entityType: "REVENUE", entityId: revenue.id, metadata: { journalId: journal.id } });
@@ -245,13 +292,16 @@ export async function createBankTransfer(tx: Tx, input: Record<string, unknown>)
     tx.expenseCategory.findUnique({ where: { code: "BANK_FEES" } }),
   ]);
   if (!fromBank?.isActive || !toBank?.isActive || !feeCategory) throw new FinanceError("NOT_FOUND", "أحد الحسابات البنكية غير موجود أو غير نشط");
+  if (fromBank.currency !== toBank.currency) throw new FinanceError("INVALID_INPUT", "التحويل بين عملتين مختلفتين يتطلب عملية صرف مستقلة ولا يجوز ترحيله كمبلغ متماثل");
+  const fx = await exchangeRateAt(tx, fromBank.currency, transferDate), functionalTransfer = functionalAmount(amount, fx.rate), functionalFees = functionalAmount(fees, fx.rate);
   const transferNumber = await nextDocumentNumber(tx, "BT", transferDate);
   const transfer = await tx.bankTransfer.create({ data: { transferNumber, transferDate, fromBankAccountId, toBankAccountId, amount, fees,
     referenceNumber: clean(input.referenceNumber), description: clean(input.description), postedAt: new Date() } });
   const journal = await createBalancedJournal(tx, { entryDate: transferDate, description: `تحويل بنكي ${transferNumber}`,
     referenceType: "BANK_TRANSFER", referenceId: transfer.id, referenceNumber: transferNumber,
-    lines: [{ accountId: toBank.ledgerAccountId, debit: amount }, ...(fees.isZero() ? [] : [{ accountId: feeCategory.accountId, debit: fees }]),
-      { accountId: fromBank.ledgerAccountId, credit: amount.plus(fees) }] });
+    transactionCurrencyCode: fromBank.currency, functionalCurrencyCode: fx.company.baseCurrencyCode, exchangeRate: fx.rate, rateDate: fx.rateDate,
+    lines: [{ accountId: toBank.ledgerAccountId, debit: functionalTransfer, transactionDebit: amount }, ...(fees.isZero() ? [] : [{ accountId: feeCategory.accountId, debit: functionalFees, transactionDebit: fees }]),
+      { accountId: fromBank.ledgerAccountId, credit: functionalTransfer.plus(functionalFees), transactionCredit: amount.plus(fees) }] });
   await recordBankMovement(tx, { bankAccountId: fromBank.id, date: transferDate, type: "TRANSFER_OUT", amountOut: amount.plus(fees),
     referenceType: "BANK_TRANSFER_OUT", referenceId: transfer.id, referenceNumber: transferNumber, description: transfer.description });
   await recordBankMovement(tx, { bankAccountId: toBank.id, date: transferDate, type: "TRANSFER_IN", amountIn: amount,

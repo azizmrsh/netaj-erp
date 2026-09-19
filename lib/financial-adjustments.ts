@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { assertOpenAccountingPeriod, createBalancedJournal, reverseJournalEntry } from "@/lib/accounting";
 import { audit } from "@/lib/audit";
 import { nextDocumentNumber } from "@/lib/document-numbering";
+import { companyCurrency, functionalAmount } from "@/lib/currency";
 
 type Tx = Prisma.TransactionClient;
 const actor = (value: string | number | null | undefined) => value == null ? "system" : String(value);
@@ -29,8 +30,13 @@ export async function createCreditDebitNote(tx: Tx, input: Record<string, unknow
     if (totalAmount.gt(available)) throw new FinancialAdjustmentError("INVALID_INPUT", `قيمة الإشعار الدائن تتجاوز الرصيد القابل للتخفيض ${available.toFixed(2)}`);
   }
   const noteNumber = await nextDocumentNumber(tx, noteType === "CREDIT_NOTE" ? "CN" : "DBN", noteDate);
+  const exchangeRate = new Prisma.Decimal(source.exchangeRate || 1);
+  const functionalAmountBeforeVat = functionalAmount(amountBeforeVat, exchangeRate), functionalVatAmount = functionalAmount(vatAmount, exchangeRate), functionalTotalAmount = functionalAmount(totalAmount, exchangeRate);
+  const sourceDate = "invoiceDate" in source ? source.invoiceDate : source.purchaseDate;
   const row = await tx.creditDebitNote.create({ data: { noteNumber, noteDate, noteType, direction, partyId: source.partyId,
     ...(direction === "SALES" ? { saleId: sourceId } : { purchaseId: sourceId }), amountBeforeVat, vatAmount, totalAmount,
+    currency: source.currency, exchangeRate, rateDate: source.rateDate ?? sourceDate,
+    functionalAmountBeforeVat, functionalVatAmount, functionalTotalAmount,
     reason, notes: text(input.notes) }, include: { party: true, sale: true, purchase: true } });
   await audit(tx, { action: "CREATE", entityType: "CREDIT_DEBIT_NOTE", entityId: row.id, userId: actor(userId), metadata: { noteType, direction, sourceId } });
   return row;
@@ -42,16 +48,18 @@ export async function postCreditDebitNote(tx: Tx, id: number, userId?: string | 
   if (note.status === "POSTED") return tx.creditDebitNote.findUniqueOrThrow({ where: { id }, include: { journalEntry: { include: { lines: true } }, party: true } });
   if (note.status !== "DRAFT") throw new FinancialAdjustmentError("INVALID_STATUS", "لا يمكن ترحيل الإشعار في حالته الحالية");
   await assertOpenAccountingPeriod(tx, note.noteDate);
+  const company = await companyCurrency(tx);
   const credit = note.noteType === "CREDIT_NOTE", sales = note.direction === "SALES";
   const lines = sales
     ? credit
-      ? [{ mappingKey: "SALES_REVENUE", debit: note.amountBeforeVat }, ...(note.vatAmount.isZero() ? [] : [{ mappingKey: "VAT_PAYABLE", debit: note.vatAmount }]), { mappingKey: "ACCOUNTS_RECEIVABLE", credit: note.totalAmount, partyId: note.partyId }]
-      : [{ mappingKey: "ACCOUNTS_RECEIVABLE", debit: note.totalAmount, partyId: note.partyId }, { mappingKey: "SALES_REVENUE", credit: note.amountBeforeVat }, ...(note.vatAmount.isZero() ? [] : [{ mappingKey: "VAT_PAYABLE", credit: note.vatAmount }])]
+      ? [{ mappingKey: "SALES_REVENUE", debit: note.functionalAmountBeforeVat, transactionDebit: note.amountBeforeVat }, ...(note.vatAmount.isZero() ? [] : [{ mappingKey: "VAT_PAYABLE", debit: note.functionalVatAmount, transactionDebit: note.vatAmount }]), { mappingKey: "ACCOUNTS_RECEIVABLE", credit: note.functionalTotalAmount, transactionCredit: note.totalAmount, partyId: note.partyId }]
+      : [{ mappingKey: "ACCOUNTS_RECEIVABLE", debit: note.functionalTotalAmount, transactionDebit: note.totalAmount, partyId: note.partyId }, { mappingKey: "SALES_REVENUE", credit: note.functionalAmountBeforeVat, transactionCredit: note.amountBeforeVat }, ...(note.vatAmount.isZero() ? [] : [{ mappingKey: "VAT_PAYABLE", credit: note.functionalVatAmount, transactionCredit: note.vatAmount }])]
     : credit
-      ? [{ mappingKey: "ACCOUNTS_PAYABLE", debit: note.totalAmount, partyId: note.partyId }, { mappingKey: "INVENTORY_PURCHASES", credit: note.amountBeforeVat }, ...(note.vatAmount.isZero() ? [] : [{ mappingKey: "INPUT_VAT", credit: note.vatAmount }])]
-      : [{ mappingKey: "INVENTORY_PURCHASES", debit: note.amountBeforeVat }, ...(note.vatAmount.isZero() ? [] : [{ mappingKey: "INPUT_VAT", debit: note.vatAmount }]), { mappingKey: "ACCOUNTS_PAYABLE", credit: note.totalAmount, partyId: note.partyId }];
+      ? [{ mappingKey: "ACCOUNTS_PAYABLE", debit: note.functionalTotalAmount, transactionDebit: note.totalAmount, partyId: note.partyId }, { mappingKey: "INVENTORY_PURCHASES", credit: note.functionalAmountBeforeVat, transactionCredit: note.amountBeforeVat }, ...(note.vatAmount.isZero() ? [] : [{ mappingKey: "INPUT_VAT", credit: note.functionalVatAmount, transactionCredit: note.vatAmount }])]
+      : [{ mappingKey: "INVENTORY_PURCHASES", debit: note.functionalAmountBeforeVat, transactionDebit: note.amountBeforeVat }, ...(note.vatAmount.isZero() ? [] : [{ mappingKey: "INPUT_VAT", debit: note.functionalVatAmount, transactionDebit: note.vatAmount }]), { mappingKey: "ACCOUNTS_PAYABLE", credit: note.functionalTotalAmount, transactionCredit: note.totalAmount, partyId: note.partyId }];
   const journal = await createBalancedJournal(tx, { entryDate: note.noteDate, description: `${credit ? "إشعار دائن" : "إشعار مدين"} ${note.noteNumber}: ${note.reason}`,
-    referenceType: "CREDIT_DEBIT_NOTE", referenceId: note.id, referenceNumber: note.noteNumber, lines });
+    referenceType: "CREDIT_DEBIT_NOTE", referenceId: note.id, referenceNumber: note.noteNumber,
+    transactionCurrencyCode: note.currency, functionalCurrencyCode: company.baseCurrencyCode, exchangeRate: note.exchangeRate, rateDate: note.rateDate, lines });
   const posted = await tx.creditDebitNote.update({ where: { id }, data: { status: "POSTED", journalEntryId: journal.id, postedAt: new Date() }, include: { journalEntry: { include: { lines: true } }, party: true, sale: true, purchase: true } });
   await audit(tx, { action: "POST", entityType: "CREDIT_DEBIT_NOTE", entityId: id, userId: actor(userId), metadata: { journalId: journal.id } });
   return posted;
@@ -97,7 +105,8 @@ export async function postAccountingAdjustment(tx: Tx, id: number, userId?: stri
   await assertOpenAccountingPeriod(tx, adjustment.adjustmentDate);
   const journal = await createBalancedJournal(tx, { entryDate: adjustment.adjustmentDate, description: adjustment.description,
     referenceType: "ACCOUNTING_ADJUSTMENT", referenceId: adjustment.id, referenceNumber: adjustment.adjustmentNumber,
-    lines: adjustment.lines.map((line) => ({ accountId: line.accountId, debit: line.debit, credit: line.credit, partyId: line.partyId, description: line.description ?? adjustment.description })) });
+    lines: adjustment.lines.map((line) => ({ accountId: line.accountId, debit: line.debit, credit: line.credit, partyId: line.partyId,
+      costCenter: line.costCenter, description: line.description ?? adjustment.description })) });
   const posted = await tx.accountingAdjustment.update({ where: { id }, data: { status: "POSTED", journalEntryId: journal.id, postedAt: new Date() }, include: { journalEntry: { include: { lines: true } }, lines: { include: { account: true } } } });
   await audit(tx, { action: "POST", entityType: "ACCOUNTING_ADJUSTMENT", entityId: id, userId: actor(userId), metadata: { journalId: journal.id } });
   return posted;

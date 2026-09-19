@@ -22,10 +22,11 @@ export async function fiscalPeriodBlockers(tx: Tx, periodId: number) {
   const period = await getScopedPeriod(tx, periodId);
   if (!period) throw new FiscalCloseError("NOT_FOUND", "الفترة المالية غير موجودة");
   const range = { gte: period.startDate, lte: period.endDate };
-  const [draftJournals, draftVouchers, draftVatReturns, postedJournals] = await Promise.all([
+  const [draftJournals, draftVouchers, draftVatReturns, draftFxRevaluations, postedJournals] = await Promise.all([
     tx.journalEntry.count({ where: { status: "DRAFT", entryDate: range } }),
     tx.financialVoucher.count({ where: { status: "DRAFT", voucherDate: range } }),
     tx.vatReturn.count({ where: { status: "DRAFT", periodStart: { lte: period.endDate }, periodEnd: { gte: period.startDate } } }),
+    tx.fxRevaluation.count({ where: { status: "DRAFT", fiscalPeriodId: period.id } }),
     tx.journalEntry.findMany({ where: { status: "POSTED", entryDate: range }, select: { entryNumber: true, totalDebit: true, totalCredit: true } }),
   ]);
   const unbalanced = postedJournals.filter((row) => !row.totalDebit.equals(row.totalCredit));
@@ -33,9 +34,10 @@ export async function fiscalPeriodBlockers(tx: Tx, periodId: number) {
     ...(draftJournals ? [`${draftJournals} قيد غير مرحل`] : []),
     ...(draftVouchers ? [`${draftVouchers} سند قبض/صرف غير مرحل`] : []),
     ...(draftVatReturns ? [`${draftVatReturns} إقرار ضريبي غير معتمد`] : []),
+    ...(draftFxRevaluations ? [`${draftFxRevaluations} إعادة تقييم عملة غير مرحلة`] : []),
     ...(unbalanced.length ? [`${unbalanced.length} قيد غير متوازن`] : []),
   ];
-  return { period, blockers, counts: { draftJournals, draftVouchers, draftVatReturns, unbalancedJournals: unbalanced.length } };
+  return { period, blockers, counts: { draftJournals, draftVouchers, draftVatReturns, draftFxRevaluations, unbalancedJournals: unbalanced.length } };
 }
 
 export async function closeFiscalPeriod(tx: Tx, periodId: number, userId?: string | number | null) {

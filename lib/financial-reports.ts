@@ -14,21 +14,23 @@ export function reportDates(params: URLSearchParams) {
 
 export async function agingReport(kind: "AR" | "AP", asOf = new Date()) {
   const rows = kind === "AR"
-    ? (await prisma.sale.findMany({ where: { status: "COMPLETED", invoiceDate: { lte: asOf } }, include: { party: true, allocations: { where: { voucher: { status: "POSTED", voucherDate: { lte: asOf } } } } }, orderBy: { invoiceDate: "asc" } })).map((row) => ({ id: row.id, number: row.invoiceNumber, invoiceDate: row.invoiceDate, dueDate: row.dueDate, partyId: row.partyId, partyName: row.party.nameAr, totalAmount: row.totalAmount, allocations: row.allocations }))
-    : (await prisma.purchase.findMany({ where: { status: "COMPLETED", purchaseDate: { lte: asOf } }, include: { party: true, allocations: { where: { voucher: { status: "POSTED", voucherDate: { lte: asOf } } } } }, orderBy: { purchaseDate: "asc" } })).map((row) => ({ id: row.id, number: row.purchaseNumber, invoiceDate: row.purchaseDate, dueDate: row.dueDate, partyId: row.partyId, partyName: row.party.nameAr, totalAmount: row.totalAmount, allocations: row.allocations }));
+    ? (await prisma.sale.findMany({ where: { status: "COMPLETED", invoiceDate: { lte: asOf } }, include: { party: true, allocations: { where: { voucher: { status: "POSTED", voucherDate: { lte: asOf } } } } }, orderBy: { invoiceDate: "asc" } })).map((row) => ({ id: row.id, number: row.invoiceNumber, invoiceDate: row.invoiceDate, dueDate: row.dueDate, partyId: row.partyId, partyName: row.party.nameAr, currency: row.currency, totalAmount: row.totalAmount, functionalTotalAmount: row.functionalTotalAmount, allocations: row.allocations }))
+    : (await prisma.purchase.findMany({ where: { status: "COMPLETED", purchaseDate: { lte: asOf } }, include: { party: true, allocations: { where: { voucher: { status: "POSTED", voucherDate: { lte: asOf } } } } }, orderBy: { purchaseDate: "asc" } })).map((row) => ({ id: row.id, number: row.purchaseNumber, invoiceDate: row.purchaseDate, dueDate: row.dueDate, partyId: row.partyId, partyName: row.party.nameAr, currency: row.currency, totalAmount: row.totalAmount, functionalTotalAmount: row.functionalTotalAmount, allocations: row.allocations }));
   const notes = await prisma.creditDebitNote.findMany({ where: { direction: kind === "AR" ? "SALES" : "PURCHASE", status: "POSTED", noteDate: { lte: asOf } } });
-  const noteBalance = new Map<number, number>();
-  for (const note of notes) { const sourceId = kind === "AR" ? note.saleId : note.purchaseId; if (!sourceId) continue; noteBalance.set(sourceId, (noteBalance.get(sourceId) ?? 0) + (note.noteType === "DEBIT_NOTE" ? decimal(note.totalAmount) : -decimal(note.totalAmount))); }
+  const noteBalance = new Map<number, number>(), functionalNoteBalance = new Map<number, number>();
+  for (const note of notes) { const sourceId = kind === "AR" ? note.saleId : note.purchaseId; if (!sourceId) continue; const sign = note.noteType === "DEBIT_NOTE" ? 1 : -1; noteBalance.set(sourceId, (noteBalance.get(sourceId) ?? 0) + sign * decimal(note.totalAmount)); functionalNoteBalance.set(sourceId, (functionalNoteBalance.get(sourceId) ?? 0) + sign * decimal(note.functionalTotalAmount)); }
   const items = rows.flatMap((row) => {
-    const paid = row.allocations.reduce((sum, allocation) => sum + decimal(allocation.amount), 0);
-    const outstanding = decimal(row.totalAmount) + (noteBalance.get(row.id) ?? 0) - paid;
-    if (outstanding <= 0.004) return [];
+    const paid = row.allocations.reduce((sum, allocation) => sum + decimal(allocation.amount), 0), paidFunctional = row.allocations.reduce((sum, allocation) => sum + decimal(allocation.carryingFunctionalAmount), 0);
+    const transactionOutstanding = decimal(row.totalAmount) + (noteBalance.get(row.id) ?? 0) - paid;
+    const outstanding = decimal(row.functionalTotalAmount) + (functionalNoteBalance.get(row.id) ?? 0) - paidFunctional;
+    if (transactionOutstanding <= 0.004) return [];
     const invoiceDate = row.invoiceDate;
     const dueDate = row.dueDate ?? invoiceDate;
     const ageDays = Math.max(0, Math.floor((asOf.getTime() - dueDate.getTime()) / 86_400_000));
     const bucket = ageDays === 0 ? "CURRENT" : ageDays <= 30 ? "1_30" : ageDays <= 60 ? "31_60" : ageDays <= 90 ? "61_90" : "OVER_90";
     return [{ id: row.id, number: row.number, partyId: row.partyId,
-      partyName: row.partyName, invoiceDate, dueDate, total: decimal(row.totalAmount), paid, outstanding, ageDays, bucket }];
+      partyName: row.partyName, invoiceDate, dueDate, currency: row.currency, transactionTotal: decimal(row.totalAmount), transactionPaid: paid,
+      transactionOutstanding, total: decimal(row.functionalTotalAmount), paid: paidFunctional, outstanding, ageDays, bucket }];
   });
   const totals = { current: 0, days1to30: 0, days31to60: 0, days61to90: 0, over90: 0, total: 0 };
   for (const row of items) {
@@ -66,8 +68,23 @@ export async function generalLedger(params: URLSearchParams) {
   }, include: { account: true, journalEntry: true }, orderBy: [{ journalEntry: { entryDate: "asc" } }, { id: "asc" }] });
   let balance = 0;
   return lines.map((line) => { balance += decimal(line.debit) - decimal(line.credit); return { id: line.id, date: line.journalEntry.entryDate,
-    entryNumber: line.journalEntry.entryNumber, referenceNumber: line.journalEntry.referenceNumber, accountCode: line.accountCode,
-    accountName: line.accountName, description: line.description, debit: decimal(line.debit), credit: decimal(line.credit), balance }; });
+    entryNumber: line.journalEntry.entryNumber, referenceType: line.journalEntry.referenceType, referenceId: line.journalEntry.referenceId,
+    referenceNumber: line.journalEntry.referenceNumber, sourceUrl: sourceDocumentUrl(line.journalEntry.referenceType, line.journalEntry.referenceId), accountCode: line.accountCode,
+    accountName: line.accountName, description: line.description, transactionCurrency: line.transactionCurrencyCode,
+    transactionDebit: decimal(line.transactionDebit), transactionCredit: decimal(line.transactionCredit), exchangeRate: decimal(line.exchangeRate),
+    debit: decimal(line.debit), credit: decimal(line.credit), balance }; });
+}
+
+export function sourceDocumentUrl(referenceType: string | null, referenceId: number | null) {
+  if (!referenceType || !referenceId) return null;
+  if (["SALES_INVOICE", "CREDIT_DEBIT_NOTE"].includes(referenceType)) return `/sales/${referenceId}`;
+  if (referenceType === "SUPPLIER_INVOICE") return `/purchases/${referenceId}`;
+  if (referenceType.startsWith("FINANCIAL_VOUCHER")) return `/accounting?voucherId=${referenceId}`;
+  if (referenceType.startsWith("VAT_RETURN")) return `/accounting?vatReturnId=${referenceId}`;
+  if (referenceType.startsWith("BANK_RECONCILIATION")) return `/accounting?reconciliationId=${referenceId}`;
+  if (referenceType.startsWith("FX_REVALUATION")) return `/accounting?fxRevaluationId=${referenceId}`;
+  if (referenceType === "EXPENSE" || referenceType === "REVENUE") return `/accounting?source=${referenceType}&id=${referenceId}`;
+  return `/accounting?referenceType=${encodeURIComponent(referenceType)}&referenceId=${referenceId}`;
 }
 
 export async function statementReport(from?: Date, to?: Date) {
@@ -75,7 +92,12 @@ export async function statementReport(from?: Date, to?: Date) {
   const byType = (type: string) => trial.rows.filter((row) => row.type === type).reduce((sum, row) => sum + row.balance, 0);
   const revenue = -byType("REVENUE"), expenses = byType("EXPENSE");
   const assets = byType("ASSET"), liabilities = -byType("LIABILITY"), equity = -byType("EQUITY");
-  return { profitAndLoss: { revenue, expenses, netProfit: revenue - expenses }, balanceSheet: { assets, liabilities, equity, currentProfit: revenue - expenses, liabilitiesAndEquity: liabilities + equity + revenue - expenses } };
+  const accountRows = trial.rows.map((row) => ({ ...row, reportAmount: ["REVENUE", "LIABILITY", "EQUITY"].includes(row.type) ? -row.balance : row.balance,
+    drilldownUrl: `/accounting?tab=reports&report=general-ledger&accountId=${row.accountId}` }));
+  return { profitAndLoss: { revenue, expenses, netProfit: revenue - expenses,
+      revenueAccounts: accountRows.filter((row) => row.type === "REVENUE"), expenseAccounts: accountRows.filter((row) => row.type === "EXPENSE") },
+    balanceSheet: { assets, liabilities, equity, currentProfit: revenue - expenses, liabilitiesAndEquity: liabilities + equity + revenue - expenses,
+      assetAccounts: accountRows.filter((row) => row.type === "ASSET"), liabilityAccounts: accountRows.filter((row) => row.type === "LIABILITY"), equityAccounts: accountRows.filter((row) => row.type === "EQUITY") } };
 }
 
 export async function accountStatement(params: URLSearchParams) {
@@ -90,7 +112,7 @@ export async function accountStatement(params: URLSearchParams) {
   let balance = openingBalance;
   const rows = lines.map((line) => { balance += decimal(line.debit) - decimal(line.credit); return { id: line.id, date: line.journalEntry.entryDate,
     entryNumber: line.journalEntry.entryNumber, referenceType: line.journalEntry.referenceType, referenceId: line.journalEntry.referenceId,
-    referenceNumber: line.journalEntry.referenceNumber, description: line.description ?? line.journalEntry.description,
+    referenceNumber: line.journalEntry.referenceNumber, sourceUrl: sourceDocumentUrl(line.journalEntry.referenceType, line.journalEntry.referenceId), description: line.description ?? line.journalEntry.description,
     debit: decimal(line.debit), credit: decimal(line.credit), balance }; });
   return { account: lines[0]?.account ?? await prisma.account.findUnique({ where: { id: accountId } }), openingBalance, rows, closingBalance: balance,
     totals: rows.reduce((sum, row) => ({ debit: sum.debit + row.debit, credit: sum.credit + row.credit }), { debit: 0, credit: 0 }) };

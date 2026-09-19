@@ -89,12 +89,16 @@ export async function buildVatSnapshot(tx: Tx, periodStart: Date, periodEnd: Dat
   ]);
   const byReference = new Map(journals.map((journal) => [`${journal.referenceType}:${journal.referenceId}`, journal]));
   const sourceRows = [
-    ...sales.map((row) => ({ direction: "OUTPUT" as const, sourceType: "SALES_INVOICE", sourceId: row.id, sourceNumber: row.invoiceNumber, sourceDate: row.invoiceDate, netAmount: new Prisma.Decimal(row.subtotal).minus(row.discount), documentVat: row.vatAmount })),
-    ...revenues.map((row) => ({ direction: "OUTPUT" as const, sourceType: "REVENUE", sourceId: row.id, sourceNumber: row.voucherNumber, sourceDate: row.revenueDate, netAmount: row.amountBeforeVat, documentVat: row.vatAmount })),
-    ...purchases.map((row) => ({ direction: "INPUT" as const, sourceType: "SUPPLIER_INVOICE", sourceId: row.id, sourceNumber: row.purchaseNumber, sourceDate: row.purchaseDate, netAmount: new Prisma.Decimal(row.subtotal).minus(row.discount), documentVat: row.vatAmount })),
-    ...expenses.map((row) => ({ direction: "INPUT" as const, sourceType: "EXPENSE", sourceId: row.id, sourceNumber: row.voucherNumber, sourceDate: row.expenseDate, netAmount: row.amountBeforeVat, documentVat: row.vatAmount })),
+    ...sales.map((row) => ({ direction: "OUTPUT" as const, sourceType: "SALES_INVOICE", sourceId: row.id, sourceNumber: row.invoiceNumber, sourceDate: row.invoiceDate,
+      netAmount: row.functionalTotalAmount.isZero() && !row.totalAmount.isZero() ? new Prisma.Decimal(row.subtotal).minus(row.discount).mul(row.exchangeRate) : new Prisma.Decimal(row.functionalSubtotal).minus(row.functionalDiscount),
+      documentVat: row.functionalVatAmount.isZero() && !row.vatAmount.isZero() ? row.vatAmount.mul(row.exchangeRate).toDecimalPlaces(2) : row.functionalVatAmount })),
+    ...revenues.map((row) => ({ direction: "OUTPUT" as const, sourceType: "REVENUE", sourceId: row.id, sourceNumber: row.voucherNumber, sourceDate: row.revenueDate, netAmount: row.functionalAmountBeforeVat, documentVat: row.functionalVatAmount })),
+    ...purchases.map((row) => ({ direction: "INPUT" as const, sourceType: "SUPPLIER_INVOICE", sourceId: row.id, sourceNumber: row.purchaseNumber, sourceDate: row.purchaseDate,
+      netAmount: row.functionalTotalAmount.isZero() && !row.totalAmount.isZero() ? new Prisma.Decimal(row.subtotal).minus(row.discount).mul(row.exchangeRate) : new Prisma.Decimal(row.functionalSubtotal).minus(row.functionalDiscount),
+      documentVat: row.functionalVatAmount.isZero() && !row.vatAmount.isZero() ? row.vatAmount.mul(row.exchangeRate).toDecimalPlaces(2) : row.functionalVatAmount })),
+    ...expenses.map((row) => ({ direction: "INPUT" as const, sourceType: "EXPENSE", sourceId: row.id, sourceNumber: row.voucherNumber, sourceDate: row.expenseDate, netAmount: row.functionalAmountBeforeVat, documentVat: row.functionalVatAmount })),
     ...notes.map((row) => ({ direction: (row.direction === "SALES" ? "OUTPUT" : "INPUT") as "OUTPUT" | "INPUT", sourceType: "CREDIT_DEBIT_NOTE", sourceId: row.id, sourceNumber: row.noteNumber, sourceDate: row.noteDate,
-      netAmount: (row.noteType === "CREDIT_NOTE" ? row.amountBeforeVat.negated() : row.amountBeforeVat), documentVat: (row.noteType === "CREDIT_NOTE" ? row.vatAmount.negated() : row.vatAmount) })),
+      netAmount: (row.noteType === "CREDIT_NOTE" ? row.functionalAmountBeforeVat.negated() : row.functionalAmountBeforeVat), documentVat: (row.noteType === "CREDIT_NOTE" ? row.functionalVatAmount.negated() : row.functionalVatAmount) })),
   ];
   const lines: VatSnapshotLine[] = sourceRows.map((source) => {
     const journal = byReference.get(`${source.sourceType}:${source.sourceId}`);
