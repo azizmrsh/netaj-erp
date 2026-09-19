@@ -79,6 +79,10 @@ const routes = [
   "/portal-admin",
   "/treasury",
   "/integrations",
+  "/assistant",
+  "/controls",
+  "/search",
+  "/settings/security",
   "/manifest.webmanifest",
   "/sw.js",
   "/api/units",
@@ -147,6 +151,10 @@ const routes = [
   "/api/treasury",
   "/api/integrations",
   "/api/v1/integrations",
+  "/api/assistant",
+  "/api/controls",
+  "/api/search?q=NETAj",
+  "/api/auth/mfa",
   "/api/reports/legacy?report=monthly-comparison&from=2026-01-01&to=2026-12-31",
 ];
 
@@ -307,6 +315,28 @@ try {
   assert.equal(safeIntegrations.response.status, 200);
   assert.equal(safeIntegrations.body.endpoints.find((row) => row.id === webhook.body.id)?.secretHash, "[REDACTED]");
   console.log("PASS production Phase K CRM, DMS, portal foundation, treasury, versioned integrations, and PWA shell");
+  const securityHeaders = await fetch(`http://127.0.0.1:${port}/`);
+  assert.equal(securityHeaders.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(securityHeaders.headers.get("x-frame-options"), "DENY");
+  assert.match(securityHeaders.headers.get("content-security-policy") ?? "", /frame-ancestors 'none'/);
+  const assistantAnswer = await jsonRequest("/api/assistant", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "ASK", question: "كم السيولة؟" }) });
+  assert.equal(assistantAnswer.response.status, 200, JSON.stringify(assistantAnswer.body));
+  assert.equal(assistantAnswer.body.intent, "LIQUIDITY");
+  const controlScan = await jsonRequest("/api/controls", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "SCAN" }) });
+  assert.equal(controlScan.response.status, 200, JSON.stringify(controlScan.body));
+  assert.equal(controlScan.body.auditIntegrity.valid, true);
+  const globalSearch = await jsonRequest(`/api/search?q=${encodeURIComponent("اختبار الإنتاج")}`);
+  assert.equal(globalSearch.response.status, 200);
+  assert.ok(globalSearch.body.results.some((row) => row.type === "PARTY"));
+  const backupDownload = await fetch(`http://127.0.0.1:${port}/api/admin/backup`);
+  const backupBytes = new Uint8Array(await backupDownload.arrayBuffer());
+  assert.equal(backupDownload.status, 200);
+  assert.equal(new TextDecoder().decode(backupBytes.slice(0, 15)), "SQLite format 3");
+  assert.match(backupDownload.headers.get("x-content-checksum-sha256") ?? "", /^[a-f0-9]{64}$/);
+  const csrf = await nativeFetch(`http://127.0.0.1:${port}/api/crm`, { method: "POST", headers: { cookie: sessionCookie, origin: "https://attacker.invalid", "sec-fetch-site": "cross-site", "content-type": "application/json" }, body: JSON.stringify({ action: "LEAD", name: "blocked" }) });
+  assert.equal(csrf.status, 403);
+  assert.equal((await csrf.json()).code, "CSRF_REJECTED");
+  console.log("PASS production Phase L assistant, controls, global search, security headers, CSRF, MFA status, and verified backup download");
 
   const switchToSecond = await jsonRequest("/api/auth/switch-company", {
     method: "POST", headers: { "content-type": "application/json" },

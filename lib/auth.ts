@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import bcrypt from "bcryptjs";
 import type { Prisma } from "@prisma/client";
 import { SESSION_COOKIE } from "@/lib/auth-constants";
+import { MfaError, verifyUserMfa } from "@/lib/mfa";
 
 export { SESSION_COOKIE };
 const SESSION_DAYS = 7;
@@ -93,7 +94,7 @@ export async function completeInitialSetup(
 
 export async function authenticateCredentials(
   tx: Prisma.TransactionClient,
-  input: { email: unknown; password: unknown; companyId?: unknown; userAgent?: string | null; ipAddress?: string | null }
+  input: { email: unknown; password: unknown; mfaCode?: unknown; companyId?: unknown; userAgent?: string | null; ipAddress?: string | null }
 ) {
   const email = normalizeEmail(input.email);
   const password = String(input.password ?? "");
@@ -108,6 +109,13 @@ export async function authenticateCredentials(
   });
   if (!user?.passwordHash || user.status !== "ACTIVE" || !(await bcrypt.compare(password, user.passwordHash))) {
     throw new AuthError("بيانات الدخول غير صحيحة", "INVALID_CREDENTIALS");
+  }
+  if (user.mfaEnabled) {
+    try { await verifyUserMfa(tx, user.id, input.mfaCode); }
+    catch (error) {
+      if (error instanceof MfaError) throw new AuthError(error.message, error.code, error.status);
+      throw error;
+    }
   }
 
   const membership = user.memberships[0];

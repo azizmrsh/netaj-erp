@@ -55,6 +55,8 @@ export default async function PartyPage({
         <Info label="الرقم الضريبي" value={party.vatNumber} />
         <Info label="رقم الهاتف" value={party.telephone} />
         <Info label="البريد الإلكتروني" value={party.email} />
+        <Info label="البنك" value={party.bankName} />
+        <Info label="IBAN" value={party.iban} />
         <Info label="الحالة" value={party.isActive ? "نشط" : "غير نشط"} />
       </div>
 

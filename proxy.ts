@@ -44,6 +44,15 @@ function requiredAction(request: NextRequest) {
 
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
+  if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
+    const fetchSite = request.headers.get("sec-fetch-site");
+    const origin = request.headers.get("origin");
+    let invalidOrigin = false;
+    if (origin) { try { invalidOrigin = new URL(origin).host !== request.nextUrl.host; } catch { invalidOrigin = true; } }
+    if (fetchSite === "cross-site" || invalidOrigin) {
+      return NextResponse.json({ error: "تم رفض الطلب بسبب حماية CSRF", code: "CSRF_REJECTED" }, { status: 403 });
+    }
+  }
   if (publicPaths.some((publicPath) => path === publicPath || path.startsWith(`${publicPath}/`))) {
     return NextResponse.next();
   }

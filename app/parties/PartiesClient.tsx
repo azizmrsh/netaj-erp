@@ -10,6 +10,8 @@ type Party = {
   vatNumber?: string | null;
   telephone?: string | null;
   email?: string | null;
+  bankName?: string | null;
+  iban?: string | null;
   isCustomer: boolean;
   isSupplier: boolean;
   isActive: boolean;
@@ -23,6 +25,8 @@ const emptyForm = {
   vatNumber: "",
   telephone: "",
   email: "",
+  bankName: "",
+  iban: "",
   isCustomer: true,
   isSupplier: false,
   notes: "",
@@ -267,6 +271,8 @@ export default function PartiesClient() {
               value={form.email}
               onChange={(v) => updateField("email", v)}
             />
+            <Field label="اسم البنك" value={form.bankName} onChange={(v) => updateField("bankName", v)} />
+            <Field label="IBAN المورد" value={form.iban} onChange={(v) => updateField("iban", v)} />
           </div>
 
           <div style={{ display: "flex", gap: "24px", margin: "24px 0" }}>

@@ -113,7 +113,8 @@ test("إدارة المستندات تحفظ النسخ والصلاحيات و�
 test("صندوق الموافقات الموحد يحدّث المستند المصدر ويسجل القرار والتدقيق", async () => {
   const sale = await prisma.sale.create({ data: { invoiceNumber: `K-S-${suffix}`, partyId: partyA.id, totalAmount: 100, functionalTotalAmount: 100, status: "PENDING" } });
   const request = await prisma.$transaction((tx) => saveApproval(tx, { action: "REQUEST", tenantId: 1, companyId: 1, moduleKey: "SALES", entityType: "SALE", entityId: sale.id, entityNumber: sale.invoiceNumber, title: "اعتماد بيع", amount: 100 }, 1));
-  await prisma.$transaction((tx) => saveApproval(tx, { action: "APPROVE", id: request.id, comment: "معتمد" }, 1));
+  await assert.rejects(prisma.$transaction((tx) => saveApproval(tx, { action: "APPROVE", id: request.id }, 1)), /فصل المهام/);
+  await prisma.$transaction((tx) => saveApproval(tx, { action: "APPROVE", id: request.id, comment: "معتمد" }, 2));
   const workspace = await prisma.$transaction((tx) => approvalsWorkspace(tx));
   assert.equal((await prisma.sale.findUniqueOrThrow({ where: { id: sale.id } })).status, "APPROVED");
   assert.equal(workspace.requests.find((row) => row.id === request.id)?.actions[0].comment, "معتمد");

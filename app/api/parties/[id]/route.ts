@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { authorizeRequest, authErrorResponse } from "@/lib/api-auth";
 import { AuthError } from "@/lib/auth";
 import { customFieldsForEntity, saveCustomFieldValues } from "@/lib/configuration";
+import { audit } from "@/lib/audit";
 
 export async function GET(
   request: Request,
@@ -167,12 +168,15 @@ export async function PATCH(
         ...(typeof body.isActive === "boolean"
           ? { isActive: body.isActive }
           : {}),
+        ...(typeof body.bankName === "string" ? { bankName: body.bankName.trim() || null } : {}),
+        ...(typeof body.iban === "string" ? { iban: body.iban.replace(/\s/g, "").toUpperCase() || null } : {}),
       },
       include: {
         address: true,
       },
       });
       await saveCustomFieldValues(tx, "PARTY", partyId, body.customFields);
+      await audit(tx, { action: "UPDATE", entityType: "PARTY", entityId: partyId, metadata: { fields: Object.keys(body).filter((key) => key !== "customFields") } });
       return updated;
     });
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ConfigurationError, saveCustomFieldValues } from "@/lib/configuration";
+import { audit } from "@/lib/audit";
 
 export async function GET() {
   try {
@@ -52,6 +53,8 @@ export async function POST(request: NextRequest) {
         vatNumber: body.vatNumber?.trim() || null,
         telephone: body.telephone?.trim() || null,
         email: body.email?.trim() || null,
+        bankName: body.bankName?.trim() || null,
+        iban: body.iban?.replace(/\s/g, "").toUpperCase() || null,
 
         isCustomer: Boolean(body.isCustomer),
         isSupplier: Boolean(body.isSupplier),
@@ -80,6 +83,7 @@ export async function POST(request: NextRequest) {
       },
       });
       await saveCustomFieldValues(tx, "PARTY", created.id, body.customFields);
+      await audit(tx, { action: "CREATE", entityType: "PARTY", entityId: created.id });
       return created;
     });
 

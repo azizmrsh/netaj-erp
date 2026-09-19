@@ -11,6 +11,8 @@
     "lint": "eslint",
     "test": "node --import tsx --test --test-concurrency=1 tests/*.test.mjs",
     "test:production": "node scripts/production-smoke.mjs",
+    "backup": "node --import tsx scripts/backup-database.mjs",
+    "restore:verify": "node scripts/verify-restore.mjs",
     "postinstall": "prisma skills sync || exit 0"
   },
   "dependencies": {

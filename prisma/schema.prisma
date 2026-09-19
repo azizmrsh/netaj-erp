@@ -31,6 +31,8 @@ model Party {
 
   telephone String?
   email     String?
+  bankName  String?
+  iban      String?
 
   isCustomer Boolean @default(false)
   isSupplier Boolean @default(false)
@@ -58,6 +60,7 @@ model Party {
   notesDocuments DeliveryReceiptNote[]
 
   @@index([tenantId, companyId])
+  @@index([tenantId, companyId, iban])
 }
 
 // ======================================================
@@ -324,6 +327,7 @@ model StockMovement {
   @@index([itemId])
   @@index([partyId])
   @@index([projectId, costCodeId])
+  @@index([tenantId, companyId, movementDate, itemId, ownershipType])
   @@index([tenantId, companyId])
 }
 
@@ -1109,6 +1113,8 @@ model Sale {
   @@index([partyId])
   @@index([sourceOrderId])
   @@index([projectId, costCodeId])
+  @@index([tenantId, companyId, invoiceDate, status])
+  @@index([tenantId, companyId, partyId, dueDate])
   @@index([tenantId, companyId])
 }
 
@@ -1195,6 +1201,8 @@ model Purchase {
   @@index([partyId])
   @@index([sourceOrderId])
   @@index([projectId, costCodeId])
+  @@index([tenantId, companyId, purchaseDate, status])
+  @@index([tenantId, companyId, partyId, dueDate])
   @@index([tenantId, companyId])
 }
 
@@ -1569,6 +1577,7 @@ model BusinessDocument {
   @@index([partyId])
   @@index([status])
   @@index([projectId, costCodeId])
+  @@index([tenantId, companyId, documentDate, documentType, status])
   @@index([tenantId, companyId])
 }
 
@@ -1641,11 +1650,15 @@ model AuditLog {
   entityId   Int?
   userId     String?
   metadata   String?
+  previousHash String?
+  entryHash    String?
   createdAt  DateTime @default(now())
 
   @@index([entityType, entityId])
   @@index([createdAt])
   @@index([tenantId, companyId])
+  @@index([tenantId, companyId, id])
+  @@index([entryHash])
 }
 
 model Account {
@@ -2334,6 +2347,11 @@ model Company {
   treasuryAdjustments    TreasuryForecastAdjustment[]
   integrationConnections IntegrationConnection[]
   webhookEndpoints       WebhookEndpoint[]
+  assistantConversations AssistantConversation[]
+  assistantMessages      AssistantMessage[]
+  assistantProposals     AssistantActionProposal[]
+  controlAlerts          ControlAlert[]
+  backupRecords          BackupRecord[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -3520,6 +3538,33 @@ model PlatformUser {
   sessions              AuthSession[]
   platformAdministrator PlatformAdministrator?
   sentInvitations       UserInvitation[]       @relation("InvitationSender")
+  mfaFactors            UserMfaFactor[]
+}
+
+model UserMfaFactor {
+  id              Int               @id @default(autoincrement())
+  userId          Int
+  factorType      String            @default("TOTP")
+  label           String?
+  encryptedSecret String
+  verifiedAt      DateTime?
+  lastUsedAt      DateTime?
+  createdAt       DateTime          @default(now())
+  user            PlatformUser      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  recoveryCodes   MfaRecoveryCode[]
+
+  @@index([userId, factorType, verifiedAt])
+}
+
+model MfaRecoveryCode {
+  id        Int           @id @default(autoincrement())
+  factorId  Int
+  codeHash  String
+  usedAt    DateTime?
+  createdAt DateTime      @default(now())
+  factor    UserMfaFactor @relation(fields: [factorId], references: [id], onDelete: Cascade)
+
+  @@unique([factorId, codeHash])
 }
 
 model PlatformAdministrator {
@@ -4041,6 +4086,101 @@ model WebhookDelivery {
 
   @@unique([tenantId, companyId, eventId, endpointId])
   @@index([tenantId, companyId, status, nextAttemptAt])
+}
+
+model AssistantConversation {
+  id          Int                @id @default(autoincrement())
+  tenantId    Int                @default(1)
+  companyId   Int                @default(1)
+  userId      Int
+  title       String?
+  locale      String             @default("ar")
+  status      String             @default("ACTIVE")
+  contextJson String             @default("{}")
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  company     Company            @relation(fields: [companyId], references: [id])
+  messages    AssistantMessage[]
+  proposals   AssistantActionProposal[]
+
+  @@index([tenantId, companyId, userId, updatedAt])
+}
+
+model AssistantMessage {
+  id             Int                   @id @default(autoincrement())
+  tenantId       Int                   @default(1)
+  companyId      Int                   @default(1)
+  conversationId Int
+  role           String
+  content        String
+  responseType   String                @default("TEXT")
+  dataJson       String?
+  createdAt      DateTime              @default(now())
+  company        Company               @relation(fields: [companyId], references: [id])
+  conversation   AssistantConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, companyId, conversationId, createdAt])
+}
+
+model AssistantActionProposal {
+  id             Int                   @id @default(autoincrement())
+  tenantId       Int                   @default(1)
+  companyId      Int                   @default(1)
+  conversationId Int
+  userId         Int
+  actionType     String
+  previewJson    String
+  payloadJson    String
+  status         String                @default("PENDING")
+  expiresAt      DateTime
+  confirmedAt    DateTime?
+  cancelledAt    DateTime?
+  createdAt      DateTime              @default(now())
+  company        Company               @relation(fields: [companyId], references: [id])
+  conversation   AssistantConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, companyId, userId, status, expiresAt])
+}
+
+model ControlAlert {
+  id           Int       @id @default(autoincrement())
+  tenantId     Int       @default(1)
+  companyId    Int       @default(1)
+  alertType    String
+  severity     String    @default("WARNING")
+  title        String
+  description  String
+  entityType   String?
+  entityId     Int?
+  fingerprint  String
+  status       String    @default("OPEN")
+  detectedAt   DateTime  @default(now())
+  resolvedAt   DateTime?
+  resolvedBy   String?
+  resolution   String?
+  company      Company   @relation(fields: [companyId], references: [id])
+
+  @@unique([tenantId, companyId, fingerprint])
+  @@index([tenantId, companyId, status, severity, detectedAt])
+}
+
+model BackupRecord {
+  id              Int       @id @default(autoincrement())
+  tenantId        Int       @default(1)
+  companyId       Int       @default(1)
+  backupNumber    String
+  fileName        String
+  sizeBytes       BigInt
+  checksumSha256  String
+  databaseVersion String?
+  status          String    @default("VERIFIED")
+  createdBy       Int?
+  createdAt       DateTime  @default(now())
+  verifiedAt      DateTime?
+  company         Company   @relation(fields: [companyId], references: [id])
+
+  @@unique([tenantId, companyId, backupNumber])
+  @@index([tenantId, companyId, createdAt])
 }
 
 model TenantMembership {

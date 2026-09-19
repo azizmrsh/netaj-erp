@@ -37,6 +37,7 @@ export default function LoginForm() {
       {error && <p role="alert" className="rounded-xl bg-red-950/50 p-3 text-sm text-red-200">{error}</p>}
       <label className="block space-y-2"><span className="text-sm text-slate-300">البريد الإلكتروني</span><input name="email" type="email" required autoComplete="username" className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" /></label>
       <label className="block space-y-2"><span className="text-sm text-slate-300">كلمة المرور</span><input name="password" type="password" required autoComplete="current-password" className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" /></label>
+      <label className="block space-y-2"><span className="text-sm text-slate-300">رمز MFA أو رمز الاسترداد (إن كان مفعّلًا)</span><input name="mfaCode" inputMode="numeric" autoComplete="one-time-code" className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3" /></label>
       <button disabled={busy} style={{ backgroundColor: branding.primaryColor }} className="w-full rounded-xl px-4 py-3 font-bold text-white disabled:opacity-50">{busy ? "جاري التحقق…" : "دخول"}</button>
       <Link href="/setup" className="block text-center text-sm text-slate-400 hover:text-cyan-300">الإعداد الأولي للنظام</Link>
     </form>
