@@ -2318,6 +2318,7 @@ model Company {
   sessions               AuthSession[]
   importBatches          ImportBatch[]
   legacySourceSystems    LegacySourceSystem[]
+  migrationCertificates MigrationCertificate[]
   importTemplates        ImportTemplate[]
   customFieldDefinitions CustomFieldDefinition[]
   customFieldValues      CustomFieldValue[]
@@ -2410,7 +2411,8 @@ model ImportBatch {
   sourceSystem LegacySourceSystem? @relation(fields: [sourceSystemId], references: [id])
   rows    ImportRow[]
   links   LegacyRecordLink[]
-  referenceSnapshots LegacyReferenceSnapshot[]
+  referenceSnapshots   LegacyReferenceSnapshot[]
+  migrationCertificates MigrationCertificate[]
 
   @@index([tenantId, companyId, createdAt])
   @@index([tenantId, companyId, status])
@@ -2538,6 +2540,27 @@ model LegacyReferenceSnapshot {
 
   @@index([tenantId, companyId, reportType])
   @@index([importBatchId])
+}
+
+model MigrationCertificate {
+  id                Int       @id @default(autoincrement())
+  tenantId          Int       @default(1)
+  companyId         Int       @default(1)
+  certificateNumber String    @unique
+  importBatchId     Int
+  status            String
+  controlsJson      String
+  summaryJson       String    @default("{}")
+  generatedBy       String?
+  generatedAt       DateTime  @default(now())
+  certifiedAt       DateTime?
+  certifiedBy       String?
+
+  company Company     @relation(fields: [companyId], references: [id])
+  batch   ImportBatch @relation(fields: [importBatchId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, companyId, generatedAt])
+  @@index([importBatchId, status])
 }
 
 // ============================================================

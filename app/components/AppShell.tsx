@@ -11,6 +11,7 @@ import {
   PanelRightOpen, Moon, Sun, Languages, ChevronDown, LogOut, Building2, Sparkles,
   ShieldCheck, SlidersHorizontal, DatabaseZap, X,
 } from "lucide-react";
+import NetajOne from "./NetajOne";
 
 type Session = { userName:string; companyCode:string; companyId:number; modules:string[]; availableCompanies:{id:number;code:string;legalNameAr:string}[] };
 type Theme = { logoUrl?:string|null; menuOrder?:string[]; primaryColor?:string; secondaryColor?:string; accentColor?:string };
@@ -39,6 +40,8 @@ const groups:NavGroup[] = [
     {label:"الموافقات",href:"/approvals",module:"APPROVALS",icon:BadgeCheck},
     {label:"المرفقات والمستندات",href:"/documents",module:"DMS",icon:Files},
     {label:"التنبيهات الرقابية",href:"/controls",module:"CORE",icon:Bell},
+    {label:"التوأم التشغيلي",href:"/operations",module:"CORE",icon:ChartNoAxesCombined},
+    {label:"مركز الإشعارات",href:"/notifications",module:"CORE",icon:Bell},
   ]},
   {label:"الإدارة",items:[
     {label:"إعدادات المؤسسة",href:"/settings/organization",module:"CORE",icon:Building2},
@@ -82,12 +85,13 @@ export default function AppShell({children}:{children:React.ReactNode}){
         <div className="erp-top-actions">
           <button aria-label="تغيير اللغة" className="erp-icon-button"><Languages size={19}/><span className="hidden xl:inline">AR</span></button>
           <button aria-label="تبديل الوضع" className="erp-icon-button" onClick={toggleTheme}><Sun className="theme-light-icon" size={19}/><Moon className="theme-dark-icon" size={19}/></button>
-          <Link aria-label="التنبيهات" href="/controls" className="erp-icon-button"><Bell size={19}/><i/></Link>
+          <Link aria-label="التنبيهات" href="/notifications" className="erp-icon-button"><Bell size={19}/><i/></Link>
           <div className="relative"><button aria-expanded={accountOpen} onClick={()=>setAccountOpen(!accountOpen)} className="erp-account-button"><span>{session?.userName?.slice(0,1)??"N"}</span><div><b>{session?.userName??"NETAj"}</b><small>{session?.companyCode??"ERP"}</small></div><ChevronDown size={16}/></button>{accountOpen&&<div className="erp-account-menu"><label>الشركة<select value={session?.companyId??""} onChange={event=>void switchCompany(Number(event.target.value))}>{session?.availableCompanies?.map(company=><option key={company.id} value={company.id}>{company.legalNameAr||company.code}</option>)}</select></label><Link href="/settings/security"><ShieldCheck size={16}/>أمان الحساب</Link><button onClick={()=>void logout()}><LogOut size={16}/>تسجيل الخروج</button></div>}</div>
         </div>
       </header>
       <div className="erp-workspace">{children}</div>
     </div>
     <button aria-label="إغلاق القائمة" className={`erp-mobile-close ${mobileOpen?"is-visible":""}`} onClick={()=>setMobileOpen(false)}><X/></button>
+    <NetajOne/>
   </div>
 }

@@ -125,13 +125,15 @@ export async function askAssistant(tx: Tx, input: Record<string, unknown>, conte
 export async function saveAssistantProposal(tx: Tx, input: Record<string, unknown>, context: AssistantContext) {
   const action = text(input.action).toUpperCase();
   if (action === "PROPOSE") {
-    if (text(input.actionType).toUpperCase() !== "CRM_TASK" || !context.permissions.has("CRM.CREATE")) throw new AssistantError("الإجراء غير مسموح", 403, "ASSISTANT_ACTION_DENIED");
+    const actionType = text(input.actionType).toUpperCase();
+    const permission = actionType === "CRM_TASK" ? "CRM.CREATE" : actionType === "PARTY_CREATE" ? "CORE.CREATE" : actionType === "SALES_WORKFLOW_DRAFT" ? "SALES.CREATE" : "";
+    if (!permission || !context.permissions.has(permission)) throw new AssistantError("الإجراء غير مسموح", 403, "ASSISTANT_ACTION_DENIED");
     const conversationId = Number(input.conversationId);
     const conversation = await tx.assistantConversation.findUnique({ where: { id: conversationId } });
     if (!conversation || conversation.userId !== context.userId) throw new AssistantError("المحادثة غير متاحة", 404, "NOT_FOUND");
     const payload = input.payload as Record<string, unknown>;
-    if (!text(payload?.subject)) throw new AssistantError("عنوان المهمة مطلوب");
-    return tx.assistantActionProposal.create({ data: { conversationId, userId: context.userId, actionType: "CRM_TASK", previewJson: JSON.stringify({ title: "إنشاء مهمة CRM", subject: text(payload.subject), dueAt: payload.dueAt ?? null }), payloadJson: JSON.stringify(payload), expiresAt: new Date(Date.now() + 15 * 60_000) } });
+    const preview = proposalPreview(actionType, payload);
+    return tx.assistantActionProposal.create({ data: { conversationId, userId: context.userId, actionType, previewJson: JSON.stringify(preview), payloadJson: JSON.stringify(payload), expiresAt: new Date(Date.now() + 15 * 60_000) } });
   }
   const proposal = await tx.assistantActionProposal.findUnique({ where: { id: Number(input.id) } });
   if (!proposal || proposal.userId !== context.userId) throw new AssistantError("المقترح غير موجود", 404, "NOT_FOUND");
@@ -139,16 +141,68 @@ export async function saveAssistantProposal(tx: Tx, input: Record<string, unknow
   if (action === "CANCEL") return tx.assistantActionProposal.update({ where: { id: proposal.id }, data: { status: "CANCELLED", cancelledAt: new Date() } });
   if (action === "EDIT") {
     const payload = input.payload as Record<string, unknown>;
-    if (!text(payload?.subject)) throw new AssistantError("عنوان المهمة مطلوب");
-    return tx.assistantActionProposal.update({ where: { id: proposal.id }, data: { payloadJson: JSON.stringify(payload), previewJson: JSON.stringify({ title: "إنشاء مهمة CRM", subject: text(payload.subject), dueAt: payload.dueAt ?? null }) } });
+    return tx.assistantActionProposal.update({ where: { id: proposal.id }, data: { payloadJson: JSON.stringify(payload), previewJson: JSON.stringify(proposalPreview(proposal.actionType, payload)) } });
   }
   if (action === "CONFIRM") {
-    if (!context.permissions.has("CRM.CREATE")) throw new AssistantError("فقدت صلاحية إنشاء المهمة", 403, "ASSISTANT_ACTION_DENIED");
     const payload = JSON.parse(proposal.payloadJson) as Record<string, unknown>;
-    const activity = await tx.crmActivity.create({ data: { activityType: "TASK", subject: text(payload.subject), partyId: Number(payload.partyId) || null, assignedUserId: context.userId, dueAt: payload.dueAt ? new Date(String(payload.dueAt)) : null, notes: text(payload.notes) || null } });
+    let result: Record<string, unknown>;
+    if (proposal.actionType === "CRM_TASK") {
+      if (!context.permissions.has("CRM.CREATE")) throw new AssistantError("فقدت صلاحية إنشاء المهمة", 403, "ASSISTANT_ACTION_DENIED");
+      const activity = await tx.crmActivity.create({ data: { activityType: "TASK", subject: text(payload.subject), partyId: Number(payload.partyId) || null, assignedUserId: context.userId, dueAt: payload.dueAt ? new Date(String(payload.dueAt)) : null, notes: text(payload.notes) || null } });
+      result = { activity };
+    } else if (proposal.actionType === "PARTY_CREATE") {
+      if (!context.permissions.has("CORE.CREATE")) throw new AssistantError("فقدت صلاحية إنشاء العميل", 403, "ASSISTANT_ACTION_DENIED");
+      const nameAr = text(payload.nameAr); if (!nameAr) throw new AssistantError("اسم العميل مطلوب");
+      if (await tx.party.findFirst({ where: { OR: [{ nameAr }, ...(text(payload.unifiedNumber) ? [{ unifiedNumber: text(payload.unifiedNumber) }] : [])] } })) throw new AssistantError("يوجد كيان مطابق؛ افتحه بدل إنشاء نسخة مكررة", 409, "DUPLICATE");
+      const party = await tx.party.create({ data: { nameAr, nameEn: text(payload.nameEn) || null, unifiedNumber: text(payload.unifiedNumber) || null, vatNumber: text(payload.vatNumber) || null, telephone: text(payload.telephone) || null, email: text(payload.email) || null, isCustomer: payload.isSupplier !== true, isSupplier: payload.isSupplier === true } });
+      if (text(payload.city) || text(payload.street) || text(payload.district)) await tx.partyAddress.create({ data: { partyId: party.id, city: text(payload.city) || null, street: text(payload.street) || null, district: text(payload.district) || null } });
+      result = { party };
+    } else if (proposal.actionType === "SALES_WORKFLOW_DRAFT") {
+      if (!context.permissions.has("SALES.CREATE") || !context.enabledModules.has("SALES")) throw new AssistantError("فقدت صلاحية إنشاء مستند البيع", 403, "ASSISTANT_ACTION_DENIED");
+      const { createBusinessDocument, parseWorkflowInput } = await import("@/lib/workflows");
+      const document = await createBusinessDocument(tx, parseWorkflowInput(payload, "SALES_ORDER"));
+      result = { document };
+    } else throw new AssistantError("نوع المقترح غير مدعوم");
     await tx.assistantActionProposal.update({ where: { id: proposal.id }, data: { status: "CONFIRMED", confirmedAt: new Date() } });
-    await audit(tx, { action: "ASSISTANT_CONFIRMED_ACTION", entityType: "CRM_ACTIVITY", entityId: activity.id, userId: String(context.userId), metadata: { proposalId: proposal.id } });
-    return { proposalId: proposal.id, activity };
+    const entity = (result.activity ?? result.party ?? result.document) as { id: number };
+    await audit(tx, { action: "ASSISTANT_CONFIRMED_ACTION", entityType: proposal.actionType, entityId: entity.id, userId: String(context.userId), metadata: { proposalId: proposal.id } });
+    return { proposalId: proposal.id, ...result };
   }
   throw new AssistantError("إجراء المقترح غير مدعوم");
+}
+
+function proposalPreview(actionType: string, payload: Record<string, unknown>) {
+  if (actionType === "CRM_TASK") { if (!text(payload.subject)) throw new AssistantError("عنوان المهمة مطلوب"); return { title: "إنشاء مهمة CRM", subject: text(payload.subject), dueAt: payload.dueAt ?? null }; }
+  if (actionType === "PARTY_CREATE") { if (!text(payload.nameAr)) throw new AssistantError("اسم العميل مطلوب"); return { title: "إضافة عميل", customer: text(payload.nameAr), city: text(payload.city) || null, telephone: text(payload.telephone) || null, effect: "إنشاء ملف عميل فقط؛ لا أثر محاسبي أو مخزني" }; }
+  if (actionType === "SALES_WORKFLOW_DRAFT") {
+    const items = Array.isArray(payload.items) ? payload.items as Record<string, unknown>[] : [];
+    if (!Number(payload.partyId) || !items.length) throw new AssistantError("العميل والمادة والكمية مطلوبة لإعداد البيع");
+    const subtotal = items.reduce((sum, row) => sum + number(row.quantity) * number(row.unitPrice), 0), vat = items.reduce((sum, row) => sum + number(row.quantity) * number(row.unitPrice) * number(row.vatRate ?? 15) / 100, 0);
+    return { title: "NETAJ ONE — مسودة أمر بيع", customer: payload.partyName, material: items[0]?.itemName, quantity: items[0]?.quantity, unitPrice: items[0]?.unitPrice, subtotal, vat, total: subtotal + vat, ownership: "COMPANY", nextSteps: "أمر بيع → سند تسليم → نقل عند اختيار سيارة الشركة → فاتورة → محاسبة", effect: "لا مخزون ولا GL قبل ترحيل المستندات اللاحقة" };
+  }
+  throw new AssistantError("نوع المقترح غير مدعوم");
+}
+
+export async function interpretAssistantCommand(tx: Tx, input: Record<string, unknown>, context: AssistantContext) {
+  const command = text(input.command); if (!command || command.length > 1000) throw new AssistantError("الأمر مطلوب وبحد أقصى 1000 حرف");
+  let conversation = input.conversationId ? await tx.assistantConversation.findUnique({ where: { id: Number(input.conversationId) } }) : null;
+  if (conversation && conversation.userId !== context.userId) throw new AssistantError("المحادثة غير متاحة", 404, "NOT_FOUND");
+  if (!conversation) conversation = await tx.assistantConversation.create({ data: { userId: context.userId, title: `NETAJ ONE: ${command.slice(0, 80)}`, locale: /[\u0600-\u06ff]/.test(command) ? "ar" : "en" } });
+  await tx.assistantMessage.create({ data: { conversationId: conversation.id, role: "USER", content: command, responseType: "COMMAND" } });
+  if (/(اضف|أضف|انشئ|أنشئ|add|create).*(عميل|customer)/i.test(command)) {
+    const name = command.match(/(?:عميل|customer)\s+(?:شركة\s+)?(.+?)(?=\s+(?:في|بال|رقم|هاتف|phone|جوال|$))/i)?.[1]?.trim() ?? "";
+    const telephone = command.match(/(?:هاتف|الجوال|جوال|phone)\s*[:\-]?\s*([+\d٠-٩۰-۹ -]{7,})/i)?.[1]?.replace(/\s/g, "") ?? "";
+    const city = command.match(/(?:في|بالمدينة|المدينة)\s+([\p{L}\s]+?)(?=\s+(?:رقم|هاتف|جوال|phone)|$)/iu)?.[1]?.trim() ?? "";
+    return saveAssistantProposal(tx, { action: "PROPOSE", actionType: "PARTY_CREATE", conversationId: conversation.id, payload: { nameAr: name, telephone, city, isCustomer: true } }, context);
+  }
+  if (/(بعنا|بيع|sales?|sell)/i.test(command)) {
+    if (!context.enabledModules.has("SALES") || !context.permissions.has("SALES.CREATE")) throw new AssistantError("لا تملك صلاحية إنشاء مبيعات", 403, "ASSISTANT_ACTION_DENIED");
+    const [parties, items] = await Promise.all([tx.party.findMany({ where: { isCustomer: true, isActive: true }, select: { id: true, nameAr: true, unifiedNumber: true } }), tx.item.findMany({ where: { isActive: true }, select: { id: true, code: true, nameAr: true, vatRate: true } })]);
+    const normalized = command.toLowerCase(), party = parties.sort((a, b) => b.nameAr.length - a.nameAr.length).find((row) => normalized.includes(row.nameAr.toLowerCase()) || Boolean(row.unifiedNumber && normalized.includes(row.unifiedNumber.toLowerCase()))), item = items.sort((a, b) => b.nameAr.length - a.nameAr.length).find((row) => normalized.includes(row.nameAr.toLowerCase()) || normalized.includes(row.code.toLowerCase()));
+    const quantity = number(command.match(/([\d٠-٩۰-۹,.]+)\s*(?:طن|kg|كجم|وحده|وحدة|piece)/i)?.[1]?.replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit))).replace(/,/g, "")), unitPrice = number(command.match(/(?:بسعر|سعر|at)\s*([\d٠-٩۰-۹,.]+)/i)?.[1]?.replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit))).replace(/,/g, ""));
+    if (!party || !item || quantity <= 0 || unitPrice < 0) throw new AssistantError("لم أستطع تحديد العميل والمادة والكمية والسعر بثقة. اذكر أسماءها كما تظهر في النظام.", 400, "COMMAND_NEEDS_REVIEW");
+    const payload = { documentType: "SALES_ORDER", documentDate: new Date().toISOString(), partyId: party.id, partyName: party.nameAr, currency: "SAR", notes: `أُعد بواسطة NETAJ ONE بعد مراجعة المستخدم: ${command}`, items: [{ itemId: item.id, itemName: item.nameAr, lineType: "ITEM", quantity, unitPrice, discount: 0, vatRate: Number(item.vatRate) }] };
+    return saveAssistantProposal(tx, { action: "PROPOSE", actionType: "SALES_WORKFLOW_DRAFT", conversationId: conversation.id, payload }, context);
+  }
+  throw new AssistantError("هذا الأمر غير مدعوم كعملية كتابة. استخدم وضع السؤال للتحليلات أو اطلب إضافة عميل/إعداد بيع.", 400, "COMMAND_NOT_SUPPORTED");
 }

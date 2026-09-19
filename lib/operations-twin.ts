@@ -1,0 +1,12 @@
+import type { Prisma } from "@prisma/client";
+
+type Tx = Prisma.TransactionClient;
+export async function loadOperationsTwin(tx: Tx) {
+  const documents = await tx.businessDocument.findMany({ include: { party: { select: { nameAr: true } }, convertedDocuments: { select: { id: true, documentNumber: true, documentType: true, status: true } }, deliveryNotes: { select: { id: true, noteNumber: true, status: true } }, salesInvoices: { select: { id: true, invoiceNumber: true, status: true } }, supplierInvoices: { select: { id: true, purchaseNumber: true, status: true } } }, orderBy: { updatedAt: "desc" }, take: 100 });
+  const nodes = documents.map((document) => {
+    const downstream = [...document.convertedDocuments.map((row) => ({ type: row.documentType, number: row.documentNumber, status: row.status, href: "/sales" })), ...document.deliveryNotes.map((row) => ({ type: "TRANSPORT", number: row.noteNumber, status: row.status, href: `/notes/${row.id}` })), ...document.salesInvoices.map((row) => ({ type: "SALE_INVOICE", number: row.invoiceNumber, status: row.status, href: "/sales" })), ...document.supplierInvoices.map((row) => ({ type: "PURCHASE_INVOICE", number: row.purchaseNumber, status: row.status, href: "/purchases" }))];
+    const nextAction = document.status === "DRAFT" ? "مراجعة واعتماد المستند" : !document.deliveryNotes.length && ["SALES_ORDER", "PURCHASE_ORDER"].includes(document.documentType) ? "إنشاء مستند النقل/الاستلام" : !document.salesInvoices.length && document.documentType === "SALES_ORDER" ? "إنشاء فاتورة المبيعات" : !document.supplierInvoices.length && document.documentType === "PURCHASE_ORDER" ? "إنشاء فاتورة المورد" : "متابعة التحصيل أو الإقفال";
+    return { id: document.id, number: document.documentNumber, type: document.documentType, direction: document.direction, status: document.status, date: document.documentDate, party: document.party.nameAr, amount: Number(document.totalAmount), sourceDocumentId: document.sourceDocumentId, downstream, nextAction, href: document.direction === "PURCHASE" ? "/purchases" : "/sales" };
+  });
+  return { generatedAt: new Date(), summary: { total: nodes.length, drafts: nodes.filter((row) => row.status === "DRAFT").length, awaitingTransport: nodes.filter((row) => row.nextAction.includes("النقل")).length, awaitingInvoice: nodes.filter((row) => row.nextAction.includes("فاتورة")).length, completed: nodes.filter((row) => row.status === "COMPLETED").length }, nodes };
+}

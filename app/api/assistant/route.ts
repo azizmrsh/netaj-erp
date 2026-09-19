@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { authorizeRequest, authErrorResponse } from "@/lib/api-auth";
 import { AuthError } from "@/lib/auth";
-import { askAssistant, AssistantError, saveAssistantProposal } from "@/lib/assistant";
+import { askAssistant, AssistantError, interpretAssistantCommand, saveAssistantProposal } from "@/lib/assistant";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(request: Request) {
@@ -22,8 +22,10 @@ export async function POST(request: Request) {
     const action = String(body.action ?? "ASK").toUpperCase();
     const result = action === "ASK"
       ? await prisma.$transaction((tx) => askAssistant(tx, body, context))
-      : await prisma.$transaction((tx) => saveAssistantProposal(tx, body, context));
-    return NextResponse.json(result, { status: String(body.action ?? "ASK").toUpperCase() === "PROPOSE" ? 201 : 200 });
+      : action === "INTERPRET"
+        ? await prisma.$transaction((tx) => interpretAssistantCommand(tx, body, context))
+        : await prisma.$transaction((tx) => saveAssistantProposal(tx, body, context));
+    return NextResponse.json(result, { status: ["PROPOSE", "INTERPRET"].includes(action) ? 201 : 200 });
   } catch (error) {
     if (error instanceof AuthError) { const response = authErrorResponse(error); return NextResponse.json({ error: response.message, code: response.code }, { status: response.status }); }
     if (error instanceof AssistantError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });

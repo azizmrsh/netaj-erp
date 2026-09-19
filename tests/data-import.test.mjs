@@ -7,9 +7,10 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import * as XLSX from "@stackline/xlsx";
 import { approveImportBatch, createImportPreview, dryRunImportBatch, executeImportBatch, parseImportWorkbook, rollbackImportBatch } from "../lib/data-import.ts";
-import { getImportTarget, importHeaderFingerprint, mapImportRow, normalizeArabicDigits, suggestImportMapping } from "../lib/import-definitions.ts";
+import { analyzeImportStructure, getImportTarget, importHeaderFingerprint, mapImportRow, normalizeArabicDigits, suggestImportMapping } from "../lib/import-definitions.ts";
 import { scopedModels, scopePrismaArgs } from "../lib/data-scope.ts";
 import { enqueueBackgroundJob, runBackgroundJob } from "../lib/background-jobs.ts";
+import { buildMigrationCertificate, migrationCertificateFile } from "../lib/migration-certification.ts";
 
 const directory = mkdtempSync(join(tmpdir(), "netaj-import-test-"));
 const database = join(directory, "import.db");
@@ -83,6 +84,11 @@ test("الربط الإنجليزي يتعرف على Customer Code وCustomer N
   assert.equal(mapping.nameAr, "Customer Name");
   assert.equal(mapping.telephone, "Mobile");
   assert.ok(importHeaderFingerprint(["Customer Name", "Customer Code"]).includes("customercode"));
+});
+
+test("مساعد الترحيل يفسر نوع الملف والتاريخ والعملة ومفتاح التكرار دون اعتماد تلقائي", () => {
+  const target = getImportTarget("SALES"), analysis = analyzeImportStructure(["Invoice Number", "Invoice Date", "Customer", "Item Code", "Line Number", "Quantity", "Unit Price", "Currency"], [{ raw: { "Invoice Date": "2026-04-30", Currency: "SAR" } }], target);
+  assert.equal(analysis.selectedTarget, "SALES"); assert.equal(analysis.probableDateFormat, "YMD"); assert.deepEqual(analysis.currencies, ["SAR"]); assert.equal(analysis.requiresConfirmation, true); assert.ok(analysis.confidence >= 70); assert.ok(analysis.duplicateKeySuggestion.length > 0);
 });
 
 test("التاريخ غير الصالح والمرجع المفقود يظهران كأخطاء قبل Dry Run", async () => {
@@ -162,6 +168,19 @@ test("تنفيذ master data ينشئ السجل والتتبع والتراجع
   assert.equal(link.entityId, party.id); assert.equal(link.sourceFile, "party-rollback.xlsx"); assert.equal(link.sourceRow, 2);
   const rolledBack = await prisma.$transaction((tx) => rollbackImportBatch(tx, preview.id, "test"));
   assert.equal(rolledBack.status, "ROLLED_BACK"); assert.equal(await prisma.party.count({ where: { id: party.id } }), 0);
+});
+
+test("شهادة مطابقة الترحيل تقارن المصدر بالبيانات الفعلية وتصدر Excel وPDF", async () => {
+  const unified = `CERT-${suffix}`;
+  const bytes = workbookBytes({ Data: [{ "الاسم العربي": "عميل شهادة المطابقة", "الرقم الموحد": unified, "عميل": "نعم" }] });
+  const preview = await prisma.$transaction((tx) => createImportPreview(tx, { bytes, filename: "certification.xlsx", targetType: "PARTIES", importMode: "FULL", duplicateStrategy: "SKIP", createdBy: "test" }));
+  await approveAndExecute(preview.id);
+  const certificate = await prisma.$transaction((tx) => buildMigrationCertificate(tx, preview.id, "test"));
+  assert.equal(certificate.status, "MATCHED"); assert.equal(certificate.controls[0].difference, 0); assert.ok(certificate.certifiedAt);
+  const xlsx = migrationCertificateFile(certificate, "xlsx"), pdf = migrationCertificateFile(certificate, "pdf");
+  assert.equal(Buffer.from(xlsx).subarray(0, 2).toString(), "PK"); assert.equal(Buffer.from(pdf).subarray(0, 4).toString(), "%PDF");
+  assert.ok(scopedModels.has("MigrationCertificate"));
+  await prisma.$transaction((tx) => rollbackImportBatch(tx, preview.id, "test"));
 });
 
 test("التراجع عن تحديث سجل موجود لا يحذف بيانات NETAj الأصلية", async () => {

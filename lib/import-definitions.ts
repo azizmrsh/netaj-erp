@@ -310,6 +310,23 @@ export function suggestImportMapping(headers: string[], target: ImportTargetDefi
   return mapping;
 }
 
+export function analyzeImportStructure(headers: string[], rows: { raw: Record<string, unknown> }[], selectedTarget?: ImportTargetDefinition) {
+  const candidates = importTargets.map((target) => {
+    const mapping = suggestImportMapping(headers, target), required = target.fields.filter((entry) => entry.required), requiredHits = required.filter((entry) => mapping[entry.key]).length, optionalHits = Object.keys(mapping).length - requiredHits;
+    const confidence = Math.min(99, Math.round((required.length ? requiredHits / required.length * 78 : 50) + Math.min(21, optionalHits * 3)));
+    return { key: target.key, labelAr: target.labelAr, confidence, matchedFields: Object.keys(mapping).length, requiredMatched: requiredHits, requiredTotal: required.length, reasons: [`تم التعرف على ${Object.keys(mapping).length} حقل`, `الحقول المطلوبة ${requiredHits}/${required.length}`] };
+  }).sort((left, right) => right.confidence - left.confidence || right.matchedFields - left.matchedFields).slice(0, 3);
+  const values = rows.flatMap((row) => Object.values(row.raw).map((value) => String(value ?? "").trim()).filter(Boolean));
+  const datePatterns = { DMY: values.filter((value) => /^\d{1,2}[\/-]\d{1,2}[\/-]\d{4}$/.test(normalizeArabicDigits(value))).length, YMD: values.filter((value) => /^\d{4}[\/-]\d{1,2}[\/-]\d{1,2}$/.test(normalizeArabicDigits(value))).length, EXCEL_SERIAL: values.filter((value) => /^\d{5}(?:\.\d+)?$/.test(normalizeArabicDigits(value))).length };
+  const probableDateFormat = Object.entries(datePatterns).sort((left, right) => right[1] - left[1])[0]?.[1] ? Object.entries(datePatterns).sort((left, right) => right[1] - left[1])[0][0] : "غير محسوم";
+  const currencies = [...new Set(values.flatMap((value) => value.toUpperCase().match(/\b(?:SAR|USD|EUR|GBP|AED|KWD|BHD|QAR|OMR)\b/g) ?? (/(?:ر\.؟س|ريال)/.test(value) ? ["SAR"] : [])))];
+  const selected = selectedTarget ?? importTargets.find((target) => target.key === candidates[0]?.key), mapping = selected ? suggestImportMapping(headers, selected) : {};
+  const warnings: string[] = [];
+  if (selected && selected.fields.filter((entry) => entry.required).some((entry) => !mapping[entry.key])) warnings.push("بعض الحقول المطلوبة لم تُكتشف تلقائيًا؛ يلزم تأكيد الربط يدويًا.");
+  if (probableDateFormat === "غير محسوم" && selected?.fields.some((entry) => entry.type === "date")) warnings.push("تنسيق التاريخ غير محسوم من العينة؛ راجع المعاينة قبل Dry Run.");
+  return { candidates, suggestedTarget: candidates[0] ?? null, selectedTarget: selected?.key ?? null, probableDateFormat, currencies, debitCreditPattern: headers.some((header) => /مدين|debit/i.test(header)) && headers.some((header) => /دائن|credit/i.test(header)) ? "SEPARATE_COLUMNS" : "NOT_DETECTED", duplicateKeySuggestion: selected?.duplicateKey ?? [], confidence: candidates.find((candidate) => candidate.key === selected?.key)?.confidence ?? 0, reasons: candidates.find((candidate) => candidate.key === selected?.key)?.reasons ?? [], warnings, requiresConfirmation: true };
+}
+
 function tokenSimilarity(left: string, right: string) {
   const tokens = (value: string) => new Set(value.split(/(?=[a-z])|(?=\d)/).filter((token) => token.length > 1));
   const a = tokens(left), b = tokens(right); if (!a.size || !b.size) return 0;

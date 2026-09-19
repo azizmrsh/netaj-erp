@@ -102,7 +102,7 @@ export async function issueDocumentPresentation(tx: Prisma.TransactionClient, in
 }
 
 export async function saveTheme(tx: Prisma.TransactionClient, input: Record<string, unknown>, userId: string) {
-  const presets = ["CORPORATE", "MODERN", "MINIMAL"], modes = ["LIGHT", "DARK", "SYSTEM"], styles = ["SOLID", "SOFT", "COMPACT"], cards = ["ROUNDED", "SQUARE", "ELEVATED"], tables = ["STRIPED", "BORDERED", "MINIMAL"], charts = ["DIMENSIONAL", "FLAT", "MINIMAL"];
+  const presets = ["EXECUTIVE_GOLD", "CRYSTAL_BLUE", "PEARL_WHITE", "CORPORATE", "MODERN", "MINIMAL"], modes = ["LIGHT", "DARK", "SYSTEM"], styles = ["SOLID", "SOFT", "COMPACT"], cards = ["ROUNDED", "SQUARE", "ELEVATED"], tables = ["STRIPED", "BORDERED", "MINIMAL"], charts = ["DIMENSIONAL", "FLAT", "MINIMAL"];
   const color = (value: unknown, fallback: string) => /^#[0-9a-f]{6}$/i.test(text(value)) ? text(value) : fallback;
   const safeUrl = (value: unknown) => { const url = text(value); return !url || url.startsWith("/") || /^https:\/\//i.test(url) ? url || null : null; };
   const companyId = Number(input.companyId), tenantId = Number(input.tenantId);

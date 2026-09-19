@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
-import { askAssistant, AssistantError, saveAssistantProposal } from "../lib/assistant.ts";
+import { askAssistant, AssistantError, interpretAssistantCommand, saveAssistantProposal } from "../lib/assistant.ts";
 import { audit, verifyAuditChain } from "../lib/audit.ts";
 import { createVerifiedDatabaseBackup } from "../lib/backup.ts";
 import { scanControlAlerts } from "../lib/controls.ts";
@@ -19,13 +19,16 @@ copyFileSync("prisma/netaj.db", database);
 const prisma = new PrismaClient({ adapter: new PrismaBetterSqlite3({ url: `file:${database}` }) });
 const suffix = Date.now().toString(36).toUpperCase();
 const allModules = new Set(["CORE", "ACCOUNTING", "INVENTORY", "FACTORY", "TRANSPORT", "SALES", "PURCHASES", "PROJECTS", "CRM", "DMS"]);
-const context = { userId: 1, enabledModules: allModules, permissions: new Set(["CRM.CREATE", ...[...allModules].map((module) => `${module}.READ`)]) };
-let supplier;
+const context = { userId: 1, enabledModules: allModules, permissions: new Set(["CRM.CREATE", "CORE.CREATE", "SALES.CREATE", ...[...allModules].map((module) => `${module}.READ`)]) };
+let supplier, voiceCustomer, voiceItem;
 
 before(async () => {
   process.env.MFA_ENCRYPTION_KEY = `phase-l-key-${suffix}`;
   supplier = await prisma.party.create({ data: { nameAr: `مورد رقابي ${suffix}`, isSupplier: true, iban: `SA${suffix}` } });
   await prisma.party.create({ data: { nameAr: `مورد IBAN ثان ${suffix}`, isSupplier: true, iban: `SA${suffix}` } });
+  voiceCustomer = await prisma.party.create({ data: { nameAr: `عميل صوتي ${suffix}`, isCustomer: true } });
+  const unit = await prisma.unit.create({ data: { code: `VOICE-${suffix}`, nameAr: "طن صوتي", nameEn: "Voice Ton" } });
+  voiceItem = await prisma.item.create({ data: { code: `VOICE-ITEM-${suffix}`, nameAr: `مادة صوتية ${suffix}`, unitId: unit.id, vatRate: 15 } });
 });
 after(async () => { delete process.env.MFA_ENCRYPTION_KEY; await prisma.$disconnect(); rmSync(directory, { recursive: true, force: true }); });
 
@@ -50,6 +53,23 @@ test("إجراء المساعد الحساس يمر عبر Preview ثم Confirm 
   assert.equal(confirmed.activity.activityType, "TASK");
   const second = await prisma.$transaction((tx) => saveAssistantProposal(tx, { action: "PROPOSE", actionType: "CRM_TASK", conversationId: conversation.id, payload: { subject: "مهمة ملغاة" } }, context));
   assert.equal((await prisma.$transaction((tx) => saveAssistantProposal(tx, { action: "CANCEL", id: second.id }, context))).status, "CANCELLED");
+});
+
+test("NETAJ ONE يحول إضافة عميل صوتية إلى Preview ثم ينفذها بعد الاعتماد فقط", async () => {
+  const before = await prisma.party.count(), proposal = await prisma.$transaction((tx) => interpretAssistantCommand(tx, { command: `أضف عميل شركة إعمار ${suffix} في الرياض ورقم الهاتف 0501234567` }, context));
+  assert.equal(proposal.actionType, "PARTY_CREATE"); assert.equal(await prisma.party.count(), before); assert.match(proposal.previewJson, /إعمار/);
+  const confirmed = await prisma.$transaction((tx) => saveAssistantProposal(tx, { action: "CONFIRM", id: proposal.id }, context));
+  assert.equal(confirmed.party.isCustomer, true); assert.equal(confirmed.party.telephone, "0501234567");
+  assert.ok(await prisma.auditLog.findFirst({ where: { action: "ASSISTANT_CONFIRMED_ACTION", entityType: "PARTY_CREATE", entityId: confirmed.party.id } }));
+});
+
+test("NETAJ ONE يجهز أمر بيع مترابط ولا يحرك المخزون أو GL قبل المستندات اللاحقة", async () => {
+  const stockBefore = await prisma.stockMovement.count(), journalsBefore = await prisma.journalEntry.count();
+  const proposal = await prisma.$transaction((tx) => interpretAssistantCommand(tx, { command: `بعنا 300 طن للعميل ${voiceCustomer.nameAr} من المادة ${voiceItem.code} بسعر 2450 للطن` }, context));
+  assert.equal(proposal.actionType, "SALES_WORKFLOW_DRAFT"); assert.match(proposal.previewJson, /300/); assert.equal(await prisma.businessDocument.count({ where: { partyId: voiceCustomer.id, documentType: "SALES_ORDER" } }), 0);
+  const confirmed = await prisma.$transaction((tx) => saveAssistantProposal(tx, { action: "CONFIRM", id: proposal.id }, context));
+  assert.equal(confirmed.document.documentType, "SALES_ORDER"); assert.equal(confirmed.document.status, "DRAFT");
+  assert.equal(await prisma.stockMovement.count(), stockBefore); assert.equal(await prisma.journalEntry.count(), journalsBefore);
 });
 
 test("MFA يفعّل TOTP ويصدر رموز استرداد أحادية الاستخدام", async () => {

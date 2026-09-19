@@ -37,7 +37,7 @@ test("واجهات الوحدات الأساسية تعمل داخل الغلا�
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   await expect(page.getByRole("navigation", { name: "القائمة الرئيسية" })).toBeVisible();
-  for (const route of ["/sales", "/purchases", "/notes", "/transport", "/accounting", "/reports", "/imports", "/projects", "/items", "/parties", "/settings/design"]) {
+  for (const route of ["/sales", "/purchases", "/notes", "/transport", "/accounting", "/reports", "/imports", "/projects", "/items", "/parties", "/operations", "/notifications", "/settings/design"]) {
     await page.goto(route, { waitUntil: "domcontentloaded" });
     await expect(page.locator("main").first()).toBeVisible();
   }
@@ -74,6 +74,7 @@ test("مركز الترحيل ينفذ ملف CSV من المعاينة حتى �
   await page.getByLabel("ملف المصدر").setInputFiles({ name: filename, mimeType: "text/csv", buffer: Buffer.from(`الاسم العربي,الرقم الموحد,عميل\nعميل متصفح,WEB-${suffix},نعم\n`) });
   await page.getByRole("button", { name: "تحليل الأعمدة" }).click();
   await expect(page.getByRole("heading", { name: /اكتشاف الأوراق/ })).toBeVisible();
+  await expect(page.getByText("مساعد ترحيل NETAJ")).toBeVisible();
   await page.getByRole("button", { name: "إنشاء معاينة التحقق" }).click();
   await expect(page.getByRole("button", { name: "تشغيل Dry Run" })).toBeVisible();
   await page.getByRole("button", { name: "تشغيل Dry Run" }).click();
@@ -87,8 +88,21 @@ test("مركز الترحيل ينفذ ملف CSV من المعاينة حتى �
   await page.reload();
   await page.getByRole("button", { name: new RegExp(batch.batchNumber) }).click();
   await expect(page.getByText("تقرير التسوية بعد الاستيراد")).toBeVisible();
+  await page.getByRole("button", { name: "إنشاء شهادة المطابقة" }).click();
+  await expect(page.getByRole("heading", { name: "شهادة مطابقة الترحيل" })).toBeVisible();
+  const certificate = await page.evaluate(async () => { const response = await fetch("/api/imports/certification"); return (await response.json())[0]; });
+  expect(certificate.status).toBe("MATCHED");
+  for (const format of ["xlsx", "pdf"]) expect(await page.evaluate(async ({ id, format }) => (await fetch(`/api/imports/certification/${id}/export?format=${format}`)).status, { id: certificate.id, format })).toBe(200);
   const rolledBack = await page.evaluate(async (id) => { const response = await fetch(`/api/imports/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "ROLLBACK" }) }); return { status: response.status, body: await response.json() }; }, batch.id);
   expect(rolledBack.status, JSON.stringify(rolledBack.body)).toBe(200);
+});
+
+test("NETAJ ONE يعمل عالميًا بالكتابة ويعرض نتيجة مقيدة بالشركة", async ({ page }) => {
+  await page.getByRole("button", { name: "فتح NETAJ ONE" }).click();
+  await expect(page.getByRole("dialog", { name: "NETAJ ONE" })).toBeVisible();
+  await page.getByPlaceholder(/اسأل: لماذا انخفض الربح/).fill("كم السيولة؟");
+  await page.getByRole("button", { name: "اسأل", exact: true }).click();
+  await expect(page.getByText(/السيولة الحالية/)).toBeVisible();
 });
 
 test("الواجهة الحرجة قابلة للاستخدام على شاشة هاتف", async ({ page }, testInfo) => {
