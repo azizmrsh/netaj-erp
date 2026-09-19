@@ -19,6 +19,7 @@ const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "star
     DATABASE_URL: `file:${databasePath}`,
     ATTACHMENT_STORAGE_DIR: join(temporaryDirectory, "attachments"),
     AUTH_BOOTSTRAP_TOKEN: bootstrapToken,
+    ALLOW_DATABASE_BACKUP_DOWNLOAD: "1",
   },
 });
 
@@ -328,6 +329,8 @@ try {
   const globalSearch = await jsonRequest(`/api/search?q=${encodeURIComponent("اختبار الإنتاج")}`);
   assert.equal(globalSearch.response.status, 200);
   assert.ok(globalSearch.body.results.some((row) => row.type === "PARTY"));
+  const backupGrant = await jsonRequest("/api/super-admin", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "SUPPORT_GRANT", tenantId: 1, reason: "Production backup smoke verification", approvedBy: "NETAj owner", expiresAt: new Date(Date.now() + 3600000).toISOString(), scopes: ["DATABASE_BACKUP"] }) });
+  assert.equal(backupGrant.response.status, 201, JSON.stringify(backupGrant.body));
   const backupDownload = await fetch(`http://127.0.0.1:${port}/api/admin/backup`);
   const backupBytes = new Uint8Array(await backupDownload.arrayBuffer());
   assert.equal(backupDownload.status, 200);
@@ -432,6 +435,9 @@ try {
   const forbiddenSuperAdmin = await jsonRequest("/api/super-admin");
   assert.equal(forbiddenSuperAdmin.response.status, 403);
   assert.equal(forbiddenSuperAdmin.body.code, "PLATFORM_ADMIN_REQUIRED");
+  const forbiddenBackup = await jsonRequest("/api/admin/backup");
+  assert.equal(forbiddenBackup.response.status, 403);
+  assert.equal(forbiddenBackup.body.code, "PLATFORM_ADMIN_REQUIRED");
   const forbiddenFinancialExport = await fetch(`http://127.0.0.1:${port}/api/finance/reports/export?report=trial-balance&format=xlsx`);
   assert.equal(forbiddenFinancialExport.status, 403);
   const limitedDashboard = await jsonRequest("/api/analytics?from=2026-01-01&to=2026-12-31");
