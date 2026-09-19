@@ -10,6 +10,8 @@ const defaults = [
   { key: "SALES_REVENUE", code: "410100", nameAr: "إيرادات المبيعات", type: "REVENUE" },
   { key: "VAT_PAYABLE", code: "210200", nameAr: "ضريبة القيمة المضافة المستحقة", type: "LIABILITY" },
   { key: "INPUT_VAT", code: "110200", nameAr: "ضريبة القيمة المضافة المدخلة", type: "ASSET" },
+  { key: "VAT_SETTLEMENT", code: "210210", nameAr: "تسوية ضريبة القيمة المضافة", type: "LIABILITY" },
+  { key: "VAT_RECEIVABLE", code: "110210", nameAr: "ضريبة قيمة مضافة مستردة", type: "ASSET" },
   { key: "INVENTORY_PURCHASES", code: "120100", nameAr: "المخزون والمشتريات", type: "ASSET" },
   { key: "INVENTORY_ASSET", code: "120100", nameAr: "المخزون والمشتريات", type: "ASSET" },
   { key: "COST_OF_GOODS_SOLD", code: "510100", nameAr: "تكلفة البضاعة المباعة", type: "EXPENSE" },

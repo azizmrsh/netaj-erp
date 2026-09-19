@@ -1344,6 +1344,8 @@ model JournalEntry {
   employeeAdvance     EmployeeAdvance?
   payrollRun          PayrollRun?
   payrollPayment      PayrollPayment?
+  vatReturnFiling     VatReturn?           @relation("VatReturnFilingJournal")
+  vatReturnSettlement VatReturn?           @relation("VatReturnSettlementJournal")
 
   @@unique([referenceType, referenceId])
   @@index([entryDate])
@@ -1724,15 +1726,17 @@ model BankAccount {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  ledgerAccount     Account            @relation(fields: [ledgerAccountId], references: [id])
+  ledgerAccount     Account              @relation(fields: [ledgerAccountId], references: [id])
   transactions      BankTransaction[]
   vouchers          FinancialVoucher[]
   expenses          Expense[]
   revenues          Revenue[]
-  outgoingTransfers BankTransfer[]     @relation("OutgoingBankTransfers")
-  incomingTransfers BankTransfer[]     @relation("IncomingBankTransfers")
+  outgoingTransfers BankTransfer[]       @relation("OutgoingBankTransfers")
+  incomingTransfers BankTransfer[]       @relation("IncomingBankTransfers")
   employeeAdvances  EmployeeAdvance[]
   payrollPayments   PayrollPayment[]
+  reconciliations   BankReconciliation[]
+  vatSettlements    VatReturn[]
 
   @@index([tenantId, companyId])
 }
@@ -1753,11 +1757,60 @@ model BankTransaction {
   description     String?
   createdAt       DateTime @default(now())
 
-  bankAccount BankAccount @relation(fields: [bankAccountId], references: [id])
+  bankAccount        BankAccount             @relation(fields: [bankAccountId], references: [id])
+  reconciliationLine BankReconciliationLine?
 
   @@unique([bankAccountId, referenceType, referenceId])
   @@index([bankAccountId, transactionDate])
   @@index([tenantId, companyId])
+}
+
+model BankReconciliation {
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
+
+  reconciliationNumber       String    @unique
+  bankAccountId              Int
+  periodStart                DateTime
+  periodEnd                  DateTime
+  statementOpeningBalance    Decimal   @default(0)
+  statementClosingBalance    Decimal   @default(0)
+  matchedNet                 Decimal   @default(0)
+  calculatedStatementBalance Decimal   @default(0)
+  bookClosingBalance         Decimal   @default(0)
+  difference                 Decimal   @default(0)
+  status                     String    @default("DRAFT")
+  completedAt                DateTime?
+  completedBy                String?
+  notes                      String?
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+
+  bankAccount BankAccount              @relation(fields: [bankAccountId], references: [id])
+  lines       BankReconciliationLine[]
+
+  @@unique([tenantId, companyId, bankAccountId, periodStart, periodEnd])
+  @@index([tenantId, companyId])
+  @@index([bankAccountId, periodEnd])
+}
+
+model BankReconciliationLine {
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
+
+  reconciliationId   Int
+  bankTransactionId  Int      @unique
+  statementReference String?
+  matchedAmount      Decimal
+  createdAt          DateTime @default(now())
+
+  reconciliation  BankReconciliation @relation(fields: [reconciliationId], references: [id], onDelete: Cascade)
+  bankTransaction BankTransaction    @relation(fields: [bankTransactionId], references: [id])
+
+  @@index([tenantId, companyId])
+  @@index([reconciliationId])
 }
 
 model BankTransfer {
@@ -1837,6 +1890,66 @@ model VoucherAllocation {
   @@index([saleId])
   @@index([purchaseId])
   @@index([tenantId, companyId])
+}
+
+model VatReturn {
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
+
+  returnNumber             String    @unique
+  periodStart              DateTime
+  periodEnd                DateTime
+  documentOutputVat        Decimal   @default(0)
+  documentInputVat         Decimal   @default(0)
+  ledgerOutputVat          Decimal   @default(0)
+  ledgerInputVat           Decimal   @default(0)
+  netVatDue                Decimal   @default(0)
+  variance                 Decimal   @default(0)
+  status                   String    @default("DRAFT")
+  filingJournalEntryId     Int?      @unique
+  settlementJournalEntryId Int?      @unique
+  bankAccountId            Int?
+  filedAt                  DateTime?
+  filedBy                  String?
+  settledAt                DateTime?
+  settledBy                String?
+  notes                    String?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  filingJournal     JournalEntry?   @relation("VatReturnFilingJournal", fields: [filingJournalEntryId], references: [id])
+  settlementJournal JournalEntry?   @relation("VatReturnSettlementJournal", fields: [settlementJournalEntryId], references: [id])
+  bankAccount       BankAccount?    @relation(fields: [bankAccountId], references: [id])
+  lines             VatReturnLine[]
+
+  @@unique([tenantId, companyId, periodStart, periodEnd])
+  @@index([tenantId, companyId])
+  @@index([status, periodEnd])
+}
+
+model VatReturnLine {
+  id        Int @id @default(autoincrement())
+  tenantId  Int @default(1)
+  companyId Int @default(1)
+
+  vatReturnId    Int
+  direction      String
+  sourceType     String
+  sourceId       Int
+  sourceNumber   String
+  sourceDate     DateTime
+  netAmount      Decimal  @default(0)
+  documentVat    Decimal  @default(0)
+  ledgerVat      Decimal  @default(0)
+  variance       Decimal  @default(0)
+  journalEntryId Int?
+
+  vatReturn VatReturn @relation(fields: [vatReturnId], references: [id], onDelete: Cascade)
+
+  @@unique([vatReturnId, sourceType, sourceId])
+  @@index([tenantId, companyId])
+  @@index([sourceType, sourceId])
 }
 
 // ============================================================

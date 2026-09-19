@@ -11,6 +11,7 @@ export const scopedModels = new Set([
   "BusinessDocumentLine", "DocumentSequence", "Attachment", "AuditLog", "Account", "AccountingMapping",
   "AccountingPeriod", "Expense", "Revenue", "CostCenter", "ExpenseCategory", "RevenueCategory",
   "BankAccount", "BankTransaction", "BankTransfer", "FinancialVoucher", "VoucherAllocation",
+  "BankReconciliation", "BankReconciliationLine", "VatReturn", "VatReturnLine",
 ]);
 
 export async function getVerifiedDataScope(): Promise<DataScope> {

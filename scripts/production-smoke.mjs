@@ -83,6 +83,8 @@ const routes = [
   "/api/finance/expenses",
   "/api/finance/revenues",
   "/api/finance/transfers",
+  "/api/finance/reconciliations",
+  "/api/finance/vat-returns",
   "/api/finance/reports?report=trial-balance",
   "/api/factory",
   "/api/factory/transactions",
@@ -426,6 +428,39 @@ try {
   const attachmentResponse = await fetch(`http://127.0.0.1:${port}/api/attachments`, { method: "POST", body: form });
   assert.equal(attachmentResponse.status, 201); const attachment = await attachmentResponse.json();
   const attachmentDownload = await fetch(`http://127.0.0.1:${port}/api/attachments/${attachment.id}`); assert.equal(attachmentDownload.status, 200);
+  const reconciliationBank = await jsonRequest("/api/finance/banks", {
+    method: "POST", headers: movementHeaders, body: JSON.stringify({ name: `بنك المطابقة ${suffix}`, openingBalance: 500 }),
+  });
+  assert.equal(reconciliationBank.response.status, 201);
+  const vatReturn = await jsonRequest("/api/finance/vat-returns", {
+    method: "POST", headers: movementHeaders, body: JSON.stringify({ periodStart: "2026-09-19", periodEnd: "2026-09-19", notes: "Production smoke" }),
+  });
+  assert.equal(vatReturn.response.status, 201, `VAT return failed: ${JSON.stringify(vatReturn.body)}`);
+  assert.equal(Number(vatReturn.body.variance), 0);
+  const filedVat = await jsonRequest(`/api/finance/vat-returns/${vatReturn.body.id}`, {
+    method: "PATCH", headers: movementHeaders, body: JSON.stringify({ action: "FILE" }),
+  });
+  assert.equal(filedVat.response.status, 200, `VAT filing failed: ${JSON.stringify(filedVat.body)}`);
+  assert.equal(filedVat.body.status, "FILED");
+  const settledVat = await jsonRequest(`/api/finance/vat-returns/${vatReturn.body.id}`, {
+    method: "PATCH", headers: movementHeaders, body: JSON.stringify({ action: "SETTLE", bankAccountId: reconciliationBank.body.id, settlementDate: "2026-09-19" }),
+  });
+  assert.equal(settledVat.response.status, 200, `VAT settlement failed: ${JSON.stringify(settledVat.body)}`);
+  assert.equal(settledVat.body.status, "SETTLED");
+  const reconciliationData = await jsonRequest(`/api/finance/reconciliations?bankAccountId=${reconciliationBank.body.id}`);
+  assert.equal(reconciliationData.response.status, 200);
+  const matchedNet = reconciliationData.body.candidates.reduce((sum, row) => sum + Number(row.amountIn) - Number(row.amountOut), 0);
+  const reconciliation = await jsonRequest("/api/finance/reconciliations", {
+    method: "POST", headers: movementHeaders, body: JSON.stringify({ bankAccountId: reconciliationBank.body.id, periodStart: "2026-01-01", periodEnd: "2026-12-31", statementOpeningBalance: 0, statementClosingBalance: matchedNet, transactionIds: reconciliationData.body.candidates.map((row) => row.id) }),
+  });
+  assert.equal(reconciliation.response.status, 201, `Bank reconciliation failed: ${JSON.stringify(reconciliation.body)}`);
+  assert.equal(Number(reconciliation.body.difference), 0);
+  const completedReconciliation = await jsonRequest(`/api/finance/reconciliations/${reconciliation.body.id}`, {
+    method: "PATCH", headers: movementHeaders, body: JSON.stringify({ action: "COMPLETE" }),
+  });
+  assert.equal(completedReconciliation.response.status, 200);
+  assert.equal(completedReconciliation.body.status, "COMPLETED");
+  console.log("PASS production VAT reconciliation, filing, settlement, and bank reconciliation");
   console.log("PASS production sales and purchase workflows, accounting idempotency, and attachment upload");
   console.log("PASS production note to stock to transport flow on isolated database");
   console.log("PASS production inventory write/read flow on isolated database");
