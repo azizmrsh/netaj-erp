@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { authorizeRequest, authErrorResponse } from "@/lib/api-auth";
+import { AuthError } from "@/lib/auth";
 import {
   applyStockMovement,
   InventoryError,
@@ -37,6 +39,11 @@ function errorResponse(error: unknown) {
     return NextResponse.json({ error: error.message }, { status });
   }
 
+  if (error instanceof AuthError) {
+    const response = authErrorResponse(error);
+    return NextResponse.json({ error: response.message, code: response.code }, { status: response.status });
+  }
+
   return NextResponse.json(
     { error: "تعذر تسجيل حركة المخزون" },
     { status: 500 }
@@ -45,6 +52,7 @@ function errorResponse(error: unknown) {
 
 export async function POST(request: Request) {
   try {
+    const auth = await authorizeRequest(request, { moduleKey: "INVENTORY", action: "CREATE" });
     const body = (await request.json()) as RequestBody;
     const itemId = Number(body.itemId);
     const partyId = optionalPositiveInteger(body.partyId);
@@ -58,6 +66,12 @@ export async function POST(request: Request) {
     }
 
     const transferDirection = String(body.transferDirection ?? "").toUpperCase();
+    const item = await prisma.item.findFirst({ where: { id: itemId, tenantId: auth.tenantId, companyId: auth.companyId, isActive: true }, select: { id: true } });
+    if (!item) return NextResponse.json({ error: "المادة غير موجودة ضمن الشركة الحالية" }, { status: 404 });
+    if (partyId) {
+      const party = await prisma.party.findFirst({ where: { id: partyId, tenantId: auth.tenantId, companyId: auth.companyId, isActive: true }, select: { id: true } });
+      if (!party) return NextResponse.json({ error: "العميل أو المورد غير موجود ضمن الشركة الحالية" }, { status: 404 });
+    }
     if (
       transferDirection === "COMPANY_TO_PARTY" ||
       transferDirection === "PARTY_TO_COMPANY"

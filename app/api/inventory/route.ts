@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { authorizeRequest, authErrorResponse } from "@/lib/api-auth";
+import { AuthError } from "@/lib/auth";
 
 function idList(value: string | null) {
   if (!value) return [];
@@ -80,6 +82,7 @@ function statementBase(row: IncludedMovement): StatementRow {
 
 export async function GET(request: Request) {
   try {
+    const auth = await authorizeRequest(request, { moduleKey: "INVENTORY", action: "READ" });
     const { searchParams } = new URL(request.url);
     const itemIds = idList(searchParams.get("itemIds"));
     const partyIds = idList(searchParams.get("partyIds"));
@@ -110,7 +113,7 @@ export async function GET(request: Request) {
     const [companyStock, partyStock, movements, openingMovements, items, parties] =
       await Promise.all([
         prisma.companyStock.findMany({
-          where: itemIds.length ? { itemId: { in: itemIds } } : undefined,
+          where: { tenantId: auth.tenantId, companyId: auth.companyId, ...(itemIds.length ? { itemId: { in: itemIds } } : {}) },
           include: {
             item: { include: { unit: true, category: true } },
           },
@@ -118,6 +121,7 @@ export async function GET(request: Request) {
         }),
         prisma.partyStockAccount.findMany({
           where: {
+            tenantId: auth.tenantId, companyId: auth.companyId,
             ...(itemIds.length ? { itemId: { in: itemIds } } : {}),
             ...(partyIds.length ? { partyId: { in: partyIds } } : {}),
           },
@@ -128,13 +132,14 @@ export async function GET(request: Request) {
           orderBy: [{ partyId: "asc" }, { itemId: "asc" }],
         }),
         prisma.stockMovement.findMany({
-          where: periodWhere,
+          where: { ...periodWhere, tenantId: auth.tenantId, companyId: auth.companyId },
           include: movementInclude,
           orderBy: [{ movementDate: "desc" }, { id: "desc" }],
         }),
         from
           ? prisma.stockMovement.findMany({
               where: {
+                tenantId: auth.tenantId, companyId: auth.companyId,
                 ...baseMovementWhere,
                 movementDate: { lt: from },
               },
@@ -143,12 +148,12 @@ export async function GET(request: Request) {
             })
           : Promise.resolve([] as IncludedMovement[]),
         prisma.item.findMany({
-          where: { isActive: true },
+          where: { isActive: true, tenantId: auth.tenantId, companyId: auth.companyId },
           select: { id: true, code: true, nameAr: true },
           orderBy: { nameAr: "asc" },
         }),
         prisma.party.findMany({
-          where: { isActive: true },
+          where: { isActive: true, tenantId: auth.tenantId, companyId: auth.companyId },
           select: {
             id: true,
             nameAr: true,
@@ -225,6 +230,7 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
+    if (error instanceof AuthError) { const response = authErrorResponse(error); return NextResponse.json({ error: response.message, code: response.code }, { status: response.status }); }
     console.error(error);
     return NextResponse.json(
       { error: "تعذر تحميل بيانات المخزون" },

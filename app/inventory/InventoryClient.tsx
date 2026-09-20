@@ -95,6 +95,7 @@ type Operation =
   | "COMPANY_TO_PARTY"
   | "PARTY_TO_COMPANY";
 type InventoryCount = { id:number;countNumber:string;countDate:string;frequency:string;ownershipType:string;partyId?:number|null;status:string;lines:Array<{id:number;systemQuantity:number;countedQuantity:number;variance:number;item:Item}> };
+type Replenishment = { itemId:number; code:string; nameAr:string; unit:string; currentQuantity:number; minimumStock:number; suggestedQuantity:number; status:string };
 
 const emptyFilters: Filters = { from: "", to: "", itemIds: [], partyIds: [] };
 const emptyMovement = {
@@ -115,7 +116,7 @@ export default function InventoryClient() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [tab, setTab] = useState<
-    "company" | "customers" | "statement" | "movements" | "counts"
+    "company" | "customers" | "statement" | "movements" | "counts" | "replenishment"
   >("company");
   const [filters, setFilters] = useState<Filters>(emptyFilters);
   const [search, setSearch] = useState("");
@@ -127,6 +128,7 @@ export default function InventoryClient() {
   const [showValuation, setShowValuation] = useState(false);
   const [countForm, setCountForm] = useState({ ownershipType:"COMPANY",partyId:"",itemId:"",countedQuantity:"",frequency:"DAILY",countDate:new Date().toISOString().slice(0,10),notes:"" });
   const [valuationForm, setValuationForm] = useState({partyId:"",itemId:"",unitValue:"",effectiveAt:new Date().toISOString().slice(0,10),notes:""});
+  const [replenishment, setReplenishment] = useState<Replenishment[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -150,6 +152,7 @@ export default function InventoryClient() {
   }, []);
 
   useEffect(() => { void loadCounts(); }, []);
+  useEffect(() => { if (tab === "replenishment") fetch("/api/inventory/replenishment", { cache:"no-store" }).then((response) => response.json()).then((body) => setReplenishment((body.suggestions ?? []) as Replenishment[])).catch(() => setReplenishment([])); }, [tab]);
 
   async function loadCounts() {
     const response = await fetch("/api/inventory/controls?view=counts", { cache:"no-store" });
@@ -423,6 +426,7 @@ export default function InventoryClient() {
         <Tab active={tab === "statement"} onClick={() => setTab("statement")}>كشف الفترة</Tab>
         <Tab active={tab === "movements"} onClick={() => setTab("movements")}>سجل الحركات</Tab>
         <Tab active={tab === "counts"} onClick={() => setTab("counts")}>الجرد والتسويات</Tab>
+        <Tab active={tab === "replenishment"} onClick={() => setTab("replenishment")}>إعادة التوريد</Tab>
       </div>
 
       <section className="mt-3 overflow-hidden rounded-2xl border bg-white shadow-sm">
@@ -476,6 +480,11 @@ export default function InventoryClient() {
               </tr>
             ))}
             {!movementRows.length && <EmptyRow columns={12} />}
+          </DataTable>
+        ) : tab === "replenishment" ? (
+          <DataTable headers={["المادة","الرصيد الحالي","الحد الأدنى","الكمية المقترحة","الحالة"]}>
+            {replenishment.map((row) => <tr key={row.itemId}><Cell>{row.code} — {row.nameAr}</Cell><Cell>{number(row.currentQuantity)} {row.unit}</Cell><Cell>{number(row.minimumStock)}</Cell><Cell>{number(row.suggestedQuantity)}</Cell><Cell danger={row.status === "OUT_OF_STOCK"}>{row.status === "OUT_OF_STOCK" ? "نفد المخزون" : "يحتاج إعادة توريد"}</Cell></tr>)}
+            {!replenishment.length && <EmptyRow columns={5} />}
           </DataTable>
         ) : (
           <DataTable headers={["رقم الجرد","التاريخ","الدورية","الملكية","المادة","رصيد النظام","الفعلي","الفرق","الحالة",""]}>
