@@ -53,7 +53,7 @@ export default function DashboardClient({ enabledModules, companyName }:{enabled
       <section className="reference-kpi-grid" aria-label={t("المؤشرات التنفيذية","Executive indicators")}>
         <Kpi label={t("إجمالي المبيعات","Total sales")} value={data.kpis.sales} href={`/sales?${rangeQuery}`} icon={ShoppingCart} trend={trend("sales")} color="blue"/>
         <Kpi label={t("إجمالي المشتريات","Total purchases")} value={data.kpis.purchases} href={`/purchases?${rangeQuery}`} icon={ShoppingBag} trend={trend("purchases")} inverse color="purple"/>
-        <Kpi label={t("المصاريف","Expenses")} value={Number(data.kpis.sales??0)-Number(data.kpis.netProfit??0)} href={`/accounting?tab=expenses&${rangeQuery}`} icon={ReceiptText} color="amber"/>
+        <Kpi label={t("المصاريف","Expenses")} value={data.kpis.expenses} href={`/accounting?tab=expenses&${rangeQuery}`} icon={ReceiptText} color="amber"/>
         <Kpi label={t("صافي الربح","Net profit")} value={data.kpis.netProfit} href={`/accounting?tab=reports&${rangeQuery}`} icon={CircleDollarSign} trend={trend("netProfit")} color="gold"/>
         <Kpi label={t("السيولة","Liquidity")} value={data.kpis.liquidity} href={`/accounting?tab=banks&${rangeQuery}`} icon={Landmark} color="cyan"/>
         <Kpi label={t("سيولة البنك","Bank liquidity")} value={data.kpis.liquidity} href={`/accounting?tab=banks&${rangeQuery}`} icon={Landmark} color="blue"/>
