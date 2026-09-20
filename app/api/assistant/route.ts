@@ -3,7 +3,7 @@ import { authorizeRequest, authErrorResponse } from "@/lib/api-auth";
 import { AuthError } from "@/lib/auth";
 import { askAssistant, AssistantError, interpretAssistantCommand, saveAssistantProposal } from "@/lib/assistant";
 import { prisma } from "@/lib/prisma";
-import { planAssistantQuestion } from "@/lib/assistant-planner";
+import { assistantProviderStatus, planAssistantQuestion } from "@/lib/assistant-planner";
 
 export async function GET(request: Request) {
   try {
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
       : action === "INTERPRET"
         ? await prisma.$transaction((tx) => interpretAssistantCommand(tx, body, context))
         : await prisma.$transaction((tx) => saveAssistantProposal(tx, body, context));
-    return NextResponse.json(result, { status: ["PROPOSE", "INTERPRET"].includes(action) ? 201 : 200 });
+    return NextResponse.json({ ...result, providerStatus: action === "ASK" ? assistantProviderStatus() : undefined }, { status: ["PROPOSE", "INTERPRET"].includes(action) ? 201 : 200 });
   } catch (error) {
     if (error instanceof AuthError) { const response = authErrorResponse(error); return NextResponse.json({ error: response.message, code: response.code }, { status: response.status }); }
     if (error instanceof AssistantError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });

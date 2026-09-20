@@ -2,6 +2,15 @@ import { toolsForPrompt } from "@/lib/assistant-tools";
 
 export type PlannerHint = { intent?: string; entity?: string; dateFrom?: string; dateTo?: string };
 
+export type AssistantProviderStatus = "READY" | "DISABLED" | "ERROR";
+
+/** Configuration is intentionally explicit so the UI never presents the
+ * deterministic fallback as if a language model had answered. */
+export function assistantProviderStatus(): AssistantProviderStatus {
+  if (!process.env.ASSISTANT_LLM_URL || !process.env.ASSISTANT_LLM_API_KEY) return "DISABLED";
+  return "READY";
+}
+
 /** Optional OpenAI-compatible planner. It is deliberately read-only: the model
  * may suggest a read intent, but it cannot invoke a database or write tool. */
 export async function planAssistantQuestion(question: string, previousIntent?: string): Promise<PlannerHint | null> {
