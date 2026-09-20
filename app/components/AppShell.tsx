@@ -129,7 +129,7 @@ Object.assign(english,{"العملاء والموردين":"Customers & Supplier
 
 export default function AppShell({children}:{children:React.ReactNode}){
   const pathname=usePathname(),router=useRouter(),[session,setSession]=useState<Session|null>(null),[theme,setTheme]=useState<Theme|null>(null),[collapsed,setCollapsed]=useState(()=>typeof window!=="undefined"&&window.localStorage.getItem("netaj-sidebar-collapsed")==="1"),[mobileOpen,setMobileOpen]=useState(false),[accountOpen,setAccountOpen]=useState(false),[query,setQuery]=useState(""),[direction,setDirection]=useState<"rtl"|"ltr">(()=>typeof window!=="undefined"&&window.localStorage.getItem("netaj-language")==="en"?"ltr":"rtl"),searchRef=useRef<HTMLInputElement>(null);
-  const [openNav,setOpenNav]=useState<Record<string,boolean>>({});
+  const [openNav,setOpenNav]=useState<Record<string,boolean>>({"الرئيسية":true});
   const isPublic=publicPage(pathname);
   useEffect(()=>{if(isPublic)return;const controller=new AbortController();Promise.all([fetch("/api/auth/session",{cache:"no-store",signal:controller.signal}).then(r=>r.ok?r.json():null),fetch("/api/design/runtime",{cache:"no-store",signal:controller.signal}).then(r=>r.ok?r.json():null)]).then(([auth,runtime])=>{if(auth)setSession(auth);if(runtime?.theme)setTheme(runtime.theme)}).catch(()=>undefined);return()=>controller.abort()},[isPublic]);
   useEffect(()=>{if(isPublic)return;const handle=(event:KeyboardEvent)=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="k"){event.preventDefault();searchRef.current?.focus()}};window.addEventListener("keydown",handle);return()=>window.removeEventListener("keydown",handle)},[isPublic]);
