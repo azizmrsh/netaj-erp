@@ -2,7 +2,7 @@
 
 import { Bot, Check, Mic, Pencil, Send, Sparkles, Square, Volume2, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type VoiceState = "IDLE" | "LISTENING" | "TRANSCRIBING" | "UNDERSTANDING" | "PREPARING" | "READY" | "EXECUTING" | "COMPLETED" | "ERROR";
 type Proposal = { id: number; actionType: string; previewJson: string; payloadJson: string; conversationId: number };
@@ -18,9 +18,11 @@ const startersEn = ["Summarize this month's performance", "Who is overdue by mor
 export default function NetajOne() {
   const pathname = usePathname(), [open, setOpen] = useState(false), [mode, setMode] = useState<"ASK" | "ACTION">("ASK"), [value, setValue] = useState(""), [state, setState] = useState<VoiceState>("IDLE"), [error, setError] = useState(""), [answer, setAnswer] = useState<Answer | null>(null), [proposal, setProposal] = useState<Proposal | null>(null), [conversationId, setConversationId] = useState<number>(), recognitionRef = useRef<Recognition | null>(null);
   const isEnglish = typeof window !== "undefined" && window.localStorage.getItem("netaj-language") === "en";
+  const isDashboard = pathname === "/";
   const stateLabel = isEnglish ? stateLabelEn : stateLabelAr;
   const starters = isEnglish ? startersEn : startersAr;
   const copy = isEnglish ? {subtitle:"SAY IT ONCE → REVIEW → APPROVE",ask:"Ask your business",action:"Execute after review",questions:"Suggested questions",actionPlaceholder:"Example: Add a customer…",askPlaceholder:"Ask: Why did profit drop? How much liquidity?",askButton:"Ask",previewButton:"Prepare preview",close:"Close",voice:"Start or stop voice",preview:"Action preview",noData:"No data changed yet.",approve:"Approve & execute",edit:"Edit request",cancel:"Cancel",audit:"Every reading, permission and execution is scoped to your company and user and recorded in the audit trail.",voiceUnavailable:"Voice recognition is not available in this browser. You can always type your request.",voiceError:"Unable to capture voice. Try again or use text.",completed:"The approved action was executed and recorded in the audit trail."} : {subtitle:"SAY IT ONCE → REVIEW → APPROVE",ask:"اسأل أعمالك",action:"نفّذ بعد المراجعة",questions:"أسئلة مقترحة",actionPlaceholder:"مثال: أضف عميل شركة إعمار في الرياض ورقم الهاتف…",askPlaceholder:"اسأل: لماذا انخفض الربح؟ كم السيولة؟ من المتأخر أكثر من 60 يومًا؟",askButton:"اسأل",previewButton:"جهّز المعاينة",close:"إغلاق",voice:"بدء أو إيقاف الصوت",preview:"معاينة الإجراء",noData:"لم يتم تغيير أي بيانات بعد.",approve:"اعتماد وتنفيذ",edit:"تعديل الطلب",cancel:"إلغاء",audit:"كل قراءة وصلاحية وتنفيذ مقيد بالشركة والمستخدم والوحدات، ويُسجل في Audit Trail.",voiceUnavailable:"التعرف الصوتي غير متاح في هذا المتصفح. يمكنك كتابة الطلب دائمًا.",voiceError:"تعذر التقاط الصوت. جرّب مرة أخرى أو استخدم النص.",completed:"تم تنفيذ الإجراء المعتمد وتسجيله في سجل التدقيق."};
+  useEffect(() => { const openAssistant = () => setOpen(true); window.addEventListener("netaj-one-open", openAssistant); return () => window.removeEventListener("netaj-one-open", openAssistant); }, []);
   const preview = useMemo(() => { try { return proposal ? JSON.parse(proposal.previewJson) as Record<string, unknown> : null; } catch { return null; } }, [proposal]);
 
   async function send(event?: FormEvent) {
@@ -57,7 +59,7 @@ export default function NetajOne() {
   function speak() { if (!answer || !("speechSynthesis" in window)) return; window.speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance(answer.answer); utterance.lang = window.localStorage.getItem("netaj-language") === "en" ? "en-US" : "ar-SA"; window.speechSynthesis.speak(utterance); }
 
   return <>
-    <button aria-label={isEnglish ? "Open NETAJ ONE" : "فتح NETAJ ONE"} onClick={() => setOpen(true)} className="netaj-one-trigger"><span><Mic size={22}/></span><b>NETAJ ONE</b><small>{isEnglish ? "SMART ASSISTANT" : "المساعد الذكي"}</small></button>
+    {!isDashboard && <button aria-label={isEnglish ? "Open NETAJ ONE" : "فتح NETAJ ONE"} onClick={() => setOpen(true)} className="netaj-one-trigger"><span><Mic size={22}/></span><b>NETAJ ONE</b><small>{isEnglish ? "SMART ASSISTANT" : "المساعد الذكي"}</small></button>}
     {open && <div className="netaj-one-layer" role="dialog" aria-modal="true" aria-label="NETAJ ONE"><button aria-label="إغلاق NETAJ ONE" className="netaj-one-backdrop" onClick={() => setOpen(false)}/><section className="netaj-one-panel">
       <header><div className="netaj-one-orb"><Sparkles size={22}/></div><div><b>NETAJ ONE</b><p>{copy.subtitle}</p></div><button aria-label={copy.close} onClick={() => setOpen(false)}><X/></button></header>
       <div className="netaj-one-tabs"><button className={mode === "ASK" ? "is-active" : ""} onClick={() => { setMode("ASK"); setProposal(null); }}>{copy.ask}</button><button className={mode === "ACTION" ? "is-active" : ""} onClick={() => { setMode("ACTION"); setAnswer(null); }}>{copy.action}</button></div>

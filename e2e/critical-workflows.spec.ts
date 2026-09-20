@@ -176,6 +176,8 @@ test("القبول البصري التنفيذي ولقطات الشاشات و�
     await expect(page.getByText("المهام والتنبيهات")).toBeVisible();
     await expect(page.getByText("أحدث المعاملات", { exact:true })).toBeVisible();
     await expect(page.getByRole("button", { name:"فتح NETAJ ONE" })).toBeVisible();
+    await expect(page.locator(".reference-ai-card")).toHaveCount(1);
+    await expect(page.locator(".netaj-one-trigger:visible")).toHaveCount(0);
     for (const label of ["صافي الربح","إجمالي المبيعات","إجمالي المشتريات","قيمة المخزون","العملاء النشطون"]) await expect(page.getByText(label,{exact:true}).first()).toBeVisible();
     const metrics = await page.evaluate(() => ({
       hero: document.querySelector(".reference-hero")?.getBoundingClientRect().height ?? 999,
@@ -290,6 +292,15 @@ test("NETAJ ONE يعمل عالميًا بالكتابة ويعرض نتيجة �
   await expect(page.getByText("لم يتم تغيير أي بيانات بعد.")).toBeVisible();
   await expect(page.getByRole("button", { name: "اعتماد وتنفيذ" })).toBeVisible();
   await page.getByRole("button", { name: "إلغاء" }).click();
+  await page.goto("/sales");
+  await expect(page.locator(".netaj-one-trigger:visible")).toHaveCount(1);
+  const launcher = await page.locator(".netaj-one-trigger").evaluate(element => { const rect = element.getBoundingClientRect(); return { width:rect.width, height:rect.height, bottom:innerHeight-rect.bottom, right:innerWidth-rect.right }; });
+  expect(launcher.width).toBeLessThanOrEqual(56);
+  expect(launcher.height).toBeLessThanOrEqual(56);
+  expect(launcher.bottom).toBeGreaterThanOrEqual(10);
+  expect(launcher.right).toBeGreaterThanOrEqual(10);
+  await page.locator(".netaj-one-trigger").click();
+  await expect(page.getByRole("dialog", { name: "NETAJ ONE" })).toBeVisible();
 });
 
 test("نموذج سند الاستلام يطابق الهوية المرجعية ويعرض الشعار الفعلي", async ({ page }, testInfo) => {

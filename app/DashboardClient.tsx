@@ -43,7 +43,7 @@ export default function DashboardClient({ enabledModules, companyName }:{enabled
       <div className="reference-hero-shade"/>
       <div className="reference-hero-content">
         <div><span className="reference-kicker">NETAJ · ONE BUSINESS PLATFORM</span><h1>{t("معًا نبني مستقبلًا أكبر","BUILDING A BETTER TOMORROW")}</h1><p>{companyName} · {t("المال والتجارة والمصنع والنقل في صورة أعمال واحدة","Finance, trade, factory and transport in one business view")}</p></div>
-        <button className="reference-ai-card" onClick={()=>document.querySelector<HTMLButtonElement>(".netaj-one-trigger")?.click()}><span><Mic2 size={30}/></span><i/><div><b>NETAJ ONE</b><small>{t("مرحبًا، كيف أساعدك اليوم؟","Hello, how can I help today?")}</small></div></button>
+        <button className="reference-ai-card" aria-label={t("فتح NETAJ ONE","Open NETAJ ONE")} onClick={()=>window.dispatchEvent(new CustomEvent("netaj-one-open"))}><span><Mic2 size={30}/></span><div><b>NETAJ ONE</b><small>{t("المساعد الذكي","Smart assistant")}</small><em>{t("جاهز","Ready")}</em></div></button>
       </div>
     </section>
 
