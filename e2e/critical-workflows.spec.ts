@@ -46,6 +46,26 @@ test("فلاتر المخزون وتصديره والإجراءات المحاس
   await expect(page.getByRole("button", { name: "سندات القبض والصرف" })).toHaveClass(/is-active/);
 });
 
+test("فواتير البيع والشراء منفصلة وتصديرها وكشوف العميل تعمل من المتصفح",async({page},testInfo)=>{
+  test.skip(testInfo.project.name.includes("mobile"),"covered on desktop; mobile shell is exercised separately");
+  const errors:string[]=[];page.on("pageerror",error=>errors.push(error.message));
+  await page.goto("/sales");
+  for(const label of ["فواتير المبيعات","عروض الأسعار","الفواتير الأولية","أوامر البيع"])await expect(page.getByRole("button",{name:label,exact:true})).toBeVisible();
+  await expect(page.getByRole("button",{name:"+ فاتورة مبيعات جديدة",exact:true})).toBeVisible();
+  const salesExport=await page.evaluate(async()=>{const response=await fetch("/api/commerce/export?direction=SALES&format=xlsx"),bytes=new Uint8Array(await response.arrayBuffer());return{status:response.status,signature:String.fromCharCode(...bytes.slice(0,2))}});expect(salesExport).toEqual({status:200,signature:"PK"});
+  await page.goto("/purchases");
+  for(const label of ["فواتير الموردين","طلبات الشراء","أوامر الشراء"])await expect(page.getByRole("button",{name:label,exact:true})).toBeVisible();
+  const purchasePdf=await page.evaluate(async()=>{const response=await fetch("/api/commerce/export?direction=PURCHASE&format=pdf"),bytes=new Uint8Array(await response.arrayBuffer());return{status:response.status,signature:String.fromCharCode(...bytes.slice(0,4))}});expect(purchasePdf).toEqual({status:200,signature:"%PDF"});
+  const party=await page.evaluate(async()=>{const response=await fetch("/api/parties?page=1&pageSize=1");return(await response.json()).parties[0]});expect(party).toBeTruthy();
+  await page.goto(`/parties/${party.id}`);await page.getByRole("button",{name:"الحساب",exact:true}).click();await expect(page.getByText("رصيد أول المدة",{exact:true})).toBeVisible();await expect(page.getByRole("link",{name:/Excel/})).toBeVisible();
+  mkdirSync(resolve("artifacts/operational-correction"),{recursive:true});await page.screenshot({path:resolve("artifacts/operational-correction/customer-financial-statement.png"),fullPage:true});
+  const statement=await page.evaluate(async id=>{const response=await fetch(`/api/parties/${id}/statement?kind=financial`);return{status:response.status,body:await response.json()}},party.id);expect(statement.status).toBe(200);expect(Array.isArray(statement.body.rows)).toBeTruthy();expect(errors).toEqual([]);
+});
+
+test("تشغيل الأسطول يعرض 12 إطارًا وبطاريتين بوضوح",async({page},testInfo)=>{
+  test.skip(testInfo.project.name.includes("mobile"),"dense fleet map is covered on desktop");await page.goto("/transport");await page.getByRole("button",{name:"تشغيل الأسطول",exact:true}).click();await page.getByRole("button",{name:"الإطارات",exact:true}).click();await expect(page.getByText("رأس الشاحنة — 6 إطارات")).toBeVisible();await expect(page.getByText("الصهريج / المقطورة — 6 إطارات")).toBeVisible();expect(await page.locator('button[aria-label*="إطارات"]').count()).toBe(12);mkdirSync(resolve("artifacts/operational-correction"),{recursive:true});await page.screenshot({path:resolve("artifacts/operational-correction/fleet-12-tires.png"),fullPage:true});await page.getByRole("button",{name:"البطاريات",exact:true}).click();await expect(page.getByRole("option",{name:"البطارية 1"})).toHaveCount(1);await expect(page.getByRole("option",{name:"البطارية 2"})).toHaveCount(1);
+});
+
 test("المسارات المحمية وIDOR لا يمكن تجاوزهما من سياق بلا جلسة", async ({ browser, baseURL }) => {
   const isolated = await browser.newContext(), response = await isolated.request.get(`${baseURL}/api/parties/1`);
   expect(response.status()).toBe(401);

@@ -1024,6 +1024,7 @@ model VehicleTireRecord {
   position              String
   serialNumber          String?
   brand                 String?
+  model                 String?
   size                  String?
   installedAt           DateTime
   installationOdometer  Decimal?
@@ -1032,6 +1033,8 @@ model VehicleTireRecord {
   replacementReason     String?
   cost                  Decimal  @default(0)
   supplier              String?
+  warrantyStart         DateTime?
+  warrantyExpiry        DateTime?
   status                String   @default("INSTALLED")
   attachmentUrl         String?
   notes                 String?
@@ -1050,12 +1053,14 @@ model VehicleBatteryRecord {
   position             String
   serialNumber         String?
   brand                String?
+  model                String?
   specification        String?
   installedAt          DateTime
   installationOdometer Decimal?
   replacedAt           DateTime?
   replacementOdometer  Decimal?
   warrantyExpiry       DateTime?
+  warrantyStart        DateTime?
   supplier             String?
   cost                 Decimal  @default(0)
   status               String   @default("INSTALLED")

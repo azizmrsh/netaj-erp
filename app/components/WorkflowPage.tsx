@@ -15,11 +15,11 @@ type Attachment = {id:number;originalName:string;size:number;uploadedAt:string};
 const labels:Record<string,string>={QUOTATION:'عرض سعر',PROFORMA_INVOICE:'فاتورة مبدئية',SALES_ORDER:'أمر بيع',PURCHASE_REQUEST:'طلب شراء',PURCHASE_ORDER:'أمر شراء'};
 const emptyLine={itemId:'',lineType:'ITEM',description:'',materialGrade:'',specifications:'',quantity:'',unitPrice:'',discount:'0',vatRate:'15'};
 
-export default function WorkflowPage({direction}:{direction:Direction}){
-  const initialType=direction==='SALES'?'QUOTATION':'PURCHASE_REQUEST';
-  const [data,setData]=useState<Data|null>(null);const [loading,setLoading]=useState(true);const [message,setMessage]=useState('');const [showForm,setShowForm]=useState(false);const [saving,setSaving]=useState(false);const [editingId,setEditingId]=useState<number|null>(null);
+export default function WorkflowPage({direction,initialDocumentType,initialOpen=false}:{direction:Direction;initialDocumentType?:string;initialOpen?:boolean}){
+  const initialType=initialDocumentType??(direction==='SALES'?'QUOTATION':'PURCHASE_REQUEST');
+  const [data,setData]=useState<Data|null>(null);const [loading,setLoading]=useState(true);const [message,setMessage]=useState('');const [showForm,setShowForm]=useState(initialOpen);const [saving,setSaving]=useState(false);const [editingId,setEditingId]=useState<number|null>(null);
   const [attachments,setAttachments]=useState<Record<number,Attachment[]>>({});
-  const [filters,setFilters]=useState({q:'',status:'',documentType:'',partyId:'',itemId:'',from:'',to:'',page:'1'});
+  const [filters,setFilters]=useState({q:'',status:'',documentType:initialDocumentType??'',partyId:'',itemId:'',from:'',to:'',page:'1'});
   const [form,setForm]=useState({documentType:initialType,documentDate:new Date().toISOString().slice(0,10),expiryDate:'',neededDate:'',partyId:'',referenceNumber:'',salesperson:'',requester:'',department:'',costCenter:'',priority:'NORMAL',currency:'SAR',bankDetails:'',paymentTerms:'',deliveryTime:'',deliveryPlace:'',deliveryTerms:'',notes:''});
   const [lines,setLines]=useState([{...emptyLine}]);
   useEffect(()=>{let cancelled=false;const params=new URLSearchParams({direction,...Object.fromEntries(Object.entries(filters).filter(([,v])=>v))});fetch(`/api/workflows?${params}`,{cache:'no-store'}).then(async r=>{const x=await r.json();if(!r.ok)throw new Error(x.error);if(!cancelled)setData(x)}).catch((e:unknown)=>{if(!cancelled)setMessage(e instanceof Error?e.message:'تعذر تحميل المستندات')}).finally(()=>{if(!cancelled)setLoading(false)});return()=>{cancelled=true}},[direction,filters]);

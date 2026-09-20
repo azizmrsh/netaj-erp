@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import PartyStatement from "./PartyStatement";
 
 const tabs = [
   "نظرة عامة",
@@ -339,6 +340,7 @@ export default function PartyTabs({ partyId }: Props) {
                 ),
               ];})}
             />
+            <PartyStatement partyId={partyId} kind="inventory" />
 
             <h3 style={{ marginTop: "32px" }}>حركات المخزون</h3>
             <Table
@@ -445,6 +447,7 @@ export default function PartyTabs({ partyId }: Props) {
           <>
             <h2 style={{ marginTop: 0 }}>الحساب والقيود</h2>
             <Table headers={["رقم القيد", "التاريخ", "البيان", "مدين", "دائن", "الحالة"]} rows={journals.map((row) => [row.entryNumber,formatDate(row.entryDate),row.description??"-",formatMoney(row.totalDebit),formatMoney(row.totalCredit),row.status])}/>
+            <PartyStatement partyId={partyId} kind="financial" />
           </>
         ) : activeTab === "المرفقات" ? (
           <>

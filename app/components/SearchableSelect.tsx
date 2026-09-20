@@ -1,0 +1,13 @@
+"use client";
+
+import { useMemo, useState } from "react";
+
+export type SearchOption = { value: string; label: string; secondary?: string; search?: string };
+
+export default function SearchableSelect({ label, value, onChange, options, required=false, placeholder="ابحث واختر…" }: { label: string; value: string; onChange: (value: string) => void; options: SearchOption[]; required?: boolean; placeholder?: string }) {
+  const [open,setOpen]=useState(false),[query,setQuery]=useState("");
+  const selected=options.find(option=>option.value===value);
+  const normalized=query.trim().toLocaleLowerCase("ar");
+  const visible=useMemo(()=>options.filter(option=>`${option.label} ${option.secondary??""} ${option.search??""}`.toLocaleLowerCase("ar").includes(normalized)).slice(0,50),[normalized,options]);
+  return <label className="relative block text-sm"><span className="mb-1 block text-slate-600">{label}</span><input required={required} tabIndex={-1} className="pointer-events-none absolute h-px w-px opacity-0" value={value} onChange={()=>undefined}/><button type="button" onClick={()=>setOpen(current=>!current)} className="flex min-h-11 w-full items-center justify-between rounded-xl border bg-white px-3 py-2 text-start"><span>{selected?<><strong className="block">{selected.label}</strong>{selected.secondary&&<small className="block text-slate-500">{selected.secondary}</small>}</>:placeholder}</span><span className="flex items-center gap-2">{selected&&<b role="button" aria-label={`مسح ${label}`} onClick={event=>{event.stopPropagation();onChange("");setQuery("")}} className="rounded-full px-2 text-red-700">×</b>}<span>⌄</span></span></button>{open&&<div className="absolute z-50 mt-1 w-full min-w-[300px] rounded-xl border bg-white p-2 shadow-2xl"><input autoFocus value={query} onChange={event=>setQuery(event.target.value)} onKeyDown={event=>{if(event.key==="Escape")setOpen(false);if(event.key==="Enter"&&visible[0]){event.preventDefault();onChange(visible[0].value);setOpen(false);setQuery("")}}} placeholder="الاسم العربي أو الإنجليزي أو الكود…" className="mb-2 w-full rounded-lg border px-3 py-2"/><div className="max-h-64 overflow-y-auto">{visible.map(option=><button type="button" key={option.value} onClick={()=>{onChange(option.value);setOpen(false);setQuery("")}} className="block w-full rounded-lg px-3 py-2 text-start hover:bg-amber-50"><strong className="block">{option.label}</strong>{option.secondary&&<small className="text-slate-500">{option.secondary}</small>}</button>)}{!visible.length&&<p className="p-5 text-center text-slate-500">لا توجد نتائج مطابقة</p>}</div></div>}</label>;
+}
