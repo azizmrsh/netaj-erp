@@ -25,6 +25,27 @@ test("تسجيل الدخول والتنقل التشغيلي يعرضان بي�
   expect(errors).toEqual([]);
 });
 
+test("فلاتر المخزون وتصديره والإجراءات المحاسبية المباشرة ظاهرة ومتصلة", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes("mobile"), "desktop export controls; the mobile inventory shell is covered separately");
+  await page.goto("/inventory");
+  await expect(page.getByRole("button", { name: "Excel" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "PDF" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "CSV" })).toBeVisible();
+  await page.getByRole("button", { name: "هذا الشهر" }).click();
+  await expect(page.locator("text=/من 2026-/").first()).toBeVisible();
+  const exportResult = await page.evaluate(async () => {
+    const response = await fetch("/api/inventory/export?view=statement&from=2026-01-01&to=2026-12-31&format=xlsx");
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    return { status: response.status, signature: String.fromCharCode(...bytes.slice(0, 2)) };
+  });
+  expect(exportResult.status).toBe(200);
+  expect(exportResult.signature).toBe("PK");
+  await page.goto("/accounting?tab=vat");
+  await expect(page.getByRole("button", { name: "الإقرارات الضريبية" })).toHaveClass(/is-active/);
+  await page.goto("/accounting?tab=vouchers&type=PAYMENT");
+  await expect(page.getByRole("button", { name: "سندات القبض والصرف" })).toHaveClass(/is-active/);
+});
+
 test("المسارات المحمية وIDOR لا يمكن تجاوزهما من سياق بلا جلسة", async ({ browser, baseURL }) => {
   const isolated = await browser.newContext(), response = await isolated.request.get(`${baseURL}/api/parties/1`);
   expect(response.status()).toBe(401);
