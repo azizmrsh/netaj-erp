@@ -25,5 +25,5 @@ test("ربحية النقليات تجمع كل التكاليف مرة واحد
 });
 
 test("جميع سجلات تشغيل الأسطول وإيصال النقليات خاضعة لنطاق الشركة",()=>{
-  for(const model of ["VehicleOdometerReading","VehicleTireRecord","VehicleBatteryRecord","VehicleFuelTransaction","VehicleMaintenanceRecord","TransportReceipt"])assert.ok(scopedModels.has(model),`${model} must be tenant scoped`);
+  for(const model of ["VehicleOdometerReading","VehicleTireRecord","VehicleTireOdometerReading","VehicleBatteryRecord","VehicleBatteryOdometerReading","VehicleFuelTransaction","VehicleMaintenanceRecord","TransportReceipt"])assert.ok(scopedModels.has(model),`${model} must be tenant scoped`);
 });

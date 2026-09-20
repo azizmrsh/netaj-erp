@@ -1040,6 +1040,7 @@ model VehicleTireRecord {
   notes                 String?
   createdAt             DateTime @default(now())
   truck                  Truck    @relation(fields: [truckId], references: [id])
+  readings               VehicleTireOdometerReading[]
 
   @@index([tenantId, companyId, truckId, status])
   @@index([truckId, vehiclePart, axle, position])
@@ -1069,8 +1070,41 @@ model VehicleBatteryRecord {
   notes                String?
   createdAt             DateTime @default(now())
   truck                  Truck    @relation(fields: [truckId], references: [id])
+  readings               VehicleBatteryOdometerReading[]
 
   @@index([tenantId, companyId, truckId, status])
+}
+
+model VehicleTireOdometerReading {
+  id           Int      @id @default(autoincrement())
+  tenantId     Int      @default(1)
+  companyId    Int      @default(1)
+  tireRecordId Int
+  readingDate  DateTime @default(now())
+  odometer     Decimal
+  recordedBy   String?
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  tireRecord VehicleTireRecord @relation(fields: [tireRecordId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, companyId, tireRecordId, readingDate])
+}
+
+model VehicleBatteryOdometerReading {
+  id              Int      @id @default(autoincrement())
+  tenantId        Int      @default(1)
+  companyId       Int      @default(1)
+  batteryRecordId Int
+  readingDate     DateTime @default(now())
+  odometer        Decimal
+  recordedBy      String?
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  batteryRecord VehicleBatteryRecord @relation(fields: [batteryRecordId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, companyId, batteryRecordId, readingDate])
 }
 
 model VehicleFuelTransaction {

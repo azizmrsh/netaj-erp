@@ -19,7 +19,7 @@ export function runWithDataScope<T>(scope: DataScope, operation: () => T): T {
 export const scopedModels = new Set([
   "Party", "PartyAddress", "ItemCategory", "Unit", "Item", "CompanyStock", "PartyStockAccount",
   "StockMovement", "DeliveryReceiptNote", "DeliveryReceiptNoteItem", "Truck", "TruckDocument", "Driver",
-  "VehicleOdometerReading", "VehicleTireRecord", "VehicleBatteryRecord", "VehicleFuelTransaction",
+  "VehicleOdometerReading", "VehicleTireRecord", "VehicleTireOdometerReading", "VehicleBatteryRecord", "VehicleBatteryOdometerReading", "VehicleFuelTransaction",
   "VehicleMaintenanceRecord", "TransportReceipt",
   "PartyStockValuationRate", "FactoryProductSetting", "ExpenseAllocation", "InventoryCount", "InventoryCountLine",
   "Employee", "ExternalWorker", "AttendanceRecord", "LeaveRequest", "EmployeeAdvance", "PayrollRun",

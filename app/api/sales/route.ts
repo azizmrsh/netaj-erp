@@ -20,11 +20,11 @@ export async function GET(request: Request) {
     const context = await authorizeRequest(request, { moduleKey: "SALES", action: "READ" });
     const params = new URL(request.url).searchParams;
     const from = params.get("from"), to = params.get("to"), partyId = Number(params.get("partyId")), itemId=Number(params.get("itemId")), status = params.get("status"), q = params.get("q")?.trim();
-    const sales = await runWithDataScope({ tenantId: context.tenantId, companyId: context.companyId }, () => prisma.sale.findMany({
+    const sales = await runWithDataScope({ tenantId: context.tenantId, companyId: context.companyId }, async () => { const [rows,rules,requests]=await Promise.all([prisma.sale.findMany({
       where: { ...(partyId > 0 ? { partyId } : {}), ...(itemId>0?{items:{some:{itemId}}}:{}), ...(status ? { status } : {}), ...(from || to ? { invoiceDate: { ...(from ? { gte: new Date(`${from}T00:00:00.000`) } : {}), ...(to ? { lte: new Date(`${to}T23:59:59.999`) } : {}) } } : {}), ...(q ? { OR: [{ invoiceNumber: { contains: q } }, { referenceNumber: { contains: q } }, { party: { nameAr: { contains: q } } }, { party: { nameEn: { contains: q } } }] } : {}) },
       include: { party: true, items: { include: { item: true } } },
       orderBy: { invoiceDate: "desc" },
-    }));
+    }),prisma.approvalRule.findMany({where:{entityType:"SALE",isActive:true},orderBy:{priority:"asc"}}),prisma.unifiedApprovalRequest.findMany({where:{moduleKey:"SALES",entityType:"SALE"}})]);const requestById=new Map(requests.map(row=>[row.entityId,row]));return rows.map(row=>({...row,approvalRequired:evaluateApprovalRules(rules,{totalAmount:row.totalAmount,subtotal:row.subtotal,currency:row.currency}).length>0,approvalStatus:requestById.get(row.id)?.status??null}));});
     return NextResponse.json(sales);
   } catch (error) {
     if (error instanceof AuthError) {
@@ -70,7 +70,7 @@ export async function POST(request: Request) {
         includedTransportRevenue: Number(body.includedTransportRevenue ?? 0),
         dueDate: optionalDate(body.dueDate),
         ...totals,
-        status: requiredApprovals.length ? "PENDING" : optionalText(body.status) ?? "DRAFT",
+        status: "DRAFT",
         notes: optionalText(body.notes),
         items: { create: lines },
       },
