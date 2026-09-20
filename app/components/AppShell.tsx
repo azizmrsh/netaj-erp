@@ -95,11 +95,28 @@ const detailedGroups:NavGroup[] = [
   {label:"التقارير والاستيراد وNETAJ ONE",items:[{label:"التقارير المالية وتقارير الأقسام",href:"/reports",module:"CORE",icon:ChartNoAxesCombined},{label:"التقارير المخصصة ولوحة المؤشرات",href:"/reports/builder",module:"CORE",icon:Files},{label:"استيراد وترحيل ومطابقة البيانات",href:"/imports",module:"IMPORT",icon:UploadCloud},{label:"المساعد الذكي والتحليل والتنبيهات",href:"/assistant",module:"CORE",icon:Sparkles}]},
   {label:"المستخدمون والشركات والإعدادات",items:[{label:"المستخدمون والأدوار والصلاحيات والتدقيق",href:"/settings/users",module:"CORE",icon:ShieldCheck},{label:"الشركات والفروع والسنوات والفترات",href:"/settings/organization",module:"CORE",icon:Building2},{label:"إعدادات النظام والضرائب والترقيم والقوالب",href:"/settings/configuration",module:"CONFIG",icon:Settings},{label:"اللغة والمظهر والتكاملات",href:"/settings/design",module:"DESIGN",icon:Settings}]},
 ];
+const referenceGroups:NavGroup[] = [{label:"مساحة العمل",items:[
+  {label:"الرئيسية",href:"/",module:"CORE",icon:LayoutDashboard},
+  {label:"المبيعات",href:"/sales",module:"SALES",icon:ShoppingCart},
+  {label:"المشتريات",href:"/purchases",module:"PURCHASES",icon:ShoppingBag},
+  {label:"المخزون",href:"/inventory",module:"INVENTORY",icon:Boxes},
+  {label:"العملاء والموردين",href:"/parties",module:"CORE",icon:Users},
+  {label:"الحسابات العامة",href:"/accounting",module:"ACCOUNTING",icon:Landmark},
+  {label:"المصروفات",href:"/accounting?tab=expenses",module:"ACCOUNTING",icon:Files},
+  {label:"الأصول الثابتة",href:"/assets",module:"ASSETS",icon:Wrench},
+  {label:"الرواتب والموارد البشرية",href:"/hr",module:"HR",icon:Users},
+  {label:"المشاريع",href:"/projects",module:"PROJECTS",icon:HardHat},
+  {label:"التقارير",href:"/reports",module:"CORE",icon:ChartNoAxesCombined},
+  {label:"الزكاة والضريبة",href:"/accounting?tab=vatReturns",module:"ACCOUNTING",icon:BadgeCheck},
+  {label:"الفوترة الإلكترونية",href:"/sales?tab=invoice",module:"SALES",icon:Files},
+  {label:"الإعدادات",href:"/settings/configuration",module:"CONFIG",icon:Settings},
+]}];
 const publicRoutes=["/login","/setup","/portal"];
 const publicPage=(path:string)=>publicRoutes.some(route=>path===route||path.startsWith(`${route}/`))||/^\/(?:notes|sales|workflows)\/\d+\/print$/.test(path)||/^\/transport\/(?:trips|receipts)\/\d+\/print$/.test(path)||/^\/accounting\/vouchers\/\d+\/print$/.test(path);
 const english:Record<string,string>={
 "مساحة العمل":"Workspace","الأعمال":"Business","الإدارة":"Administration","الرئيسية":"Home","المحاسبة والمالية":"Finance & Accounting","المبيعات":"Sales","المشتريات":"Purchases","المخزون":"Inventory","المصنع":"Factory","سندات الاستلام والتسليم":"Receipt & Delivery Vouchers","النقل والأسطول":"Transport & Fleet","الموارد البشرية":"Human Resources","المقاولات والمشاريع":"Projects & Contracting","الأعمال الخارجية":"External Business","إدارة العملاء CRM":"Customer CRM","الأصول والصيانة":"Assets & Maintenance","التقارير والتحليلات":"Reports & Analytics","التسوية البنكية":"Bank Reconciliation","التقارير المالية":"Financial Reports","تقارير الذكاء الاصطناعي":"AI Reports","التقارير الذكية":"Smart Reports","التقارير الإحصائية":"Statistical Reports","ربط منصة زد":"Zid Integration","مندوبي المبيعات":"Sales Representatives","مركز الاستيراد":"Migration Center","الموافقات":"Approvals","المرفقات والمستندات":"Documents","التنبيهات الرقابية":"Control Alerts","التوأم التشغيلي":"Operations Twin","مركز الإشعارات":"Notifications","إعدادات المؤسسة":"Organization","التخصيص بدون كود":"No-code Configuration","التصميم والهوية":"Design & Identity","المستخدمون والصلاحيات":"Users & Permissions","المهام الخلفية":"Background Jobs","الإعدادات والأمان":"Settings & Security","المساعدة والدعم":"Help & Support"
 };
+Object.assign(english,{"العملاء والموردين":"Customers & Suppliers","الحسابات العامة":"General Ledger","المصروفات":"Expenses","الأصول الثابتة":"Fixed Assets","الرواتب والموارد البشرية":"Payroll & HR","المشاريع":"Projects","الزكاة والضريبة":"Zakat & VAT","الفوترة الإلكترونية":"E-Invoicing","الإعدادات":"Settings"});
 
 export default function AppShell({children}:{children:React.ReactNode}){
   const pathname=usePathname(),router=useRouter(),[session,setSession]=useState<Session|null>(null),[theme,setTheme]=useState<Theme|null>(null),[collapsed,setCollapsed]=useState(()=>typeof window!=="undefined"&&window.localStorage.getItem("netaj-sidebar-collapsed")==="1"),[mobileOpen,setMobileOpen]=useState(false),[accountOpen,setAccountOpen]=useState(false),[query,setQuery]=useState(""),[direction,setDirection]=useState<"rtl"|"ltr">(()=>typeof window!=="undefined"&&window.localStorage.getItem("netaj-language")==="en"?"ltr":"rtl"),searchRef=useRef<HTMLInputElement>(null);
@@ -107,7 +124,7 @@ export default function AppShell({children}:{children:React.ReactNode}){
   useEffect(()=>{if(isPublic)return;const controller=new AbortController();Promise.all([fetch("/api/auth/session",{cache:"no-store",signal:controller.signal}).then(r=>r.ok?r.json():null),fetch("/api/design/runtime",{cache:"no-store",signal:controller.signal}).then(r=>r.ok?r.json():null)]).then(([auth,runtime])=>{if(auth)setSession(auth);if(runtime?.theme)setTheme(runtime.theme)}).catch(()=>undefined);return()=>controller.abort()},[isPublic]);
   useEffect(()=>{if(isPublic)return;const handle=(event:KeyboardEvent)=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="k"){event.preventDefault();searchRef.current?.focus()}};window.addEventListener("keydown",handle);return()=>window.removeEventListener("keydown",handle)},[isPublic]);
   useEffect(()=>{if(isPublic)return;document.documentElement.dir=direction;document.documentElement.lang=direction==="rtl"?"ar":"en"},[direction,isPublic]);
-  const visibleGroups=useMemo(()=>{const enabled=new Set(session?.modules??[]),order=new Map((theme?.menuOrder??[]).map((href,index)=>[href,index])),source=detailedGroups.length?detailedGroups:groups;return source.map(group=>({...group,items:group.items.filter(item=>enabled.has(item.module)).sort((a,b)=>(order.get(a.href)??999)-(order.get(b.href)??999))})).filter(group=>group.items.length)},[session,theme]);
+  const visibleGroups=useMemo(()=>{const enabled=new Set(session?.modules??[]),order=new Map((theme?.menuOrder??[]).map((href,index)=>[href,index])),source=referenceGroups;return source.map(group=>({...group,items:group.items.filter(item=>enabled.has(item.module)).sort((a,b)=>(order.get(a.href)??999)-(order.get(b.href)??999))})).filter(group=>group.items.length)},[session,theme]);
   if(isPublic)return children;
   function toggleSidebar(){setCollapsed(value=>{window.localStorage.setItem("netaj-sidebar-collapsed",value?"0":"1");return!value})}
   function search(event:FormEvent){event.preventDefault();if(query.trim().length>1)router.push(`/search?q=${encodeURIComponent(query.trim())}`)}
