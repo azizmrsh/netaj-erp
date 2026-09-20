@@ -211,6 +211,14 @@ try {
     assert.equal(format === "xlsx" ? String.fromCharCode(...bytes.slice(0, 2)) : String.fromCharCode(...bytes.slice(0, 4)), format === "xlsx" ? "PK" : "%PDF");
     console.log(`PASS production financial ${format.toUpperCase()} export (${bytes.length} bytes)`);
   }
+  for (const format of ["xlsx", "pdf", "csv"]) {
+    const response = await fetch(`http://127.0.0.1:${port}/api/inventory/export?view=statement&from=2026-01-01&to=2026-12-31&format=${format}`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    assert.equal(response.status, 200, `inventory ${format} export returned ${response.status}`);
+    const signature = String.fromCharCode(...bytes.slice(0, format === "xlsx" ? 2 : format === "pdf" ? 4 : 3));
+    assert.equal(signature, format === "xlsx" ? "PK" : format === "pdf" ? "%PDF" : "ï»¿");
+    console.log(`PASS production inventory ${format.toUpperCase()} export (${bytes.length} bytes)`);
+  }
   for (const format of ["xlsx", "pdf"]) {
     const response = await fetch(`http://127.0.0.1:${port}/api/reports/legacy/export?report=monthly-comparison&from=2026-01-01&to=2026-09-30&format=${format}`);
     const bytes = new Uint8Array(await response.arrayBuffer());

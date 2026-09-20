@@ -241,7 +241,11 @@ export async function interpretAssistantCommand(tx: Tx, input: Record<string, un
   throw new AssistantError("هذا الأمر غير مدعوم كعملية كتابة. استخدم وضع السؤال للتحليلات أو اطلب إضافة عميل/إعداد بيع.", 400, "COMMAND_NOT_SUPPORTED");
 }
 
-function matchMention<T extends { nameAr: string; unifiedNumber?: string | null }>(command: string, rows: T[]) { return rows.sort((left, right) => Math.max(right.nameAr.length, right.unifiedNumber?.length ?? 0) - Math.max(left.nameAr.length, left.unifiedNumber?.length ?? 0)).find((row) => command.includes(row.nameAr.toLowerCase()) || Boolean(row.unifiedNumber && command.includes(row.unifiedNumber.toLowerCase()))); }
+function normalizedMention(value: string) { return value.toLowerCase().normalize("NFKC").replace(/[إأآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/[\s_\-./]+/g, " ").trim(); }
+function matchMention<T extends { nameAr: string; nameEn?: string | null; unifiedNumber?: string | null }>(command: string, rows: T[]) {
+  const normalized = normalizedMention(command);
+  return rows.sort((left, right) => Math.max(right.nameAr.length, right.nameEn?.length ?? 0, right.unifiedNumber?.length ?? 0) - Math.max(left.nameAr.length, left.nameEn?.length ?? 0, left.unifiedNumber?.length ?? 0)).find((row) => [row.nameAr, row.nameEn, row.unifiedNumber].filter(Boolean).some((candidate) => normalized.includes(normalizedMention(String(candidate)))));
+}
 function commandNumber(value?: string) { return number(value?.replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit))).replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit))).replace(/,/g, "")); }
 function commandQuantity(command: string) { return commandNumber(command.match(/([\d٠-٩۰-۹,.]+)\s*(?:طن|kg|كجم|وحده|وحدة|piece)/i)?.[1]); }
 function commandPrice(command: string) { return commandNumber(command.match(/(?:بسعر|سعر|at)\s*([\d٠-٩۰-۹,.]+)/i)?.[1]); }

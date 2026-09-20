@@ -9,8 +9,9 @@ const date = (value: unknown) => value ? new Date(String(value)).toLocaleDateStr
 const input = "w-full rounded-lg border border-slate-300 bg-white px-3 py-2";
 async function uploadAttachment(entityType:string,entityId:unknown,file:File|null) { if(!file)return; const body=new FormData();body.set("entityType",entityType);body.set("entityId",String(entityId));body.set("file",file);const response=await fetch("/api/attachments",{method:"POST",body});const json=await response.json();if(!response.ok)throw new Error(json.error); }
 
-export default function AccountingClient() {
-  const [data, setData] = useState<Overview | null>(null), [tab, setTab] = useState("overview"), [busy, setBusy] = useState(false), [message, setMessage] = useState("");
+export default function AccountingClient({ initialTab }: { initialTab?: string }) {
+  const normalizedTab = initialTab === "vat" ? "vatReturns" : initialTab === "receipt" || initialTab === "payment" ? "vouchers" : initialTab;
+  const [data, setData] = useState<Overview | null>(null), [tab, setTab] = useState(normalizedTab || "overview"), [busy, setBusy] = useState(false), [message, setMessage] = useState("");
   const [report, setReport] = useState<Row | Row[] | null>(null), [reportName, setReportName] = useState("trial-balance");
   const [reportFrom,setReportFrom]=useState(""),[reportTo,setReportTo]=useState(""),[reportAccountId,setReportAccountId]=useState("");
   const [reportBudgetId,setReportBudgetId]=useState("");

@@ -7,6 +7,7 @@ import { qrDataUrl } from "@/lib/machine-codes";
 import { prisma } from "@/lib/prisma";
 import PrintButton from "./PrintButton";
 import NetajPrintHeader from "@/app/components/NetajPrintHeader";
+import { amountInWords } from "@/lib/amount-in-words";
 
 const number = (value: unknown) => Number(value ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -23,6 +24,7 @@ export default async function VoucherPrintPage({ params }: { params: Promise<{ i
   ]));
   if (!voucher || !company) notFound();
   const receipt = voucher.voucherType === "CUSTOMER_RECEIPT";
+  const amountValue = Number(voucher.amount);
   const address = voucher.party?.address;
   const qr = await qrDataUrl(JSON.stringify({ type: voucher.voucherType, number: voucher.voucherNumber, date: voucher.voucherDate.toISOString(), amount: Number(voucher.amount), currency: voucher.currency, company: company.code }));
   return <main dir="rtl" className="voucher-print mx-auto min-h-[297mm] max-w-[210mm] bg-white p-[12mm] text-slate-950">
@@ -35,7 +37,7 @@ export default async function VoucherPrintPage({ params }: { params: Promise<{ i
     </section>
     <section className="voucher-lines">
       <p><b dir="ltr">{receipt ? "We Received From :" : "Paid To :"}</b><span>{voucher.party?.nameAr ?? "—"}</span><b>{receipt ? "استلمنا من :" : "يصرف لـ :"}</b></p>
-      <p><b dir="ltr">Amount :</b><span>{number(voucher.amount)} {voucher.currency}</span><b>مبلغ وقدره :</b></p>
+      <p><b dir="ltr">Amount :</b><span><strong>{amountInWords(amountValue, "ar")}</strong><small dir="ltr" className="mt-1 block">{amountInWords(amountValue, "en")}</small></span><b>مبلغ وقدره :</b></p>
       <p><b dir="ltr">Payment Method:</b><span>{voucher.paymentMethod} · {voucher.bankAccount.name}</span><b>طريقة الدفع:</b></p>
       <p><b dir="ltr">For:</b><span>{voucher.description ?? voucher.notes ?? voucher.referenceNumber ?? "—"}</span><b>وذلك مقابل:</b></p>
     </section>

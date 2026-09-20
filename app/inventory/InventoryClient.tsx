@@ -283,6 +283,14 @@ export default function InventoryClient() {
   const summary = data?.summary;
   const needsParty =
     movement.operation.startsWith("PARTY_") || movement.operation.includes("_TO_");
+  const exportQuery = useMemo(() => {
+    const params = new URLSearchParams({ view: tab === "counts" ? "movements" : tab });
+    if (filters.from) params.set("from", filters.from);
+    if (filters.to) params.set("to", filters.to);
+    if (filters.itemIds.length) params.set("itemIds", filters.itemIds.join(","));
+    if (filters.partyIds.length) params.set("partyIds", filters.partyIds.join(","));
+    return params;
+  }, [filters, tab]);
 
   return (
     <main className="min-h-screen bg-slate-50 p-5 text-slate-900 md:p-8">
@@ -302,6 +310,10 @@ export default function InventoryClient() {
           </button>
           <button className={primaryButton} onClick={() => setShowCount(true)}>+ محضر جرد</button>
           <button className={secondaryButton} onClick={() => setShowValuation(true)}>قيمة مخزون عميل</button>
+          <button className={secondaryButton} onClick={() => window.print()}>طباعة</button>
+          <button className={secondaryButton} onClick={() => window.open(`/api/inventory/export?${exportQuery}&format=xlsx`, "_blank")}>Excel</button>
+          <button className={secondaryButton} onClick={() => window.open(`/api/inventory/export?${exportQuery}&format=pdf`, "_blank")}>PDF</button>
+          <button className={secondaryButton} onClick={() => window.open(`/api/inventory/export?${exportQuery}&format=csv`, "_blank")}>CSV</button>
         </div>
       </div>
 
@@ -399,7 +411,10 @@ export default function InventoryClient() {
           >
             مسح الفلاتر
           </button>
+          <button className={secondaryButton} onClick={() => { const today = new Date(), from = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10), to = today.toISOString().slice(0, 10), next = { ...filters, from, to }; setFilters(next); void loadInventory(next); }}>هذا الشهر</button>
+          <button className={secondaryButton} onClick={() => { const today = new Date(), from = new Date(today.getFullYear(), 0, 1).toISOString().slice(0, 10), to = today.toISOString().slice(0, 10), next = { ...filters, from, to }; setFilters(next); void loadInventory(next); }}>من بداية السنة</button>
         </div>
+        {(filters.itemIds.length > 0 || filters.partyIds.length > 0 || filters.from || filters.to) && <div className="mt-3 flex flex-wrap gap-2 text-xs">{filters.from && <span className="rounded-full bg-amber-100 px-3 py-1">من {filters.from}</span>}{filters.to && <span className="rounded-full bg-amber-100 px-3 py-1">إلى {filters.to}</span>}{filters.itemIds.map(id => <span key={`i-${id}`} className="rounded-full bg-blue-100 px-3 py-1">{data?.filterOptions.items.find(item => String(item.id) === id)?.nameAr ?? id}</span>)}{filters.partyIds.map(id => <span key={`p-${id}`} className="rounded-full bg-emerald-100 px-3 py-1">{data?.filterOptions.parties.find(party => String(party.id) === id)?.nameAr ?? id}</span>)}</div>}
       </section>
 
       <div className="mt-6 flex flex-wrap gap-2">
