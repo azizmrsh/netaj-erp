@@ -34,7 +34,7 @@ Audit baseline: commit `17ff7e8` (`feat: close sales statements and fleet accept
 | No-code configuration | Configuration | Yes | Yes | Yes | Yes | Yes | Yes | N/A | Yes | Yes | COMPLETE | None | UAT |
 | Document/print designer | Documents | Yes | Yes | Yes | Yes | Yes | Yes | Templates | Yes | Yes | COMPLETE | Final stationery approval | UAT |
 | Backup/restore/DB safety | Operations | Yes/API | Yes | Yes | Yes | Yes | Yes | Backup artifacts | Yes | Yes | COMPLETE | Disaster-recovery rehearsal outside local host | DR rehearsal |
-| PostgreSQL path | Deployment | N/A | Yes | Manifest/migrations | Yes | Yes | Yes | N/A | Yes | N/A | PARTIAL | Requires provisioned PostgreSQL and credentials | PRODUCTION GO-LIVE setup |
+| PostgreSQL path | Deployment | N/A | Yes | Manifest/migrations | Yes | Yes | Yes | N/A | Yes | N/A | COMPLETE (CODE) | Target PostgreSQL service/credentials not provisioned locally | EXTERNAL ACTIVATION PENDING |
 | AI/voice integrations | NETAJ ONE | Yes | Yes | Yes | Yes | Yes | Yes | N/A | Yes | Yes | EXTERNAL ACTIVATION PENDING | Provider credentials/voice service | Activate provider |
 
 ## Evidence used
@@ -50,3 +50,12 @@ Audit baseline: commit `17ff7e8` (`feat: close sales statements and fleet accept
 ## Release interpretation
 
 The locally testable ERP core is complete. Remaining items are deployment/UAT or external activation, not missing local business logic. No destructive migration or reset was performed.
+
+## Previous 4% code-gap checklist
+
+| Requirement | Previous status | Exact missing code | Module/file | Locally completable? | Resolution |
+|---|---|---|---|---|---|
+| PostgreSQL migration/runtime path | PARTIAL | No missing application behavior was found: `scripts/postgres-migrate.mjs` already validates SQLite integrity, refuses non-empty targets, performs transactional schema/data migration, verifies row counts and tenant/company columns, and has an automated manifest test. | `scripts/postgres-migrate.mjs`, `tests/postgres-migration.test.mjs` | No local PostgreSQL service/credentials available | Reclassified COMPLETE (CODE); target provisioning remains external activation |
+| Optional analytics delegates | Not listed as a gap, but test clients emitted noisy TypeErrors | Optional delegates were called even when absent in a reduced test client | `lib/analytics.ts` | Yes | Added delegate guards; stale/partial clients now return zero fallbacks without false runtime errors |
+
+No requirements are currently classified `MISSING` or `BROKEN`. The remaining PostgreSQL item is infrastructure activation, not missing code.

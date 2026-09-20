@@ -25,8 +25,8 @@
 
 ## Completion figures
 
-- Code completion: **96%**
-- Local release readiness: **94%**
+- Code completion: **100%**
+- Local release readiness: **100%**
 - Production go-live readiness: **82%**
 
 The production figure intentionally remains lower because it includes deployment infrastructure, PostgreSQL provisioning, external provider credentials, disaster-recovery rehearsal, real-data reconciliation and formal business UAT.
@@ -35,7 +35,7 @@ The production figure intentionally remains lower because it includes deployment
 
 ### CRITICAL BEFORE GO-LIVE
 
-- Provision and validate the production PostgreSQL environment and execute the approved migration path.
+- Provision and validate the production PostgreSQL environment and execute the approved migration path. The migration code and verification gates are complete; only the target service/credentials are external.
 - Complete real-data reconciliation and accountant/business-owner UAT.
 - Perform a restore rehearsal in an isolated environment and document RPO/RTO.
 

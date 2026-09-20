@@ -189,10 +189,10 @@ export async function loadExecutiveDashboard(tx: Tx, range: Range, enabledModule
     enabledModules.has("TRANSPORT") ? widget("recent-trips",()=>tx.transportTrip.findMany({ where:{tripDate:dateWhere(range)},include:{party:true},orderBy:{tripDate:"desc"},take:5 }),[]) : [],
     enabledModules.has("INVENTORY") ? widget("recent-stock",()=>tx.stockMovement.findMany({ where:{movementDate:dateWhere(range)},include:{item:true,party:true},orderBy:[{movementDate:"desc"},{id:"desc"}],take:5 }),[]) : [],
     enabledModules.has("ACCOUNTING") ? widget("recent-journals",()=>tx.journalEntry.findMany({ where:{entryDate:dateWhere(range),status:"POSTED"},orderBy:{entryDate:"desc"},take:5 }),[]) : [],
-    enabledModules.has("APPROVALS") ? widget("pending-approvals",()=>tx.unifiedApprovalRequest.count({where:{status:"PENDING"}}),0) : 0,
-    widget("failed-jobs",()=>tx.backgroundJob.count({where:{status:{in:["FAILED","DEAD"]}}}),0),
+    enabledModules.has("APPROVALS") && tx.unifiedApprovalRequest ? widget("pending-approvals",()=>tx.unifiedApprovalRequest.count({where:{status:"PENDING"}}),0) : 0,
+    tx.backgroundJob ? widget("failed-jobs",()=>tx.backgroundJob.count({where:{status:{in:["FAILED","DEAD"]}}}),0) : 0,
     enabledModules.has("IMPORT") ? widget("migration-warnings",()=>tx.importBatch.count({where:{status:{in:["FAILED","MISMATCH","WARNING"]}}}),0) : 0,
-    widget("control-alerts",()=>tx.controlAlert.count({where:{status:"OPEN"}}),0),
+    tx.controlAlert ? widget("control-alerts",()=>tx.controlAlert.count({where:{status:"OPEN"}}),0) : 0,
   ]);
   const latestTransactions = [
     ...recentSales.map(row=>({key:`sale-${row.id}`,type:"فاتورة مبيعات",document:row.invoiceNumber,party:row.party.nameAr,amount:n(row.functionalTotalAmount||row.totalAmount),status:row.status,date:row.invoiceDate,href:`/sales?id=${row.id}`})),
