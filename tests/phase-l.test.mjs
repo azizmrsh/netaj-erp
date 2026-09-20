@@ -48,6 +48,15 @@ test("المساعد لا يكشف وحدة بلا صلاحية", async () => {
   await assert.rejects(prisma.$transaction((tx) => askAssistant(tx, { question: "شو وضع المصنع؟" }, { userId: 1, enabledModules: new Set(["CORE"]), permissions: new Set(["CORE.READ"]) })), (error) => error instanceof AssistantError && error.code === "ASSISTANT_PERMISSION_DENIED");
 });
 
+test("NETAJ ONE يفهم الأسئلة الطبيعية والمتابعات دون تحويل القراءة إلى أمر", async () => {
+  const invoiceNumber = `NAT-${suffix}`;
+  await prisma.sale.create({ data: { invoiceNumber, partyId: voiceCustomer.id, status: "POSTED", totalAmount: 1250, functionalTotalAmount: 1250, subtotal: 1250, functionalSubtotal: 1250 } });
+  const first = await prisma.$transaction((tx) => askAssistant(tx, { question: `عطيني آخر فاتورة للعميل ${voiceCustomer.nameAr}` }, context));
+  assert.equal(first.intent, "LAST_SALE"); assert.match(first.answer, new RegExp(invoiceNumber)); assert.equal(first.responseType, "TABLE");
+  const followUp = await prisma.$transaction((tx) => askAssistant(tx, { conversationId: first.conversationId, question: "كم باقي عليها؟" }, context));
+  assert.equal(followUp.intent, "SALE_BALANCE"); assert.match(followUp.answer, /المتبقي/); assert.equal(followUp.export, undefined);
+});
+
 test("إجراء المساعد الحساس يمر عبر Preview ثم Confirm ويمكن إلغاؤه", async () => {
   const conversation = await prisma.assistantConversation.create({ data: { userId: 1, title: "Actions" } });
   const proposal = await prisma.$transaction((tx) => saveAssistantProposal(tx, { action: "PROPOSE", actionType: "CRM_TASK", conversationId: conversation.id, payload: { subject: "متابعة عميل", partyId: supplier.id } }, context));
