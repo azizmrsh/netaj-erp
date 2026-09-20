@@ -49,18 +49,27 @@ async function executiveFinancialView(tx: Tx, range: Range, officialNetProfit: n
     if (["TRADE", "SALES", "PURCHASING", "WAREHOUSE"].includes(key)) return "TRADE";
     if (key === "FACTORY") return "FACTORY";
     if (key === "TRANSPORT") return "TRANSPORT";
-    return "ADMIN";
+    if (["PROJECT", "PROJECTS", "CONTRACTING"].includes(key)) return "PROJECTS";
+    return "OTHER";
   };
-  const divisions = new Map(["TRADE", "FACTORY", "TRANSPORT", "ADMIN"].map((code) => [code, { code, revenue: 0, expenses: 0, netProfit: 0 }]));
+  const divisions = new Map(["TRADE", "FACTORY", "TRANSPORT", "PROJECTS", "OTHER"].map((code) => [code, { code, revenue: 0, directCost: 0, allocatedCost: 0, expenses: 0, netProfit: 0, margin: 0 }]));
   for (const line of lines) {
     const row = divisions.get(canonical(line.costCenter ?? centerById.get(line.costCenterId ?? -1)))!;
     if (line.account?.accountType === "REVENUE") row.revenue += n(line.credit) - n(line.debit);
-    else row.expenses += n(line.debit) - n(line.credit);
+    else {
+      const cost = n(line.debit) - n(line.credit);
+      if (line.costCenterId || line.costCenter) row.directCost += cost;
+      else row.allocatedCost += cost;
+      row.expenses += cost;
+    }
   }
   const transportReallocation = n(includedTransport._sum.includedTransportRevenue);
   divisions.get("TRADE")!.revenue -= transportReallocation;
   divisions.get("TRANSPORT")!.revenue += transportReallocation;
-  for (const row of divisions.values()) row.netProfit = row.revenue - row.expenses;
+  for (const row of divisions.values()) {
+    row.netProfit = row.revenue - row.directCost - row.allocatedCost;
+    row.margin = row.revenue ? row.netProfit / row.revenue * 100 : 0;
+  }
   const outputVat = monthSales.reduce((sum, row) => sum + n(row.functionalVatAmount || row.vatAmount), 0);
   const inputVat = monthPurchases.reduce((sum, row) => sum + n(row.functionalVatAmount || row.vatAmount), 0);
   const dueToDate = outputVat - inputVat, elapsedDays = Math.max(1, now.getDate()), daysInMonth = monthEnd.getDate();
@@ -203,6 +212,16 @@ export async function loadExecutiveDashboard(tx: Tx, range: Range, enabledModule
 
 export async function loadLegacyReport(tx: Tx, report: string, range: Range, params: URLSearchParams) {
   const itemIds = (params.get("itemIds") ?? "").split(",").map(Number).filter((id) => id > 0), partyId = Number(params.get("partyId")), driverId = Number(params.get("driverId"));
+  if (report === "sector-profitability") {
+    const selected = clean(params.get("sector")).toUpperCase();
+    const centers = await tx.costCenter.findMany({ where: { isActive: true } });
+    const centerById = new Map(centers.map((row) => [row.id, row.code]));
+    const sector = (value: string | null | undefined) => { const key = clean(value || "OTHER").toUpperCase(); if (["TRADE","SALES","PURCHASING","WAREHOUSE"].includes(key)) return "TRADE"; if (key === "FACTORY") return "FACTORY"; if (key === "TRANSPORT") return "TRANSPORT"; if (["PROJECT","PROJECTS","CONTRACTING"].includes(key)) return "PROJECTS"; return "OTHER"; };
+    const rows = await tx.journalEntryLine.findMany({ where: { journalEntry: { status: "POSTED", entryDate: dateWhere(range) }, account: { accountType: { in: ["REVENUE","EXPENSE"] } } }, include: { account: true, journalEntry: true }, orderBy: [{ journalEntry: { entryDate: "desc" } }, { id: "desc" }] });
+    const output = rows.map((row) => { const code = sector(row.costCenter ?? centerById.get(row.costCenterId ?? -1)); return { id: row.id, sector: code, date: day(row.journalEntry.entryDate), entryNumber: row.journalEntry.entryNumber, accountCode: row.accountCode, accountName: row.accountName, description: row.description ?? row.journalEntry.description, revenue: row.account?.accountType === "REVENUE" ? n(row.credit) - n(row.debit) : 0, directCost: row.account?.accountType === "EXPENSE" && (row.costCenterId || row.costCenter) ? n(row.debit) - n(row.credit) : 0, allocatedCost: row.account?.accountType === "EXPENSE" && !row.costCenterId && !row.costCenter ? n(row.debit) - n(row.credit) : 0, href: `/accounting?tab=journal&id=${row.journalEntryId}` }; }).filter((row) => !selected || row.sector === selected);
+    const revenue = output.reduce((sum,row)=>sum+row.revenue,0), directCost=output.reduce((sum,row)=>sum+row.directCost,0), allocatedCost=output.reduce((sum,row)=>sum+row.allocatedCost,0), profit=revenue-directCost-allocatedCost;
+    return { summary: { revenue, directCost, allocatedCost, profit, margin: revenue ? profit/revenue*100 : 0 }, rows: output };
+  }
   if (report === "material-profitability") return { rows: await materialProfitability(tx, range, itemIds) };
   if (report === "monthly-comparison") return { rows: await monthlyComparison(tx, range) };
   if (report === "customer-activity") return { rows: await customerActivity(tx, range, Math.min(Math.max(Number(params.get("inactiveDays")) || 60, 1), 3650)) };

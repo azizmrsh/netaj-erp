@@ -25,6 +25,7 @@
 !/storage/attachments/.gitkeep
 /backups/
 /netaj-backups/
+/outputs/
 
 # local agent/editor integrations
 /.agents/

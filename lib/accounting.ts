@@ -87,7 +87,7 @@ export async function ensureFiscalCalendar(tx: TransactionClient, referenceDate 
     const periodEnd = new Date(Date.UTC(startYear, startMonth + index, 1) - 1);
     await tx.fiscalPeriod.upsert({
       where: { fiscalYearId_periodNumber: { fiscalYearId: fiscalYear.id, periodNumber: index + 1 } },
-      create: { fiscalYearId: fiscalYear.id, periodNumber: index + 1, name: periodStart.toLocaleDateString("ar-SA", { month: "long", year: "numeric", timeZone: "UTC" }), startDate: periodStart, endDate: periodEnd },
+      create: { fiscalYearId: fiscalYear.id, periodNumber: index + 1, name: periodStart.toLocaleDateString("ar-SA-u-nu-latn", { month: "long", year: "numeric", timeZone: "UTC" }), startDate: periodStart, endDate: periodEnd },
       update: {},
     });
   }

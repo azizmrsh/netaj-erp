@@ -1,0 +1,9 @@
+import {authorizeRequest} from "@/lib/api-auth";
+import {runWithDataScope} from "@/lib/data-scope";
+import {createPdf,createXlsx} from "@/lib/financial-export";
+import {prisma} from "@/lib/prisma";
+
+export const runtime="nodejs";
+export async function GET(request:Request,{params}:{params:Promise<{id:string}>}){
+  try{const id=Number((await params).id),context=await authorizeRequest(request,{moduleKey:"TRANSPORT",action:"READ"});if(!Number.isInteger(id))return Response.json({error:"الإيصال غير صحيح"},{status:400});const receipt=await runWithDataScope({tenantId:context.tenantId,companyId:context.companyId},()=>prisma.transportReceipt.findUnique({where:{id},include:{trip:{include:{party:true,item:true}},truck:true,driver:true}}));if(!receipt)return Response.json({error:"الإيصال غير موجود"},{status:404});const format=new URL(request.url).searchParams.get("format")==="xlsx"?"xlsx":"pdf",table={title:`Transportation Receipt — ${receipt.receiptNumber}`,subtitle:`${receipt.receiptDate.toISOString().slice(0,10)} · ${receipt.trip.party?.nameAr??""}`,columns:["Trip","Truck","Driver","Source","Destination","Material","Quantity","Rate","VAT","Total"],rows:[[receipt.trip.tripNumber,receipt.truck?.plateNumber??"",receipt.driver?.name??"",receipt.source??"",receipt.destination??"",receipt.material??receipt.trip.item?.nameAr??"",Number(receipt.quantity),Number(receipt.rate),Number(receipt.vatAmount),Number(receipt.totalAmount)]]},body=format==="pdf"?createPdf(table):createXlsx(table);return new Response(new Uint8Array(body),{headers:{"content-type":format==="pdf"?"application/pdf":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","content-disposition":`attachment; filename="${receipt.receiptNumber}.${format}"`,"cache-control":"no-store"}})}catch(error){return Response.json({error:error instanceof Error?error.message:"تعذر تصدير إيصال النقليات"},{status:403})}
+}

@@ -1,7 +1,7 @@
 "use client";
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 type Row = Record<string, unknown>;
-const money = (value: unknown) => Number(value ?? 0).toLocaleString("ar-SA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const money = (value: unknown) => Number(value ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function ProjectsClient() {
   const [data, setData] = useState<Row | null>(null), [selected, setSelected] = useState<number | null>(null), [detail, setDetail] = useState<Row | null>(null), [message, setMessage] = useState("");

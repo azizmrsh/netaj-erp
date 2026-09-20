@@ -127,7 +127,7 @@ export async function createVoucher(tx: Tx, input: Record<string, unknown>) {
     for (const allocation of allocations) {
       if (allocation.saleId) {
         const invoice = salesById.get(allocation.saleId);
-        if (!invoice || invoice.partyId !== partyId || invoice.status !== "COMPLETED") throw new FinanceError("INVALID_INPUT", "فاتورة المبيعات غير صالحة لهذا العميل");
+        if (!invoice || invoice.partyId !== partyId || !["POSTED", "COMPLETED"].includes(invoice.status)) throw new FinanceError("INVALID_INPUT", "فاتورة المبيعات غير صالحة لهذا العميل");
         const paid = invoice.allocations.reduce((sum, row) => sum.plus(row.amount), new Prisma.Decimal(0));
         if (paid.plus(allocation.amount).gt(invoice.totalAmount)) throw new FinanceError("INVALID_INPUT", `التخصيص يتجاوز رصيد الفاتورة ${invoice.invoiceNumber}`);
         if (invoice.currency !== currency) throw new FinanceError("INVALID_INPUT", `عملة السند لا تطابق الفاتورة ${invoice.invoiceNumber}`);
@@ -137,7 +137,7 @@ export async function createVoucher(tx: Tx, input: Record<string, unknown>) {
       }
       if (allocation.purchaseId) {
         const invoice = purchasesById.get(allocation.purchaseId);
-        if (!invoice || invoice.partyId !== partyId || invoice.status !== "COMPLETED") throw new FinanceError("INVALID_INPUT", "فاتورة المورد غير صالحة لهذا المورد");
+        if (!invoice || invoice.partyId !== partyId || !["POSTED", "COMPLETED"].includes(invoice.status)) throw new FinanceError("INVALID_INPUT", "فاتورة المورد غير صالحة لهذا المورد");
         const paid = invoice.allocations.reduce((sum, row) => sum.plus(row.amount), new Prisma.Decimal(0));
         if (paid.plus(allocation.amount).gt(invoice.totalAmount)) throw new FinanceError("INVALID_INPUT", `التخصيص يتجاوز رصيد الفاتورة ${invoice.purchaseNumber}`);
         if (invoice.currency !== currency) throw new FinanceError("INVALID_INPUT", `عملة السند لا تطابق الفاتورة ${invoice.purchaseNumber}`);

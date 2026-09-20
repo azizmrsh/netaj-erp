@@ -518,6 +518,20 @@ model Truck {
   capacity    Decimal?
   status      String   @default("ACTIVE")
 
+  fleetCode       String?  @unique
+  make            String?
+  vin             String?
+  serialNumber    String?
+  color           String?
+  ownershipType   String?
+  branchName      String?
+  assignedDriverId Int?
+  currentOdometer Decimal  @default(0)
+  acquisitionDate DateTime?
+  acquisitionCost Decimal?
+  fuelTankCapacity Decimal?
+  outOfServiceReason String?
+
   fuelType         String?
   fuelConsumption  Decimal? // liters per 100 km
   fuelPrice        Decimal?
@@ -532,6 +546,13 @@ model Truck {
   trips             TransportTrip[]
   deliveryNotes     DeliveryReceiptNote[]
   operatingExpenses Expense[]
+  assignedDriver    Driver?                  @relation("AssignedTruckDriver", fields: [assignedDriverId], references: [id])
+  odometerReadings  VehicleOdometerReading[]
+  tireRecords       VehicleTireRecord[]
+  batteryRecords    VehicleBatteryRecord[]
+  fuelTransactions  VehicleFuelTransaction[]
+  maintenanceRecords VehicleMaintenanceRecord[]
+  transportReceipts TransportReceipt[]
 
   @@index([tenantId, companyId])
 }
@@ -554,7 +575,14 @@ model TruckDocument {
   expiryDate DateTime?
 
   attachmentUrl String?
+  issuer        String?
   notes         String?
+  status        String    @default("ACTIVE")
+  previousDocumentId Int?
+  renewedAt     DateTime?
+  renewedBy     String?
+  archivedAt    DateTime?
+  archivedBy    String?
 
   createdAt DateTime @default(now())
 
@@ -577,10 +605,13 @@ model Driver {
 
   name        String
   idNumber    String? @unique
+  idExpiry    DateTime?
   phone       String?
   nationality String?
 
   licenseNumber String?
+  licenseCategory String?
+  licenseIssueDate DateTime?
   licenseExpiry DateTime?
 
   passportNumber String?
@@ -588,6 +619,10 @@ model Driver {
 
   driverCardNumber String?
   driverCardExpiry DateTime?
+  medicalExpiry DateTime?
+  employmentStatus String @default("ACTIVE")
+  joiningDate DateTime?
+  tripWage Decimal @default(0)
 
   status     String  @default("ACTIVE")
   notes      String?
@@ -600,6 +635,9 @@ model Driver {
   trips         TransportTrip[]
   deliveryNotes DeliveryReceiptNote[]
   employee      Employee?             @relation(fields: [employeeId], references: [id])
+  assignedTrucks Truck[]               @relation("AssignedTruckDriver")
+  fuelTransactions VehicleFuelTransaction[]
+  transportReceipts TransportReceipt[]
 
   @@index([tenantId, companyId])
 }
@@ -939,7 +977,14 @@ model DriverDocument {
   expiryDate DateTime?
 
   attachmentUrl String?
+  issuer        String?
   notes         String?
+  status        String    @default("ACTIVE")
+  previousDocumentId Int?
+  renewedAt     DateTime?
+  renewedBy     String?
+  archivedAt    DateTime?
+  archivedBy    String?
 
   createdAt DateTime @default(now())
 
@@ -948,6 +993,168 @@ model DriverDocument {
   @@index([driverId])
   @@index([expiryDate])
   @@index([tenantId, companyId])
+}
+
+model VehicleOdometerReading {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int      @default(1)
+  companyId      Int      @default(1)
+  truckId        Int
+  readingDate    DateTime @default(now())
+  reading        Decimal
+  sourceType     String   @default("MANUAL")
+  sourceId       Int?
+  sourceNumber   String?
+  recordedBy     String?
+  correctionReason String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  truck          Truck    @relation(fields: [truckId], references: [id])
+
+  @@index([tenantId, companyId, truckId, readingDate])
+}
+
+model VehicleTireRecord {
+  id                   Int      @id @default(autoincrement())
+  tenantId             Int      @default(1)
+  companyId            Int      @default(1)
+  truckId              Int
+  vehiclePart          String   @default("TRACTOR")
+  axle                  Int
+  position              String
+  serialNumber          String?
+  brand                 String?
+  size                  String?
+  installedAt           DateTime
+  installationOdometer  Decimal?
+  removedAt             DateTime?
+  removalOdometer       Decimal?
+  replacementReason     String?
+  cost                  Decimal  @default(0)
+  supplier              String?
+  status                String   @default("INSTALLED")
+  attachmentUrl         String?
+  notes                 String?
+  createdAt             DateTime @default(now())
+  truck                  Truck    @relation(fields: [truckId], references: [id])
+
+  @@index([tenantId, companyId, truckId, status])
+  @@index([truckId, vehiclePart, axle, position])
+}
+
+model VehicleBatteryRecord {
+  id                   Int      @id @default(autoincrement())
+  tenantId             Int      @default(1)
+  companyId            Int      @default(1)
+  truckId              Int
+  position             String
+  serialNumber         String?
+  brand                String?
+  specification        String?
+  installedAt          DateTime
+  installationOdometer Decimal?
+  replacedAt           DateTime?
+  replacementOdometer  Decimal?
+  warrantyExpiry       DateTime?
+  supplier             String?
+  cost                 Decimal  @default(0)
+  status               String   @default("INSTALLED")
+  replacementReason    String?
+  attachmentUrl        String?
+  notes                String?
+  createdAt             DateTime @default(now())
+  truck                  Truck    @relation(fields: [truckId], references: [id])
+
+  @@index([tenantId, companyId, truckId, status])
+}
+
+model VehicleFuelTransaction {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int      @default(1)
+  companyId      Int      @default(1)
+  truckId        Int
+  driverId       Int?
+  tripId         Int?
+  transactionDate DateTime @default(now())
+  odometer       Decimal?
+  liters         Decimal
+  pricePerLiter  Decimal
+  totalAmount    Decimal
+  expectedLiters Decimal?
+  varianceLiters Decimal?
+  variancePercent Decimal?
+  supplier       String?
+  referenceNumber String?
+  paymentSource  String?
+  attachmentUrl  String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  truck          Truck    @relation(fields: [truckId], references: [id])
+  driver         Driver?  @relation(fields: [driverId], references: [id])
+
+  @@index([tenantId, companyId, truckId, transactionDate])
+  @@index([tripId])
+}
+
+model VehicleMaintenanceRecord {
+  id             Int      @id @default(autoincrement())
+  tenantId       Int      @default(1)
+  companyId      Int      @default(1)
+  truckId        Int
+  maintenanceDate DateTime @default(now())
+  odometer       Decimal?
+  maintenanceType String
+  issue          String?
+  workDone       String?
+  workshop       String?
+  partsAndServices String?
+  cost           Decimal  @default(0)
+  downtimeHours  Decimal  @default(0)
+  nextDate       DateTime?
+  nextOdometer   Decimal?
+  status         String   @default("COMPLETED")
+  approvedAt     DateTime?
+  approvedBy     String?
+  attachmentUrl  String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  truck          Truck    @relation(fields: [truckId], references: [id])
+
+  @@index([tenantId, companyId, truckId, maintenanceDate])
+}
+
+model TransportReceipt {
+  id               Int      @id @default(autoincrement())
+  tenantId         Int      @default(1)
+  companyId        Int      @default(1)
+  receiptNumber    String   @unique
+  tripId           Int      @unique
+  receiptDate      DateTime @default(now())
+  truckId          Int?
+  driverId         Int?
+  source           String?
+  destination      String?
+  material         String?
+  quantity         Decimal  @default(0)
+  rate             Decimal  @default(0)
+  calculationBasis String?
+  amount           Decimal  @default(0)
+  vatRate          Decimal  @default(15)
+  vatAmount        Decimal  @default(0)
+  totalAmount      Decimal  @default(0)
+  referenceNumber  String?
+  notes            String?
+  status           String   @default("DRAFT")
+  approvedAt       DateTime?
+  approvedBy       String?
+  journalEntryId   Int?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  trip             TransportTrip @relation(fields: [tripId], references: [id])
+  truck            Truck?        @relation(fields: [truckId], references: [id])
+  driver           Driver?       @relation(fields: [driverId], references: [id])
+
+  @@index([tenantId, companyId, receiptDate, status])
 }
 
 // ======================================================
@@ -1046,6 +1253,7 @@ model TransportTrip {
   costCode          CostCode?            @relation(fields: [costCodeId], references: [id])
 
   expenses TransportTripExpense[]
+  transportReceipt TransportReceipt?
 
   @@index([tripDate])
   @@index([partyId])

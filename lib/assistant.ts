@@ -14,7 +14,7 @@ export class AssistantError extends Error {
 
 const text = (value: unknown) => String(value ?? "").trim();
 const number = (value: unknown) => Number(value ?? 0);
-const money = (value: unknown) => `${number(value).toLocaleString("ar-SA", { maximumFractionDigits: 2 })} ر.س`;
+const money = (value: unknown) => `${number(value).toLocaleString("en-US", { maximumFractionDigits: 2 })} ر.س`;
 
 function monthRange(offset = 0) {
   const now = new Date();
@@ -69,12 +69,12 @@ async function answerIntent(tx: Tx, intent: string, question: string, context: A
     const data = await dashboard(tx, context, range);
     if (intent === "FACTORY") {
       requireModule(context, "FACTORY");
-      return { answer: data.factory ? `إنتاج المصنع هذا الشهر ${number(data.factory.tons).toLocaleString("ar-SA")} طن، وصافي الربح ${money(data.factory.netProfit)}، وربح الطن ${money(data.factory.profitPerTon)}.` : "لا توجد بيانات مصنع متاحة للفترة.", responseType: "TABLE", data: data.factory ? [data.factory] : [], drillDown: "/reports?report=daily-production" };
+      return { answer: data.factory ? `إنتاج المصنع هذا الشهر ${number(data.factory.tons).toLocaleString("en-US")} طن، وصافي الربح ${money(data.factory.netProfit)}، وربح الطن ${money(data.factory.profitPerTon)}.` : "لا توجد بيانات مصنع متاحة للفترة.", responseType: "TABLE", data: data.factory ? [data.factory] : [], drillDown: "/reports?report=daily-production" };
     }
     if (intent === "TOP_CUSTOMERS") {
       requireModule(context, "INVENTORY");
       const rows = data.customerActivity.slice(0, 10);
-      return { answer: rows[0] ? `أعلى عميل سحبًا هو ${rows[0].partyName} بكمية ${number(rows[0].withdrawals).toLocaleString("ar-SA")}.` : "لا توجد حركات سحب في الفترة.", responseType: "CHART", data: rows, drillDown: "/reports?report=customer-activity" };
+      return { answer: rows[0] ? `أعلى عميل سحبًا هو ${rows[0].partyName} بكمية ${number(rows[0].withdrawals).toLocaleString("en-US")}.` : "لا توجد حركات سحب في الفترة.", responseType: "CHART", data: rows, drillDown: "/reports?report=customer-activity" };
     }
     if (intent === "INACTIVE_CUSTOMERS") {
       requireModule(context, "INVENTORY");

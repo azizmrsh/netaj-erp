@@ -12,6 +12,7 @@
     "test": "node --import tsx --test --test-concurrency=1 tests/*.test.mjs",
     "test:production": "node scripts/production-smoke.mjs",
     "test:e2e": "node scripts/run-browser-e2e.mjs",
+    "test:production-import": "node scripts/verify-netaj-production-import.mjs",
     "backup": "node --import tsx scripts/backup-database.mjs",
     "restore:verify": "node scripts/verify-restore.mjs",
     "worker": "node --import tsx scripts/background-worker.ts",

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
+import { authorizeRequest } from "@/lib/api-auth";
+import { runWithDataScope } from "@/lib/data-scope";
 import { prisma } from "@/lib/prisma";
 
 const tripInclude = {
@@ -13,6 +15,8 @@ const tripInclude = {
 
 export async function GET(request: Request) {
   try {
+    const context = await authorizeRequest(request, { moduleKey: "TRANSPORT", action: "READ" });
+    return await runWithDataScope({ tenantId: context.tenantId, companyId: context.companyId }, async () => {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status")?.toUpperCase();
     const truckId = Number(searchParams.get("truckId"));
@@ -34,7 +38,7 @@ export async function GET(request: Request) {
     };
     const alertLimit = new Date();
     alertLimit.setDate(alertLimit.getDate() + 60);
-    const [trips, trucks, drivers, truckDocuments, driverDocuments] =
+    const [trips, trucks, drivers, truckDocuments, driverDocuments, parties, items] =
       await Promise.all([
         prisma.transportTrip.findMany({
           where,
@@ -58,6 +62,16 @@ export async function GET(request: Request) {
           where: { expiryDate: { lte: alertLimit } },
           include: { driver: { select: { id: true, name: true } } },
           orderBy: { expiryDate: "asc" },
+        }),
+        prisma.party.findMany({
+          where: { isCustomer: true, isActive: true },
+          select: { id: true, unifiedNumber: true, nameAr: true, nameEn: true, telephone: true },
+          orderBy: { nameAr: "asc" },
+        }),
+        prisma.item.findMany({
+          where: { isActive: true },
+          select: { id: true, code: true, nameAr: true, nameEn: true },
+          orderBy: { nameAr: "asc" },
         }),
       ]);
 
@@ -89,10 +103,22 @@ export async function GET(request: Request) {
           driver: { id: driver.id, name: driver.name },
         }))
     );
+    const allDocuments = [
+      ...trucks.flatMap((truck) => truck.documents.map((document) => ({ ...document, ownerType: "TRUCK", ownerId: truck.id, ownerName: truck.plateNumber }))),
+      ...drivers.flatMap((driver) => driver.documents.map((document) => ({ ...document, ownerType: "DRIVER", ownerId: driver.id, ownerName: driver.name }))),
+    ].sort((a, b) => {
+      if (!a.expiryDate && !b.expiryDate) return b.createdAt.getTime() - a.createdAt.getTime();
+      if (!a.expiryDate) return 1;
+      if (!b.expiryDate) return -1;
+      return a.expiryDate.getTime() - b.expiryDate.getTime();
+    });
     return NextResponse.json({
       trips: normalizedTrips,
       trucks,
       drivers,
+      parties,
+      items,
+      documents: allDocuments,
       alerts: { truckDocuments, driverDocuments: [...driverDocuments, ...directDriverAlerts] },
       summary: {
         trips: trips.length,
@@ -103,8 +129,9 @@ export async function GET(request: Request) {
         profit: trips.reduce((sum, trip) => sum + Number(trip.netProfit), 0),
       },
     });
+    });
   } catch (error) {
     console.error(error);
-    return NextResponse.json({ error: "تعذر تحميل بيانات النقل" }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "تعذر تحميل بيانات النقل" }, { status: 403 });
   }
 }

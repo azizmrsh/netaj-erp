@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { authorizeRequest } from "@/lib/api-auth";
+import { audit } from "@/lib/audit";
+import { runWithDataScope } from "@/lib/data-scope";
 import { prisma } from "@/lib/prisma";
 
 function amount(value: unknown) {
@@ -11,10 +14,12 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const context = await authorizeRequest(request, { moduleKey: "TRANSPORT", action: "UPDATE" });
     const id = Number((await params).id);
     if (!Number.isInteger(id) || id <= 0) {
       return NextResponse.json({ error: "رقم الرحلة غير صحيح" }, { status: 400 });
     }
+    return await runWithDataScope({ tenantId: context.tenantId, companyId: context.companyId }, async () => {
     const current = await prisma.transportTrip.findUnique({
       where: { id },
       include: { expenses: true },
@@ -61,7 +66,8 @@ export async function PATCH(
     }
     const truckId = body.truckId ? Number(body.truckId) : current.truckId;
     const driverId = body.driverId ? Number(body.driverId) : current.driverId;
-    const trip = await prisma.transportTrip.update({
+    const trip = await prisma.$transaction(async tx => {
+      const updated = await tx.transportTrip.update({
       where: { id },
       data: {
         truckId,
@@ -90,8 +96,12 @@ export async function PATCH(
         notes: String(body.notes ?? current.notes ?? "").trim() || null,
       },
       include: { truck: true, driver: true, party: true, item: true, note: true },
+      });
+      await audit(tx,{action:"TRANSPORT_TRIP_UPDATE",entityType:"TRANSPORT_TRIP",entityId:id,userId:String(context.userId),metadata:{status,truckId,driverId,totalCost,transportRevenue}});
+      return updated;
     });
     return NextResponse.json(trip);
+    });
   } catch (error) {
     console.error(error);
     return NextResponse.json({ error: "تعذر تحديث الرحلة" }, { status: 400 });

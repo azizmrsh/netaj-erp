@@ -4,6 +4,7 @@ import "./globals.css";
 import ThemeRuntime from "./components/ThemeRuntime";
 import ServiceWorkerRegistration from "./components/ServiceWorkerRegistration";
 import AppShell from "./components/AppShell";
+import LanguageRuntime from "./components/LanguageRuntime";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -27,7 +28,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       dir="rtl"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full"><ThemeRuntime /><ServiceWorkerRegistration /><AppShell>{children}</AppShell></body>
+      <body className="min-h-full"><ThemeRuntime /><LanguageRuntime /><ServiceWorkerRegistration /><AppShell>{children}</AppShell></body>
     </html>
   );
 }

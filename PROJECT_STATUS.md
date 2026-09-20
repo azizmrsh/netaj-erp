@@ -1,9 +1,9 @@
 # NETAJ Global ERP — Verified Project Status
 
-Last verified: 2026-09-19  
+Last verified: 2026-09-20
 Baseline commit: `47e5abe`  
 Project-wide completion at start of Final Product Completion: **86%**
-Current verified project-wide completion after this batch: **96%**
+Current verified project-wide completion after this batch: **97%**
 
 Status meanings:
 
@@ -26,6 +26,7 @@ Status meanings:
 | Items and units | COMPLETE | CRUD APIs/UI, safe relationship handling, units and categories | smoke and workflow tests | Add broader browser CRUD coverage |
 | Company/customer-owned inventory | COMPLETE | separate balances, movements, ownership transfer and statements | inventory and note workflow suites | None in agreed no-BOM/no-waste scope |
 | Notes → transport → invoice | COMPLETE | connected workflow and idempotent conversions | operational and note workflow suites | More document visual regression coverage |
+| Fleet operations and transport receipts | COMPLETE | tenant-scoped truck/driver master, manual/automatic trips, odometer, fuel variance, tires, batteries, maintenance, document lifecycle and reference print/export | fleet tests, note workflow, browser E2E and production smoke | Expand incident/insurance-provider integrations when configured |
 | Sales workflow | COMPLETE | QT → PI → SO → DN → invoice → GL/VAT/AR | operational workflow tests | Full bilingual print matrix remains partial |
 | Purchase workflow | COMPLETE | PR → approval → PO → receipt → invoice → GL/AP | operational workflow tests | Full bilingual print matrix remains partial |
 | Accounting, AR/AP, banks, assets and reconciliation | COMPLETE | GL-derived reports, subledgers, vouchers, assets and reconciliations | finance, financial completion/reconciliation/adjustment/fiscal suites | None found in core calculations |
@@ -57,7 +58,7 @@ Status meanings:
 | S3-compatible storage | COMPLETE | private local/S3 adapters and SigV4 | storage tests | S3 endpoint/bucket/credentials activation |
 | PostgreSQL migration path | COMPLETE | manifest/migration tool and test-copy validation | PostgreSQL migration test | Production PostgreSQL URL and rehearsal environment |
 | Backup/restore/disaster recovery | COMPLETE | consistent backup, checksums and restore verification | phase-l and executed backup verification | Off-site retention/monitoring activation |
-| Browser desktop/mobile E2E | COMPLETE | login, navigation, IDOR, responsive shell, designer, migration/certification and NETAJ ONE | 12 executed passed, 4 intentional device-specific skips | Broaden persona/output visual snapshots continuously |
+| Browser desktop/mobile E2E | COMPLETE | login, navigation stress, IDOR, responsive shell, old-year fleet document persistence, designer, migration/certification, print identity and NETAJ ONE | 17 executed passed, 9 intentional device-specific skips | Broaden persona/output visual snapshots continuously |
 | Production build/smoke | COMPLETE | Next.js production build and broad route/API smoke | last gate passed | Re-run after each final batch |
 
 ## External activation pending
@@ -77,3 +78,12 @@ Status meanings:
 3. Add broader persona/role visual regression coverage.
 4. Rehearse PostgreSQL cutover and off-site disaster recovery in the production environment.
 5. Continue smart-document OCR and outbound collections delivery through configured providers.
+
+## 2026-09-20 current-fix-package verification
+
+- Root cause of intermittent localhost refusal: temporary production/E2E launchers correctly terminated the server they spawned after verification; they were being mistaken for a persistent development server. Both launchers now retain and terminate only their own child process, and browser navigation stress proves the production process remains alive through 30 consecutive protected-route navigations.
+- Executive dashboard cards, date presets and sector-profitability drill-downs now carry their real period context and derive sector values from operational/GL data without duplicating internal transport revenue.
+- Approved NETAJ print identity is implemented for receipt/payment vouchers, receipt/delivery notes, invoices, workflow documents and transport receipts.
+- Fleet document registry supports old dates, full registry/filter counts, secure attachments, renewal history without overwrite, archive-with-audit and immediate persisted refresh.
+- Fleet operations now cover truck/driver operational profiles, odometer controls, tire/battery history, actual-vs-expected fuel, maintenance, manual legacy trips, automatic note trips, idempotent transport receipts, print, PDF and Excel.
+- Quality gate: Prisma valid; 45 migrations current; SQLite integrity `ok`; foreign keys clean; TypeScript and lint pass; 181 automated tests pass; 17 browser tests pass; production build and production smoke pass.

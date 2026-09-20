@@ -470,13 +470,13 @@ function itemName(row: { item?: ItemRef; itemId?: number }) {
 }
 
 function formatNumber(value: unknown) {
-  return Number(value ?? 0).toLocaleString("ar-SA", {
+  return Number(value ?? 0).toLocaleString("en-US", {
     maximumFractionDigits: 3,
   });
 }
 
 function formatMoney(value: unknown) {
-  return Number(value ?? 0).toLocaleString("ar-SA", {
+  return Number(value ?? 0).toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -491,7 +491,7 @@ function formatDate(value: unknown) {
   ) {
     return "-";
   }
-  return new Date(value).toLocaleDateString("ar-SA");
+  return new Date(value).toLocaleDateString("en-US");
 }
 
 const grid = {

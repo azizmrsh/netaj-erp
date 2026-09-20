@@ -76,12 +76,21 @@ export async function completeBankReconciliation(tx: Tx, id: number, userId?: st
   return completed;
 }
 
+export async function deleteDraftBankReconciliation(tx: Tx, id: number, userId?: string | number | null) {
+  const row = await tx.bankReconciliation.findUnique({ where: { id }, include: { lines: true } });
+  if (!row) throw new ReconciliationError("NOT_FOUND", "التسوية البنكية غير موجودة");
+  if (row.status !== "DRAFT") throw new ReconciliationError("INVALID_STATUS", "يمكن حذف مسودة التسوية فقط قبل الاعتماد");
+  await tx.bankReconciliation.delete({ where: { id } });
+  await audit(tx, { action: "DELETE_DRAFT", entityType: "BANK_RECONCILIATION", entityId: id, userId: actor(userId), metadata: { reconciliationNumber: row.reconciliationNumber, releasedTransactions: row.lines.length } });
+  return { deleted: true, id, reconciliationNumber: row.reconciliationNumber };
+}
+
 type VatSnapshotLine = { direction: "OUTPUT" | "INPUT"; sourceType: string; sourceId: number; sourceNumber: string; sourceDate: Date; netAmount: Prisma.Decimal; documentVat: Prisma.Decimal; ledgerVat: Prisma.Decimal; variance: Prisma.Decimal; journalEntryId: number | null };
 
 export async function buildVatSnapshot(tx: Tx, periodStart: Date, periodEnd: Date) {
   const [sales, purchases, expenses, revenues, notes, journals] = await Promise.all([
-    tx.sale.findMany({ where: { status: "COMPLETED", invoiceDate: { gte: periodStart, lte: periodEnd }, vatAmount: { not: 0 } } }),
-    tx.purchase.findMany({ where: { status: "COMPLETED", purchaseDate: { gte: periodStart, lte: periodEnd }, vatAmount: { not: 0 } } }),
+    tx.sale.findMany({ where: { status: { in: ["POSTED", "COMPLETED"] }, invoiceDate: { gte: periodStart, lte: periodEnd }, vatAmount: { not: 0 } } }),
+    tx.purchase.findMany({ where: { status: { in: ["POSTED", "COMPLETED"] }, purchaseDate: { gte: periodStart, lte: periodEnd }, vatAmount: { not: 0 } } }),
     tx.expense.findMany({ where: { status: "POSTED", expenseDate: { gte: periodStart, lte: periodEnd }, vatAmount: { not: 0 } } }),
     tx.revenue.findMany({ where: { status: "POSTED", revenueDate: { gte: periodStart, lte: periodEnd }, vatAmount: { not: 0 } } }),
     tx.creditDebitNote.findMany({ where: { status: "POSTED", noteDate: { gte: periodStart, lte: periodEnd }, vatAmount: { not: 0 } } }),

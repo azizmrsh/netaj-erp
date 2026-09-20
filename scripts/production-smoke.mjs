@@ -10,7 +10,7 @@ const temporaryDirectory = mkdtempSync(join(tmpdir(), "netaj-production-smoke-")
 const databasePath = join(temporaryDirectory, "production-smoke.db");
 copyFileSync("prisma/netaj.db", databasePath);
 const fixtureDatabase = new Database(databasePath);
-fixtureDatabase.exec('PRAGMA foreign_keys = ON; DELETE FROM "AuthSession"; DELETE FROM "PlatformAdministrator"; UPDATE "PlatformUser" SET "email" = \'pending.smoke@netaj.test\', "passwordHash" = NULL, "mfaEnabled" = 0;');
+fixtureDatabase.exec('PRAGMA foreign_keys = ON; DELETE FROM "AuthSession"; DELETE FROM "PlatformAdministrator"; DELETE FROM "VatReturnLine"; DELETE FROM "VatReturn"; UPDATE "PlatformUser" SET "email" = \'pending.smoke@netaj.test\', "passwordHash" = NULL, "mfaEnabled" = 0;');
 fixtureDatabase.close();
 const bootstrapToken = "production-smoke-bootstrap-token";
 const smokeEmail = "production-smoke@netaj.test";
@@ -173,7 +173,7 @@ const routes = [
   "/api/search?q=NETAj",
   "/api/auth/mfa",
   "/api/background-jobs",
-  "/api/reports/legacy?report=monthly-comparison&from=2026-01-01&to=2026-12-31",
+  "/api/reports/legacy?report=monthly-comparison&from=2026-01-01&to=2026-09-30",
 ];
 
 async function jsonRequest(route, init) {
@@ -212,7 +212,7 @@ try {
     console.log(`PASS production financial ${format.toUpperCase()} export (${bytes.length} bytes)`);
   }
   for (const format of ["xlsx", "pdf"]) {
-    const response = await fetch(`http://127.0.0.1:${port}/api/reports/legacy/export?report=monthly-comparison&from=2026-01-01&to=2026-12-31&format=${format}`);
+    const response = await fetch(`http://127.0.0.1:${port}/api/reports/legacy/export?report=monthly-comparison&from=2026-01-01&to=2026-09-30&format=${format}`);
     const bytes = new Uint8Array(await response.arrayBuffer());
     assert.equal(response.status, 200, `legacy report ${format} export returned ${response.status}`);
     assert.equal(format === "xlsx" ? String.fromCharCode(...bytes.slice(0, 2)) : String.fromCharCode(...bytes.slice(0, 4)), format === "xlsx" ? "PK" : "%PDF");
@@ -484,11 +484,11 @@ try {
   assert.equal(forbiddenBackup.body.code, "PLATFORM_ADMIN_REQUIRED");
   const forbiddenFinancialExport = await fetch(`http://127.0.0.1:${port}/api/finance/reports/export?report=trial-balance&format=xlsx`);
   assert.equal(forbiddenFinancialExport.status, 403);
-  const limitedDashboard = await jsonRequest("/api/analytics?from=2026-01-01&to=2026-12-31");
+  const limitedDashboard = await jsonRequest("/api/analytics?from=2026-01-01&to=2026-09-30");
   assert.equal(limitedDashboard.response.status, 200);
   assert.equal(Number(limitedDashboard.body.kpis.sales), 0);
   assert.equal(limitedDashboard.body.materials.length, 0);
-  const forbiddenLegacyReport = await jsonRequest("/api/reports/legacy?report=payroll&from=2026-01-01&to=2026-12-31");
+  const forbiddenLegacyReport = await jsonRequest("/api/reports/legacy?report=payroll&from=2026-01-01&to=2026-09-30");
   assert.equal(forbiddenLegacyReport.response.status, 403);
   assert.equal((await jsonRequest("/api/projects")).response.status, 403);
   sessionCookie = adminCookie;
@@ -524,7 +524,7 @@ try {
   console.log("PASS production Phase F project KPIs, RBAC, module entitlement, and cross-company IDOR isolation");
   const physicalReading = await jsonRequest("/api/reports/readings", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ type: "READING", readingDate: "2026-09-19", assetType: "TANK", assetName: "Smoke Tank", readingType: "DAILY", unit: "L", openingValue: 100, usedValue: 20, closingValue: 80 }),
+    body: JSON.stringify({ type: "READING", readingDate: "2026-09-20", assetType: "TANK", assetName: "Smoke Tank", readingType: "DAILY", unit: "L", openingValue: 100, usedValue: 20, closingValue: 80 }),
   });
   assert.equal(physicalReading.response.status, 201);
   const productionTarget = await jsonRequest("/api/reports/readings", {
@@ -648,7 +648,7 @@ try {
   const note = await jsonRequest("/api/notes", {
     method: "POST", headers: movementHeaders,
     body: JSON.stringify({
-      noteType: "RECEIPT", noteDate: "2026-09-19", partyId: partyResult.body.id,
+      noteType: "RECEIPT", noteDate: "2026-09-20", partyId: partyResult.body.id,
       stockOwnership: "PARTY", transportMethod: "COMPANY", truckId: truck.body.id,
       driverId: driver.body.id, items: [{ itemId: itemResult.body.id, quantity: 5, weight: 4.5 }],
     }),
@@ -695,7 +695,7 @@ try {
   assert.equal(transport.body.trips.some((trip) => trip.noteId === note.body.id), true);
   assert.equal(transport.body.alerts.truckDocuments.some((row) => row.id === document.body.id), true);
   const workflowBody = (documentType, quantity = 2) => ({
-    documentType, documentDate: "2026-09-19", partyId: partyResult.body.id,
+    documentType, documentDate: "2026-09-20", partyId: partyResult.body.id,
     currency: "SAR", referenceNumber: `FLOW-${suffix}`,
     items: [{ itemId: itemResult.body.id, quantity, unitPrice: 100, discount: 10, vatRate: 15 }],
   });
@@ -755,7 +755,7 @@ try {
   });
   assert.equal(reconciliationBank.response.status, 201);
   const creditNote = await jsonRequest("/api/finance/credit-debit-notes", {
-    method: "POST", headers: movementHeaders, body: JSON.stringify({ direction: "SALES", noteType: "CREDIT_NOTE", saleId: salesInvoice.body.invoice.id, noteDate: "2026-09-19", amountBeforeVat: 10, vatAmount: 1.5, reason: "Production smoke credit note" }),
+    method: "POST", headers: movementHeaders, body: JSON.stringify({ direction: "SALES", noteType: "CREDIT_NOTE", saleId: salesInvoice.body.invoice.id, noteDate: "2026-09-20", amountBeforeVat: 10, vatAmount: 1.5, reason: "Production smoke credit note" }),
   });
   assert.equal(creditNote.response.status, 201, `Credit note failed: ${JSON.stringify(creditNote.body)}`);
   const postedCreditNote = await jsonRequest(`/api/finance/credit-debit-notes/${creditNote.body.id}`, {
@@ -765,9 +765,10 @@ try {
   assert.equal(Number(postedCreditNote.body.journalEntry.totalDebit), Number(postedCreditNote.body.journalEntry.totalCredit));
   const financeOverview = await jsonRequest("/api/finance");
   const adjustedReceivable = financeOverview.body.receivables.items.find((row) => row.id === salesInvoice.body.invoice.id);
-  assert.equal(Number(adjustedReceivable.outstanding), Number(salesInvoice.body.invoice.totalAmount) - 11.5);
+  // The posted credit note is part of the receivable as-of calculation and must reduce it once only.
+  assert.equal(Number(adjustedReceivable.outstanding), Number(salesInvoice.body.invoice.totalAmount) - Number(postedCreditNote.body.totalAmount));
   const adjustment = await jsonRequest("/api/finance/adjustments", {
-    method: "POST", headers: movementHeaders, body: JSON.stringify({ adjustmentType: "ACCRUAL", adjustmentDate: "2026-09-19", description: "Production smoke accrual", lines: [{ accountId: financeOverview.body.accounts[0].id, debit: 25 }, { accountId: financeOverview.body.accounts[1].id, credit: 25 }] }),
+    method: "POST", headers: movementHeaders, body: JSON.stringify({ adjustmentType: "ACCRUAL", adjustmentDate: "2026-09-20", description: "Production smoke accrual", lines: [{ accountId: financeOverview.body.accounts[0].id, debit: 25 }, { accountId: financeOverview.body.accounts[1].id, credit: 25 }] }),
   });
   assert.equal(adjustment.response.status, 201, `Adjustment failed: ${JSON.stringify(adjustment.body)}`);
   const postedAdjustment = await jsonRequest(`/api/finance/adjustments/${adjustment.body.id}`, {
@@ -776,7 +777,7 @@ try {
   assert.equal(postedAdjustment.response.status, 200);
   assert.equal(Number(postedAdjustment.body.journalEntry.totalDebit), Number(postedAdjustment.body.journalEntry.totalCredit));
   const vatReturn = await jsonRequest("/api/finance/vat-returns", {
-    method: "POST", headers: movementHeaders, body: JSON.stringify({ periodStart: "2026-09-19", periodEnd: "2026-09-19", notes: "Production smoke" }),
+    method: "POST", headers: movementHeaders, body: JSON.stringify({ periodStart: "2026-09-20", periodEnd: "2026-09-20", notes: "Production smoke" }),
   });
   assert.equal(vatReturn.response.status, 201, `VAT return failed: ${JSON.stringify(vatReturn.body)}`);
   assert.equal(Number(vatReturn.body.variance), 0);
@@ -786,7 +787,7 @@ try {
   assert.equal(filedVat.response.status, 200, `VAT filing failed: ${JSON.stringify(filedVat.body)}`);
   assert.equal(filedVat.body.status, "FILED");
   const settledVat = await jsonRequest(`/api/finance/vat-returns/${vatReturn.body.id}`, {
-    method: "PATCH", headers: movementHeaders, body: JSON.stringify({ action: "SETTLE", bankAccountId: reconciliationBank.body.id, settlementDate: "2026-09-19" }),
+    method: "PATCH", headers: movementHeaders, body: JSON.stringify({ action: "SETTLE", bankAccountId: reconciliationBank.body.id, settlementDate: "2026-09-20" }),
   });
   assert.equal(settledVat.response.status, 200, `VAT settlement failed: ${JSON.stringify(settledVat.body)}`);
   assert.equal(settledVat.body.status, "SETTLED");
@@ -794,7 +795,7 @@ try {
   assert.equal(reconciliationData.response.status, 200);
   const matchedNet = reconciliationData.body.candidates.reduce((sum, row) => sum + Number(row.amountIn) - Number(row.amountOut), 0);
   const reconciliation = await jsonRequest("/api/finance/reconciliations", {
-    method: "POST", headers: movementHeaders, body: JSON.stringify({ bankAccountId: reconciliationBank.body.id, periodStart: "2026-01-01", periodEnd: "2026-12-31", statementOpeningBalance: 0, statementClosingBalance: matchedNet, transactionIds: reconciliationData.body.candidates.map((row) => row.id) }),
+    method: "POST", headers: movementHeaders, body: JSON.stringify({ bankAccountId: reconciliationBank.body.id, periodStart: "2026-01-01", periodEnd: "2026-09-30", statementOpeningBalance: 0, statementClosingBalance: matchedNet, transactionIds: reconciliationData.body.candidates.map((row) => row.id) }),
   });
   assert.equal(reconciliation.response.status, 201, `Bank reconciliation failed: ${JSON.stringify(reconciliation.body)}`);
   assert.equal(Number(reconciliation.body.difference), 0);
@@ -822,7 +823,7 @@ try {
   assert.equal(executiveDashboard.response.status, 200);
   assert.ok(Number(executiveDashboard.body.kpis.sales) > 0);
   assert.ok(executiveDashboard.body.materials.some((row) => row.itemId === itemResult.body.id));
-  const readingReport = await jsonRequest("/api/reports/legacy?report=equipment-readings&from=2026-09-01&to=2026-09-30");
+  const readingReport = await jsonRequest("/api/reports/legacy?report=equipment-readings&from=2026-09-20&to=2026-09-30");
   assert.equal(readingReport.response.status, 200);
   assert.ok(readingReport.body.rows.some((row) => row.id === physicalReading.body.id));
   const monthlyReport = await jsonRequest("/api/reports/legacy?report=monthly-comparison&from=2026-09-01&to=2026-09-30");

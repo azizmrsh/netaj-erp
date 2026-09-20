@@ -9,7 +9,7 @@ export default function ThemeRuntime() {
     const controller = new AbortController();
     fetch("/api/design/runtime", { cache: "no-store", signal: controller.signal }).then((response) => response.ok ? response.json() : null).then((payload) => {
       if (!payload?.theme) return;
-      const theme = payload.theme as Theme, root = document.documentElement, language = payload.company?.defaultLanguageCode === "en" ? "en" : "ar";
+      const theme = payload.theme as Theme, root = document.documentElement, savedLanguage = window.localStorage.getItem("netaj-language"), language = savedLanguage === "en" || savedLanguage === "ar" ? savedLanguage : payload.company?.defaultLanguageCode === "en" ? "en" : "ar";
       root.lang = language; root.dir = language === "ar" ? "rtl" : "ltr";
       const dark = theme.mode === "DARK" || (theme.mode === "SYSTEM" && window.matchMedia("(prefers-color-scheme: dark)").matches);
       const override = window.localStorage.getItem("netaj-color-mode");

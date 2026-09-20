@@ -43,7 +43,7 @@ async function approveAndPost(noteId) {
 test("السند غير المعتمد لا يؤثر على المخزون", async () => {
   const note = await prisma.$transaction((tx) => createNote(tx, input()));
   await assert.rejects(prisma.$transaction((tx) => postNote(tx, note.id)), (error) => error instanceof NoteWorkflowError && error.code === "INVALID_STATUS");
-  assert.equal(await prisma.stockMovement.count({ where: { referenceId: note.id } }), 0);
+  assert.equal(await prisma.stockMovement.count({ where: { referenceType: "DELIVERY_RECEIPT_NOTE", referenceId: note.id } }), 0);
 });
 
 test("ترحيل سند استلام عميل ينشئ حركة ورصيدًا صحيحًا", async () => {
@@ -75,7 +75,7 @@ test("سند تسليم الشركة يرفض العجز ويرجع المعام
   await prisma.$transaction((tx) => changeNoteStatus(tx, note.id, "APPROVE", 1002));
   await assert.rejects(prisma.$transaction((tx) => postNote(tx, note.id)), (error) => error instanceof NoteWorkflowError && error.code === "STOCK_ERROR");
   assert.equal((await prisma.deliveryReceiptNote.findUnique({ where: { id: note.id } })).status, "APPROVED");
-  assert.equal(await prisma.stockMovement.count({ where: { referenceId: note.id } }), 0);
+  assert.equal(await prisma.stockMovement.count({ where: { referenceType: "DELIVERY_RECEIPT_NOTE", referenceId: note.id } }), 0);
 });
 
 test("النقل بسيارات الشركة ينشئ رحلة واحدة تلقائيًا عند الترحيل", async () => {

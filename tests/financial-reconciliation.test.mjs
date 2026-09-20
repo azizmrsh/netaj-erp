@@ -7,7 +7,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import { postSalesInvoiceJournal, postSupplierInvoiceJournal } from "../lib/accounting.ts";
 import { createBankAccount, ensureFinanceFoundation, recordBankMovement } from "../lib/finance.ts";
-import { completeBankReconciliation, createBankReconciliation, createVatReturn, fileVatReturn, settleVatReturn } from "../lib/financial-reconciliation.ts";
+import { completeBankReconciliation, createBankReconciliation, createVatReturn, deleteDraftBankReconciliation, fileVatReturn, settleVatReturn } from "../lib/financial-reconciliation.ts";
 
 const directory = mkdtempSync(join(tmpdir(), "netaj-reconciliation-test-"));
 const databasePath = join(directory, "reconciliation.test.db");
@@ -18,6 +18,9 @@ let bankId, badBankId, customerId, supplierId;
 before(async () => {
   const suffix = Date.now().toString(36).toUpperCase();
   await prisma.$transaction((tx) => ensureFinanceFoundation(tx));
+  await prisma.accountingPeriod.upsert({ where: { startDate_endDate: { startDate: new Date("2035-01-01"), endDate: new Date("2035-12-31T23:59:59.999") } }, create: { name: "2035 isolated tests", startDate: new Date("2035-01-01"), endDate: new Date("2035-12-31T23:59:59.999") }, update: { status: "OPEN", closedAt: null } });
+  const fiscalYear = await prisma.fiscalYear.upsert({ where: { companyId_startDate_endDate: { companyId: 1, startDate: new Date("2035-01-01"), endDate: new Date("2035-12-31T23:59:59.999") } }, create: { companyId: 1, name: "2035 isolated tests", startDate: new Date("2035-01-01"), endDate: new Date("2035-12-31T23:59:59.999") }, update: { status: "OPEN", closedAt: null } });
+  await prisma.fiscalPeriod.upsert({ where: { fiscalYearId_periodNumber: { fiscalYearId: fiscalYear.id, periodNumber: 1 } }, create: { fiscalYearId: fiscalYear.id, periodNumber: 1, name: "2035 isolated tests", startDate: new Date("2035-01-01"), endDate: new Date("2035-12-31T23:59:59.999") }, update: { status: "OPEN", closedAt: null } });
   const [customer, supplier] = await Promise.all([
     prisma.party.create({ data: { nameAr: `عميل ضريبة ${suffix}`, isCustomer: true } }),
     prisma.party.create({ data: { nameAr: `مورد ضريبة ${suffix}`, isSupplier: true } }),
@@ -44,15 +47,18 @@ test("التسوية البنكية ترفض الإقفال عند وجود فر
   const row = await prisma.$transaction((tx) => createBankReconciliation(tx, { bankAccountId: badBankId, periodStart: "2026-01-01", periodEnd: "2026-12-31", statementOpeningBalance: 0, statementClosingBalance: 600, transactionIds: [] }));
   assert.equal(Number(row.difference), 600);
   await assert.rejects(prisma.$transaction((tx) => completeBankReconciliation(tx, row.id)), /لا يمكن إقفال التسوية/);
+  const deleted = await prisma.$transaction((tx) => deleteDraftBankReconciliation(tx, row.id, "controller"));
+  assert.equal(deleted.deleted, true);
+  assert.equal(await prisma.bankReconciliation.count({ where: { id: row.id } }), 0);
 });
 
 test("الإقرار الضريبي يطابق المستندات مع الأستاذ ويرحل التسوية والسداد", async () => {
   const suffix = Date.now().toString(36).toUpperCase();
-  const sale = await prisma.sale.create({ data: { invoiceNumber: `VAT-S-${suffix}`, invoiceDate: new Date("2026-04-10"), partyId: customerId, status: "COMPLETED", subtotal: 1000, vatAmount: 150, totalAmount: 1150 } });
-  const purchase = await prisma.purchase.create({ data: { purchaseNumber: `VAT-P-${suffix}`, purchaseDate: new Date("2026-04-12"), partyId: supplierId, status: "COMPLETED", subtotal: 500, vatAmount: 75, totalAmount: 575 } });
+  const sale = await prisma.sale.create({ data: { invoiceNumber: `VAT-S-${suffix}`, invoiceDate: new Date("2035-04-10"), partyId: customerId, status: "POSTED", subtotal: 1000, vatAmount: 150, totalAmount: 1150 } });
+  const purchase = await prisma.purchase.create({ data: { purchaseNumber: `VAT-P-${suffix}`, purchaseDate: new Date("2035-04-12"), partyId: supplierId, status: "POSTED", subtotal: 500, vatAmount: 75, totalAmount: 575 } });
   await prisma.$transaction((tx) => postSalesInvoiceJournal(tx, sale.id));
   await prisma.$transaction((tx) => postSupplierInvoiceJournal(tx, purchase.id));
-  const vatReturn = await prisma.$transaction((tx) => createVatReturn(tx, { periodStart: "2026-04-01", periodEnd: "2026-04-30" }, "maker"));
+  const vatReturn = await prisma.$transaction((tx) => createVatReturn(tx, { periodStart: "2035-04-01", periodEnd: "2035-04-30" }, "maker"));
   assert.equal(Number(vatReturn.documentOutputVat), 150);
   assert.equal(Number(vatReturn.documentInputVat), 75);
   assert.equal(Number(vatReturn.netVatDue), 75);
@@ -63,7 +69,7 @@ test("الإقرار الضريبي يطابق المستندات مع الأس�
   assert.equal(Number(filed.filingJournal.totalDebit), 150);
   assert.equal(Number(filed.filingJournal.totalCredit), 150);
   const before = Number((await prisma.bankAccount.findUniqueOrThrow({ where: { id: bankId } })).currentBalance);
-  const settled = await prisma.$transaction((tx) => settleVatReturn(tx, vatReturn.id, bankId, "2026-09-19", "cashier"));
+  const settled = await prisma.$transaction((tx) => settleVatReturn(tx, vatReturn.id, bankId, "2035-09-19", "cashier"));
   assert.equal(settled.status, "SETTLED");
   assert.equal(Number(settled.settlementJournal.totalDebit), 75);
   assert.equal(Number((await prisma.bankAccount.findUniqueOrThrow({ where: { id: bankId } })).currentBalance), before - 75);
@@ -72,8 +78,8 @@ test("الإقرار الضريبي يطابق المستندات مع الأس�
 
 test("الإقرار ذو مستند غير مرحل يظهر فرقًا ويمنع الاعتماد", async () => {
   const suffix = Date.now().toString(36).toUpperCase();
-  await prisma.sale.create({ data: { invoiceNumber: `VAT-U-${suffix}`, invoiceDate: new Date("2026-05-10"), partyId: customerId, status: "COMPLETED", subtotal: 100, vatAmount: 15, totalAmount: 115 } });
-  const vatReturn = await prisma.$transaction((tx) => createVatReturn(tx, { periodStart: "2026-05-01", periodEnd: "2026-05-31" }));
+  await prisma.sale.create({ data: { invoiceNumber: `VAT-U-${suffix}`, invoiceDate: new Date("2035-05-10"), partyId: customerId, status: "COMPLETED", subtotal: 100, vatAmount: 15, totalAmount: 115 } });
+  const vatReturn = await prisma.$transaction((tx) => createVatReturn(tx, { periodStart: "2035-05-01", periodEnd: "2035-05-31" }));
   assert.equal(Number(vatReturn.variance), 15);
   await assert.rejects(prisma.$transaction((tx) => fileVatReturn(tx, vatReturn.id)), /لا يمكن اعتماد الإقرار/);
 });

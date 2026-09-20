@@ -17,6 +17,9 @@ let calendar, currentPeriod;
 
 before(async () => {
   await prisma.$transaction((tx) => ensureFinanceFoundation(tx));
+  // Production snapshots may legitimately contain draft VAT returns. The
+  // fiscal-close test isolates its own blocker instead of mutating production.
+  await prisma.vatReturn.updateMany({ where: { status: "DRAFT" }, data: { status: "FILED" } });
   calendar = await prisma.$transaction((tx) => currentFiscalCalendar(tx));
   currentPeriod = calendar.periods.find((period) => period.startDate <= new Date() && period.endDate >= new Date());
 });

@@ -18,8 +18,8 @@ before(async () => {
   await prisma.$transaction((tx) => ensureFinanceFoundation(tx));
   const customer = await prisma.party.create({ data: { nameAr: `عميل محاسبة ${suffix}`, isCustomer: true } });
   const supplier = await prisma.party.create({ data: { nameAr: `مورد محاسبة ${suffix}`, isSupplier: true } });
-  const sale = await prisma.sale.create({ data: { invoiceNumber: `FIN-S-${suffix}`, partyId: customer.id, status: "COMPLETED", subtotal: 1000, vatAmount: 150, totalAmount: 1150, dueDate: new Date("2026-09-01") } });
-  const purchase = await prisma.purchase.create({ data: { purchaseNumber: `FIN-P-${suffix}`, partyId: supplier.id, status: "COMPLETED", subtotal: 500, vatAmount: 75, totalAmount: 575, dueDate: new Date("2026-09-01") } });
+  const sale = await prisma.sale.create({ data: { invoiceNumber: `FIN-S-${suffix}`, partyId: customer.id, status: "POSTED", subtotal: 1000, vatAmount: 150, totalAmount: 1150, dueDate: new Date("2026-09-01") } });
+  const purchase = await prisma.purchase.create({ data: { purchaseNumber: `FIN-P-${suffix}`, partyId: supplier.id, status: "POSTED", subtotal: 500, vatAmount: 75, totalAmount: 575, dueDate: new Date("2026-09-01") } });
   const bank = await prisma.$transaction((tx) => createBankAccount(tx, { name: `بنك اختبار ${suffix}`, openingBalance: 2000 }));
   const secondBank = await prisma.$transaction((tx) => createBankAccount(tx, { name: `بنك اختبار ثان ${suffix}`, openingBalance: 0 }));
   const [expenseCategory, revenueCategory] = await Promise.all([prisma.expenseCategory.findFirstOrThrow(), prisma.revenueCategory.findFirstOrThrow()]);

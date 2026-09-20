@@ -285,7 +285,7 @@ export default function InventoryClient() {
     movement.operation.startsWith("PARTY_") || movement.operation.includes("_TO_");
 
   return (
-    <main dir="rtl" className="min-h-screen bg-slate-50 p-5 text-slate-900 md:p-8">
+    <main className="min-h-screen bg-slate-50 p-5 text-slate-900 md:p-8">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">المخزون</h1>
@@ -523,9 +523,9 @@ function Cell({ children, strong = false, danger = false }: { children: ReactNod
 function EmptyRow({ columns }: { columns: number }) { return <tr><td colSpan={columns} className="p-12 text-center text-slate-500">لا توجد بيانات مطابقة.</td></tr>; }
 function Empty({ text }: { text: string }) { return <div className="p-12 text-center text-slate-500">{text}</div>; }
 function Badge({ children, danger = false }: { children: ReactNode; danger?: boolean }) { return <span className={`rounded-full px-3 py-1 text-xs font-bold ${danger ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>{children}</span>; }
-function number(value: number | null | undefined) { return Number(value ?? 0).toLocaleString("ar-SA", { maximumFractionDigits: 3 }); }
-function money(value: number | null | undefined) { return Number(value ?? 0).toLocaleString("ar-SA", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
-function date(value: string) { return new Date(value).toLocaleDateString("ar-SA"); }
+function number(value: number | null | undefined) { return Number(value ?? 0).toLocaleString("en-US", { maximumFractionDigits: 3 }); }
+function money(value: number | null | undefined) { return Number(value ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function date(value: string) { return new Date(value).toLocaleDateString("en-US"); }
 
 const inputClass = "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-normal text-slate-900";
 const primaryButton = "rounded-xl bg-blue-600 px-4 py-2 font-bold text-white disabled:opacity-50";
