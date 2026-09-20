@@ -10,7 +10,7 @@ API, permissions, UI and tests are connected.
 | Report designer | `CustomReportDefinition`, `lib/custom-reports.ts`, Report Builder | COMPLETE | No raw SQL; approved source catalog, fields, filters, grouping, calculations, export and audit are used. |
 | Graphical overview / profit / sales / purchases | Dashboard and Phase E analytics | COMPLETE | Real transactional sources; no legacy duplicate screens. |
 | Inventory receipt / issue / transfer / adjustment / count | Inventory service, notes and controls | COMPLETE | Ownership rules and posted movement invariants are tested. |
-| Inventory replenishment orders | Purchase/workflow and inventory controls | PARTIAL | No dedicated planning document; keep as a future optional replenishment workflow. |
+| Inventory replenishment orders | `/api/inventory/replenishment` and Inventory → إعادة التوريد | PARTIAL | Company-owned minimum-stock signals and suggested quantities are now real and scoped; creating an approved supply order remains future work. |
 | Users and profile configuration | Auth, users, sessions, MFA, company context | PARTIAL | Core status, locale, MFA, sessions and audit exist; optional gender/default warehouse preferences need UX completion. |
 | Groups and granular permissions | RBAC, module entitlements, approvals | COMPLETE | Backend permission checks and tenant isolation are tested; UI is generated from scope. |
 | Cashier / salesperson commissions | `BusinessDocument.salesperson` only | MISSING | Requires a separate commission domain (never mixed with driver wages). |
