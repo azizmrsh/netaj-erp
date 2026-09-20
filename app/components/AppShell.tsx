@@ -109,7 +109,16 @@ const homeChildren:NavItem[]=[
   {label:"التنبيهات",href:"/notifications",module:"CORE",icon:Bell},
   {label:"المهام والموافقات",href:"/approvals",module:"APPROVALS",icon:BadgeCheck},
   {label:"المؤشرات الرئيسية",href:"/dashboards",module:"CORE",icon:ChartNoAxesCombined},
-  {label:"لوحة التحكم",href:"/",module:"CORE",icon:LayoutDashboard},
+];
+const settingsChildren:NavItem[]=[
+  {label:"تخصيص لوحة التحكم",href:"/settings/configuration",module:"CONFIG",icon:LayoutDashboard},
+  {label:"إعدادات النظام",href:"/settings/configuration?section=system",module:"CONFIG",icon:Settings},
+  {label:"إعدادات المحاسبة والمبيعات والمشتريات والمخزون",href:"/settings/configuration?section=modules",module:"CONFIG",icon:Files},
+  {label:"إعدادات الضرائب",href:"/settings/configuration?section=tax",module:"CONFIG",icon:BadgeCheck},
+  {label:"الترقيم والتسلسل",href:"/settings/configuration?section=numbering",module:"CONFIG",icon:Files},
+  {label:"القوالب والطباعة",href:"/settings/design",module:"DESIGN",icon:Files},
+  {label:"الإشعارات",href:"/settings/configuration?section=notifications",module:"CONFIG",icon:Bell},
+  {label:"اللغة والمظهر والتكاملات",href:"/settings/design",module:"DESIGN",icon:Settings},
 ];
 const referenceGroups:NavGroup[] = [{label:"مساحة العمل",items:[
   {label:"الرئيسية",href:"/",module:"CORE",icon:LayoutDashboard,children:homeChildren},
@@ -133,7 +142,7 @@ const referenceGroups:NavGroup[] = [{label:"مساحة العمل",items:[
   {label:"الموافقات والمهام",href:"/approvals",module:"APPROVALS",icon:BadgeCheck,children:menuChildren("/approvals","APPROVALS",["صندوق الموافقات","طلباتي","المهام","سجل الموافقات","مسارات الاعتماد"])},
   {label:"المستخدمون والصلاحيات",href:"/settings/users",module:"CORE",icon:ShieldCheck,children:menuChildren("/settings/users","CORE",["المستخدمون","الأدوار","الصلاحيات","صلاحيات الفروع والشركات","سجل النشاط","سجل التدقيق"])},
   {label:"الفروع والشركات",href:"/settings/organization",module:"CORE",icon:Building2,children:menuChildren("/settings/organization","CORE",["الشركات","الفروع","السنوات المالية","الفترات المحاسبية","بيانات المنشأة"])},
-  {label:"الإعدادات",href:"/settings/configuration",module:"CONFIG",icon:Settings,children:menuChildren("/settings/configuration","CONFIG",["إعدادات النظام","إعدادات المحاسبة والمبيعات والمشتريات والمخزون","إعدادات الضرائب","الترقيم والتسلسل","القوالب والطباعة","الإشعارات","اللغة والمظهر والتكاملات"])}
+  {label:"الإعدادات",href:"/settings/configuration",module:"CONFIG",icon:Settings,children:settingsChildren}
 ]}];
 const publicRoutes=["/login","/setup","/portal"];
 const publicPage=(path:string)=>publicRoutes.some(route=>path===route||path.startsWith(`${route}/`))||/^\/(?:notes|sales|workflows)\/\d+\/print$/.test(path)||/^\/transport\/(?:trips|receipts)\/\d+\/print$/.test(path)||/^\/accounting\/vouchers\/\d+\/print$/.test(path);
