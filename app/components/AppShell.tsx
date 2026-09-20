@@ -36,6 +36,13 @@ const groups:NavGroup[] = [
     {label:"إدارة العملاء CRM",href:"/crm",module:"CRM",icon:Handshake},
     {label:"الأصول والصيانة",href:"/assets",module:"ASSETS",icon:Wrench},
     {label:"التقارير والتحليلات",href:"/reports",module:"CORE",icon:ChartNoAxesCombined},
+    {label:"التسوية البنكية",href:"/treasury",module:"ACCOUNTING",icon:Landmark},
+    {label:"التقارير المالية",href:"/accounting?tab=reports",module:"ACCOUNTING",icon:ChartNoAxesCombined},
+    {label:"تقارير الذكاء الاصطناعي",href:"/assistant",module:"CORE",icon:Sparkles},
+    {label:"التقارير الذكية",href:"/reports/builder",module:"CORE",icon:Files},
+    {label:"التقارير الإحصائية",href:"/dashboards",module:"CORE",icon:ChartNoAxesCombined},
+    {label:"ربط منصة زد",href:"/integrations",module:"INTEGRATIONS",icon:Globe2},
+    {label:"مندوبي المبيعات",href:"/crm",module:"CRM",icon:Users},
     {label:"مركز الاستيراد",href:"/imports",module:"IMPORT",icon:UploadCloud},
     {label:"الموافقات",href:"/approvals",module:"APPROVALS",icon:BadgeCheck},
     {label:"المرفقات والمستندات",href:"/documents",module:"DMS",icon:Files},
@@ -57,7 +64,7 @@ const groups:NavGroup[] = [
 const publicRoutes=["/login","/setup","/portal"];
 const publicPage=(path:string)=>publicRoutes.some(route=>path===route||path.startsWith(`${route}/`))||/^\/(?:notes|sales|workflows)\/\d+\/print$/.test(path)||/^\/transport\/(?:trips|receipts)\/\d+\/print$/.test(path)||/^\/accounting\/vouchers\/\d+\/print$/.test(path);
 const english:Record<string,string>={
-  "مساحة العمل":"Workspace","الأعمال":"Business","الإدارة":"Administration","الرئيسية":"Home","المحاسبة والمالية":"Finance & Accounting","المبيعات":"Sales","المشتريات":"Purchases","المخزون":"Inventory","المصنع":"Factory","سندات الاستلام والتسليم":"Receipt & Delivery Vouchers","النقل والأسطول":"Transport & Fleet","الموارد البشرية":"Human Resources","المقاولات والمشاريع":"Projects & Contracting","الأعمال الخارجية":"External Business","إدارة العملاء CRM":"Customer CRM","الأصول والصيانة":"Assets & Maintenance","التقارير والتحليلات":"Reports & Analytics","مركز الاستيراد":"Migration Center","الموافقات":"Approvals","المرفقات والمستندات":"Documents","التنبيهات الرقابية":"Control Alerts","التوأم التشغيلي":"Operations Twin","مركز الإشعارات":"Notifications","إعدادات المؤسسة":"Organization","التخصيص بدون كود":"No-code Configuration","التصميم والهوية":"Design & Identity","المستخدمون والصلاحيات":"Users & Permissions","المهام الخلفية":"Background Jobs","الإعدادات والأمان":"Settings & Security","المساعدة والدعم":"Help & Support"
+"مساحة العمل":"Workspace","الأعمال":"Business","الإدارة":"Administration","الرئيسية":"Home","المحاسبة والمالية":"Finance & Accounting","المبيعات":"Sales","المشتريات":"Purchases","المخزون":"Inventory","المصنع":"Factory","سندات الاستلام والتسليم":"Receipt & Delivery Vouchers","النقل والأسطول":"Transport & Fleet","الموارد البشرية":"Human Resources","المقاولات والمشاريع":"Projects & Contracting","الأعمال الخارجية":"External Business","إدارة العملاء CRM":"Customer CRM","الأصول والصيانة":"Assets & Maintenance","التقارير والتحليلات":"Reports & Analytics","التسوية البنكية":"Bank Reconciliation","التقارير المالية":"Financial Reports","تقارير الذكاء الاصطناعي":"AI Reports","التقارير الذكية":"Smart Reports","التقارير الإحصائية":"Statistical Reports","ربط منصة زد":"Zid Integration","مندوبي المبيعات":"Sales Representatives","مركز الاستيراد":"Migration Center","الموافقات":"Approvals","المرفقات والمستندات":"Documents","التنبيهات الرقابية":"Control Alerts","التوأم التشغيلي":"Operations Twin","مركز الإشعارات":"Notifications","إعدادات المؤسسة":"Organization","التخصيص بدون كود":"No-code Configuration","التصميم والهوية":"Design & Identity","المستخدمون والصلاحيات":"Users & Permissions","المهام الخلفية":"Background Jobs","الإعدادات والأمان":"Settings & Security","المساعدة والدعم":"Help & Support"
 };
 
 export default function AppShell({children}:{children:React.ReactNode}){
