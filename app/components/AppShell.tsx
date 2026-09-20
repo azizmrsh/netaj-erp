@@ -105,7 +105,7 @@ const accountingChildren:NavItem[]=[
   ["الشيكات المدفوعة","vouchers"],["الشيكات المستلمة","vouchers"],["طرق الدفع","paymentMethods"],["العملات","currencies"]
 ].map(([label,tab])=>({label,href:`/accounting?tab=${tab}`,module:"ACCOUNTING",icon:Files}));
 const referenceGroups:NavGroup[] = [{label:"مساحة العمل",items:[
-  {label:"الرئيسية",href:"/",module:"CORE",icon:LayoutDashboard,children:menuChildren("/","CORE",["لوحة التحكم","ملخص الأعمال","التنبيهات","المهام والموافقات","المؤشرات الرئيسية"])},
+  {label:"الرئيسية",href:"/",module:"CORE",icon:LayoutDashboard,children:menuChildren("/","CORE",["ملخص الأعمال","التنبيهات","المهام والموافقات","المؤشرات الرئيسية","لوحة التحكم"])},
   {label:"المحاسبة",href:"/accounting",module:"ACCOUNTING",icon:Landmark,children:accountingChildren},
   {label:"المبيعات",href:"/sales",module:"SALES",icon:ShoppingCart,children:menuChildren("/sales","SALES",["عروض الأسعار","أوامر البيع","فواتير المبيعات","إشعارات دائن ومدين","مرتجعات المبيعات","العملاء","قوائم الأسعار","مندوبي المبيعات","تقارير المبيعات"])},
   {label:"المشتريات",href:"/purchases",module:"PURCHASES",icon:ShoppingBag,children:menuChildren("/purchases","PURCHASES",["طلبات الشراء","أوامر الشراء","فواتير المشتريات","مرتجعات المشتريات","الموردون","عروض الموردين","مقارنة الأسعار","تقارير المشتريات"])},
