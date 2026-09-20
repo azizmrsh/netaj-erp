@@ -131,22 +131,24 @@ function pct(current: number, previous: number) { return previous ? (current - p
 
 async function monthlyComparison(tx: Tx, range: Range) {
   const start = new Date(range.from); start.setFullYear(start.getFullYear() - 1);
-  const [sales, saleItems, purchases, journals, factory, transport] = await Promise.all([
+  const [sales, saleItems, purchases, journals, factory, transport, vatReturns] = await Promise.all([
     tx.sale.findMany({ where: { status: active, invoiceDate: { gte: start, lte: range.to } } }),
     tx.saleItem.findMany({ where: { sale: { status: active, invoiceDate: { gte: start, lte: range.to } } }, include: { sale: true, item: true } }),
     tx.purchase.findMany({ where: { status: active, purchaseDate: { gte: start, lte: range.to } } }),
     tx.journalEntry.findMany({ where: { status: "POSTED", entryDate: { gte: start, lte: range.to } }, include: { lines: { include: { account: true } } } }),
     tx.factoryTransaction.findMany({ where: { status: "POSTED", transactionDate: { gte: start, lte: range.to } }, include: { item: true } }),
     tx.transportTrip.findMany({ where: { tripDate: { gte: start, lte: range.to } } }),
+    tx.vatReturn.findMany({ where: { periodEnd: { gte: start, lte: range.to }, status: { not: "CANCELLED" } } }),
   ]);
-  const keys = monthsBetween(range), values = new Map<string, { sales: number; purchases: number; revenue: number; expenses: number; factory: number; transport: number;mb:number;oil:number;asphalt:number }>();
-  const row = (key: string) => values.get(key) ?? { sales: 0, purchases: 0, revenue: 0, expenses: 0, factory: 0, transport: 0, mb:0, oil:0, asphalt:0 };
+  const keys = monthsBetween(range), values = new Map<string, { sales: number; purchases: number; revenue: number; expenses: number; factory: number; transport: number; project: number; tax: number;mb:number;oil:number;asphalt:number }>();
+  const row = (key: string) => values.get(key) ?? { sales: 0, purchases: 0, revenue: 0, expenses: 0, factory: 0, transport: 0, project: 0, tax: 0, mb:0, oil:0, asphalt:0 };
   for (const sale of sales) { const key = monthKey(sale.invoiceDate), value = row(key); value.sales += n(sale.functionalTotalAmount || sale.totalAmount); values.set(key, value); }
   for (const line of saleItems) { const key=monthKey(line.sale.invoiceDate),value=row(key),name=`${line.item.code} ${line.item.nameAr} ${line.item.nameEn??""}`.toUpperCase(),amount=n(line.quantity)*n(line.unitPrice)-n(line.discount);if(/OIL|LCO|زيت/.test(name))value.oil+=amount;else if(/MB|NETAPAVE/.test(name))value.mb+=amount;else if(/ASPHALT|اسفلت|أسفلت/.test(name))value.asphalt+=amount;values.set(key,value); }
   for (const purchase of purchases) { const key = monthKey(purchase.purchaseDate), value = row(key); value.purchases += n(purchase.functionalTotalAmount || purchase.totalAmount); values.set(key, value); }
-  for (const journal of journals) { const key = monthKey(journal.entryDate), value = row(key); for (const line of journal.lines) { if (line.account?.accountType === "REVENUE") value.revenue += n(line.credit) - n(line.debit); if (line.account?.accountType === "EXPENSE") value.expenses += n(line.debit) - n(line.credit); } values.set(key, value); }
+  for (const journal of journals) { const key = monthKey(journal.entryDate), value = row(key); for (const line of journal.lines) { if (line.account?.accountType === "REVENUE") { value.revenue += n(line.credit) - n(line.debit); if (line.projectCode) value.project += n(line.credit) - n(line.debit); } if (line.account?.accountType === "EXPENSE") { value.expenses += n(line.debit) - n(line.credit); if (line.projectCode) value.project -= n(line.debit) - n(line.credit); } } values.set(key, value); }
   for (const entry of factory) { const key = monthKey(entry.transactionDate), value = row(key),amount=n(entry.manufacturingFeeTotal),name=`${entry.item?.code??""} ${entry.item?.nameAr??""} ${entry.item?.nameEn??""}`.toUpperCase(); value.factory += amount;if(/MB|NETAPAVE/.test(name))value.mb+=amount; values.set(key, value); }
   for (const trip of transport) { const key = monthKey(trip.tripDate), value = row(key); value.transport += n(trip.netProfit); values.set(key, value); }
+  for (const vat of vatReturns) { const key = monthKey(vat.periodEnd), value = row(key); value.tax += n(vat.netVatDue); values.set(key, value); }
   const annualAverage = keys.length ? keys.reduce((sum, key) => sum + row(key).revenue - row(key).expenses, 0) / keys.length : 0;
   return keys.map((key, index) => { const current = row(key), prior = row(`${Number(key.slice(0, 4)) - 1}-${key.slice(5)}`), previous = index ? row(keys[index - 1]) : row(""); const netProfit = current.revenue - current.expenses; return { month: key, ...current, netProfit, allSectors:netProfit, momPercent: pct(netProfit, previous.revenue - previous.expenses), yoyPercent: pct(netProfit, prior.revenue - prior.expenses), annualAverage }; });
 }
