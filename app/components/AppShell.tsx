@@ -96,9 +96,17 @@ const detailedGroups:NavGroup[] = [
   {label:"المستخدمون والشركات والإعدادات",items:[{label:"المستخدمون والأدوار والصلاحيات والتدقيق",href:"/settings/users",module:"CORE",icon:ShieldCheck},{label:"الشركات والفروع والسنوات والفترات",href:"/settings/organization",module:"CORE",icon:Building2},{label:"إعدادات النظام والضرائب والترقيم والقوالب",href:"/settings/configuration",module:"CONFIG",icon:Settings},{label:"اللغة والمظهر والتكاملات",href:"/settings/design",module:"DESIGN",icon:Settings}]},
 ];
 const menuChildren=(base:string,module:string,labels:string[]):NavItem[]=>labels.map((label,index)=>({label,href:`${base}${base.includes("?")?"&":"?"}tab=sub-${index}`,module,icon:Files}));
+const accountingChildren:NavItem[]=[
+  ["شجرة الحسابات","chart"],["الحسابات","accounts"],["القيود اليومية","journals"],["القيود الدورية","journals"],
+  ["سندات الصرف","payment"],["كل السندات","allVouchers"],["سندات القبض","receipt"],["سندات التحويل","transfer"],
+  ["أرصدة الأصناف","overview"],["ميزان المراجعة","reports"],["قائمة الدخل","reports"],["المركز المالي","reports"],
+  ["الميزانيات","budgets"],["قائمة التدفقات النقدية","reports"],["توزيع الأرباح والخسائر","reports"],["إهلاكات الأصول","assets"],
+  ["مراكز التكلفة","reports"],["مركز التكلفة التفصيلي","reports"],["جاري الشركاء","receivables"],["إدارة دفاتر الشيكات","vouchers"],
+  ["الشيكات المدفوعة","vouchers"],["الشيكات المستلمة","vouchers"],["طرق الدفع","paymentMethods"],["العملات","currencies"]
+].map(([label,tab])=>({label,href:`/accounting?tab=${tab}`,module:"ACCOUNTING",icon:Files}));
 const referenceGroups:NavGroup[] = [{label:"مساحة العمل",items:[
   {label:"الرئيسية",href:"/",module:"CORE",icon:LayoutDashboard,children:menuChildren("/","CORE",["لوحة التحكم","ملخص الأعمال","التنبيهات","المهام والموافقات","المؤشرات الرئيسية"])},
-  {label:"المحاسبة",href:"/accounting",module:"ACCOUNTING",icon:Landmark,children:menuChildren("/accounting","ACCOUNTING",["شجرة الحسابات","الحسابات","القيود اليومية","القيود الدورية","سندات الصرف","كل السندات","سندات القبض","سندات التحويل","أرصدة الأصناف","ميزان المراجعة","قائمة الدخل","المركز المالي","الميزانيات","قائمة التدفقات النقدية","توزيع الأرباح والخسائر","إهلاكات الأصول","مراكز التكلفة","مركز التكلفة التفصيلي","جاري الشركاء","إدارة دفاتر الشيكات","الشيكات المدفوعة","الشيكات المستلمة","طرق الدفع","العملات"])},
+  {label:"المحاسبة",href:"/accounting",module:"ACCOUNTING",icon:Landmark,children:accountingChildren},
   {label:"المبيعات",href:"/sales",module:"SALES",icon:ShoppingCart,children:menuChildren("/sales","SALES",["عروض الأسعار","أوامر البيع","فواتير المبيعات","إشعارات دائن ومدين","مرتجعات المبيعات","العملاء","قوائم الأسعار","مندوبي المبيعات","تقارير المبيعات"])},
   {label:"المشتريات",href:"/purchases",module:"PURCHASES",icon:ShoppingBag,children:menuChildren("/purchases","PURCHASES",["طلبات الشراء","أوامر الشراء","فواتير المشتريات","مرتجعات المشتريات","الموردون","عروض الموردين","مقارنة الأسعار","تقارير المشتريات"])},
   {label:"المخزون",href:"/inventory",module:"INVENTORY",icon:Boxes,children:menuChildren("/inventory","INVENTORY",["الأصناف","المستودعات","أرصدة المخزون","حركات المخزون","أذن الاستلام والتسليم","التحويل المخزني","تسوية المخزون","الجرد","مخزون الشركة ومخزون العملاء","تقارير المخزون"])},
