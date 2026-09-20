@@ -258,5 +258,26 @@ html[data-cards="square"] .rounded-2xl,
 html[data-cards="square"] .rounded-xl { border-radius: 0.25rem; }
 html[data-cards="elevated"] section.rounded-2xl { box-shadow: var(--premium-shadow); }
 html[data-tables="bordered"] table td,
+html[data-tables="bordered"] table th {
+  border: 1px solid #cbd5e1;
+}
+
+/* NETAJ ONE follows the approved executive-dashboard reference: a compact navy/gold assistant docked to the upper-right. */
+.netaj-one-trigger { inset-inline-end:24px; inset-block-start:88px; inset-block-end:auto; z-index:80; min-width:174px; border-color:#d9a73d; border-radius:16px; color:#fff3cf; background:linear-gradient(145deg,#10243a,#071522 70%); box-shadow:inset 0 1px rgb(255 255 255 / .12),0 14px 30px rgb(4 12 22 / .28); }
+.netaj-one-trigger:hover { border-color:#f3c55b; box-shadow:inset 0 1px rgb(255 255 255 / .18),0 18px 34px rgb(4 12 22 / .38); }
+.netaj-one-trigger>span { border-color:#eab447; color:#ffe29b; background:linear-gradient(145deg,#172d45,#070e18); box-shadow:0 0 0 4px rgb(234 180 71 / .12),0 0 22px rgb(234 180 71 / .25); }
+.netaj-one-trigger>b { color:#f6d27a; }.netaj-one-trigger>small { color:#e8edf3; opacity:.82; letter-spacing:.04em; }
+.netaj-one-layer { align-items:flex-start; justify-content:flex-end; padding:78px 12px 24px; pointer-events:none; }
+.netaj-one-backdrop { pointer-events:auto; background:transparent; backdrop-filter:none; }
+.netaj-one-panel { pointer-events:auto; width:min(392px,calc(100vw - 48px)); height:auto; max-height:calc(100dvh - 102px); border:1px solid #b98725; border-radius:22px; color:#f7f0df; background:linear-gradient(155deg,#10263c 0%,#071522 72%,#0b1d2e 100%); box-shadow:0 24px 70px rgb(3 10 18 / .45),inset 0 1px rgb(255 255 255 / .1); }
+.netaj-one-panel>header { border-block-end-color:rgb(231 180 73 / .35); padding:12px 14px; background:linear-gradient(120deg,#172f49,#0b1929); }
+.netaj-one-panel>header b { color:#f2c45f; }.netaj-one-panel>header p { color:#cbd5e1; }.netaj-one-panel>header>button { color:#f3deb0; border-color:rgb(232 184 75 / .35); background:rgb(255 255 255 / .07); }
+.netaj-one-orb { width:45px; height:45px; border:1px solid #efbc49; background:radial-gradient(circle,#f3c35d 0 12%,#132941 38%,#071522 72%); box-shadow:0 0 0 4px rgb(236 182 66 / .13),0 0 22px rgb(236 182 66 / .35); }
+.netaj-one-tabs { margin:11px 14px 7px; background:rgb(255 255 255 / .08); }.netaj-one-tabs button { color:#cbd5e1; }.netaj-one-tabs button.is-active { color:#182238; background:#f8f0df; }
+.netaj-one-state { margin:5px 14px 9px; color:#d7e0ea; }.netaj-one-starters { margin-inline:14px; }.netaj-one-starters button { border-color:rgb(231 180 73 / .42); color:#f3e4bf; background:rgb(231 180 73 / .1); }
+.netaj-one-panel>form { margin-inline:14px; border-color:rgb(231 180 73 / .35); background:rgb(4 14 24 / .5); }.netaj-one-panel textarea { color:#f7f0df; }.netaj-one-panel textarea::placeholder { color:#a9b8c8; }.netaj-one-compose { border-block-start-color:rgb(231 180 73 / .25); }.netaj-one-compose button:first-child { color:#f1c257; background:rgb(231 180 73 / .12); }.netaj-one-compose button:last-child { color:#101b29; background:linear-gradient(120deg,#f3c660,#d89424); }
+.netaj-one-error,.netaj-one-answer,.netaj-one-preview { border-color:rgb(231 180 73 / .3); background:rgb(255 255 255 / .07); }.netaj-one-error { color:#ffd0c9; background:rgb(181 58 54 / .22); }.netaj-one-answer b,.netaj-one-preview-title b { color:#fff4d5; }.netaj-one-mini-grid>div { border-color:rgb(231 180 73 / .24); background:rgb(255 255 255 / .06); }.netaj-one-mini-grid span,.netaj-one-preview dt { color:#a9b8c8; }.netaj-one-review-actions button { color:#f7edcf; border-color:rgb(231 180 73 / .32); }.netaj-one-review-actions button:first-child { color:#101b29; background:#edb840; }.netaj-one-panel>footer { border-block-start-color:rgb(231 180 73 / .25); color:#aebdca; background:rgb(3 11 19 / .45); }
+html[dir="ltr"] .netaj-one-panel { text-align:left; }.erp-shell[dir="ltr"] .netaj-one-layer { justify-content:flex-start; }.erp-shell[dir="ltr"] .netaj-one-trigger { inset-inline-start:24px; inset-inline-end:auto; }
+@media (max-width:700px) { .netaj-one-trigger { inset-inline-end:12px; inset-block-start:74px; min-width:52px; }.netaj-one-layer { padding:70px 10px 10px; }.netaj-one-panel { width:100%; max-height:calc(100dvh - 80px); border-radius:18px; }.erp-shell[dir="ltr"] .netaj-one-trigger { inset-inline-start:12px; } }
 html[data-tables="bordered"] table th { border: 1px solid #cbd5e1; }
 html[data-tables="minimal"] table tr { border-color: transparent; }

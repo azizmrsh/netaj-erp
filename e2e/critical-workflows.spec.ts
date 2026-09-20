@@ -275,6 +275,12 @@ test("مركز الترحيل ينفذ ملف CSV من المعاينة حتى �
 test("NETAJ ONE يعمل عالميًا بالكتابة ويعرض نتيجة مقيدة بالشركة", async ({ page }) => {
   await page.getByRole("button", { name: "فتح NETAJ ONE" }).click();
   await expect(page.getByRole("dialog", { name: "NETAJ ONE" })).toBeVisible();
+  mkdirSync(resolve("artifacts/final-acceptance"), { recursive: true });
+  const panel = await page.locator(".netaj-one-panel").evaluate(element => { const rect = element.getBoundingClientRect(); const style = getComputedStyle(element); return { top: rect.top, right: innerWidth - rect.right, background: style.backgroundImage }; });
+  expect(panel.top).toBeLessThan(100);
+  expect(panel.right).toBeLessThan(40);
+  expect(panel.background).toContain("linear-gradient");
+  await page.screenshot({ path: resolve("artifacts/final-acceptance/netaj-one-dashboard.png"), fullPage: false });
   await page.getByPlaceholder(/اسأل: لماذا انخفض الربح/).fill("كم السيولة؟");
   await page.getByRole("button", { name: "اسأل", exact: true }).click();
   await expect(page.getByText(/السيولة الحالية/)).toBeVisible();
