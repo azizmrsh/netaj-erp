@@ -3,6 +3,7 @@ import { authorizeRequest, authErrorResponse } from "@/lib/api-auth";
 import { AuthError } from "@/lib/auth";
 import { askAssistant, AssistantError, interpretAssistantCommand, saveAssistantProposal } from "@/lib/assistant";
 import { prisma } from "@/lib/prisma";
+import { planAssistantQuestion } from "@/lib/assistant-planner";
 
 export async function GET(request: Request) {
   try {
@@ -20,8 +21,10 @@ export async function POST(request: Request) {
     const enabledModules = new Set([...auth.companyModules].filter(([moduleKey, enabled]) => enabled && auth.permissions.has(`${moduleKey}.READ`)).map(([moduleKey]) => moduleKey));
     const context = { userId: auth.userId, tenantId: auth.tenantId, companyId: auth.companyId, permissions: auth.permissions, enabledModules };
     const action = String(body.action ?? "ASK").toUpperCase();
+    const plannerHint = action === "ASK" ? await planAssistantQuestion(String(body.question ?? ""), undefined) : null;
+    const plannedBody = plannerHint ? { ...body, plannerHint } : body;
     const result = action === "ASK"
-      ? await prisma.$transaction((tx) => askAssistant(tx, body, context))
+      ? await prisma.$transaction((tx) => askAssistant(tx, plannedBody, context))
       : action === "INTERPRET"
         ? await prisma.$transaction((tx) => interpretAssistantCommand(tx, body, context))
         : await prisma.$transaction((tx) => saveAssistantProposal(tx, body, context));

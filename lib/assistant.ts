@@ -338,7 +338,9 @@ export async function askAssistant(tx: Tx, input: Record<string, unknown>, conte
   if (conversation && (conversation.userId !== context.userId || conversation.tenantId !== (context.tenantId ?? 1) || conversation.companyId !== (context.companyId ?? 1))) throw new AssistantError("المحادثة غير متاحة", 404, "NOT_FOUND");
   if (!conversation) conversation = await tx.assistantConversation.create({ data: { userId: context.userId, tenantId: context.tenantId ?? 1, companyId: context.companyId ?? 1, title: question.slice(0, 100), locale: /[\u0600-\u06ff]/.test(question) ? "ar" : "en" } });
   const previousContext = JSON.parse(conversation.contextJson || "{}") as { lastIntent?: string; lastQuestion?: string; lastRange?: { from: string; to: string; label: string } };
-  const intent = classify(question, previousContext.lastIntent);
+  const plannerHint = input.plannerHint as { intent?: string } | undefined;
+  const hintedIntent = plannerHint?.intent && ["SALES_SUMMARY", "PURCHASE_SUMMARY", "PROFIT_SUMMARY", "PARTY_STATEMENT", "PARTY_INVENTORY", "BANK_BALANCES", "RECEIVABLES", "PAYABLES", "TRANSPORT", "EXPIRING_DOCUMENTS", "GLOBAL_SEARCH"].includes(plannerHint.intent) ? plannerHint.intent : undefined;
+  const intent = hintedIntent ?? classify(question, previousContext.lastIntent);
   const fallback = previousContext.lastRange ? { from: new Date(previousContext.lastRange.from), to: new Date(previousContext.lastRange.to), label: previousContext.lastRange.label } : monthRange();
   const range = resolvedRange(question, fallback);
   await tx.assistantMessage.create({ data: { conversationId: conversation.id, role: "USER", content: question } });
