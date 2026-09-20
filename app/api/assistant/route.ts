@@ -21,6 +21,9 @@ export async function POST(request: Request) {
     const enabledModules = new Set([...auth.companyModules].filter(([moduleKey, enabled]) => enabled && auth.permissions.has(`${moduleKey}.READ`)).map(([moduleKey]) => moduleKey));
     const context = { userId: auth.userId, tenantId: auth.tenantId, companyId: auth.companyId, permissions: auth.permissions, enabledModules };
     const action = String(body.action ?? "ASK").toUpperCase();
+    if (action === "ASK" && assistantProviderStatus() !== "READY") {
+      return NextResponse.json({ error: "خدمة الذكاء الاصطناعي غير متصلة حالياً.", code: "ASSISTANT_PROVIDER_UNAVAILABLE", providerStatus: "DISABLED" }, { status: 503 });
+    }
     const plannerHint = action === "ASK" ? await planAssistantQuestion(String(body.question ?? ""), undefined) : null;
     const plannedBody = plannerHint ? { ...body, plannerHint } : body;
     const result = action === "ASK"
