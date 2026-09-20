@@ -151,7 +151,7 @@ async function monthlyComparison(tx: Tx, range: Range) {
   for (const trip of transport) { const key = monthKey(trip.tripDate), value = row(key); value.transport += n(trip.netProfit); values.set(key, value); }
   for (const vat of vatReturns) { const key = monthKey(vat.periodEnd), value = row(key); value.tax += n(vat.netVatDue); values.set(key, value); }
   const annualAverage = keys.length ? keys.reduce((sum, key) => sum + row(key).revenue - row(key).expenses, 0) / keys.length : 0;
-  return keys.map((key, index) => { const current = row(key), prior = row(`${Number(key.slice(0, 4)) - 1}-${key.slice(5)}`), previous = index ? row(keys[index - 1]) : row(""); const netProfit = current.revenue - current.expenses; return { month: key, ...current, netProfit, allSectors:netProfit, momPercent: pct(netProfit, previous.revenue - previous.expenses), yoyPercent: pct(netProfit, prior.revenue - prior.expenses), annualAverage }; });
+  return keys.map((key, index) => { const current = row(key), prior = row(`${Number(key.slice(0, 4)) - 1}-${key.slice(5)}`), previous = index ? row(keys[index - 1]) : row(""); const netProfit = current.revenue - current.expenses; return { month: key, periodFrom: day(range.from), periodTo: day(range.to), ...current, netProfit, allSectors:netProfit, momPercent: pct(netProfit, previous.revenue - previous.expenses), yoyPercent: pct(netProfit, prior.revenue - prior.expenses), annualAverage }; });
 }
 
 async function customerActivity(tx: Tx, range: Range, inactiveDays: number) {
