@@ -108,7 +108,7 @@ const homeChildren:NavItem[]=[
   {label:"ملخص الأعمال",href:"/dashboards",module:"CORE",icon:Files},
   {label:"التنبيهات",href:"/notifications",module:"CORE",icon:Bell},
   {label:"المهام والموافقات",href:"/approvals",module:"APPROVALS",icon:BadgeCheck},
-  {label:"المؤشرات الرئيسية",href:"/dashboards",module:"CORE",icon:ChartNoAxesCombined},
+  {label:"المؤشرات الرئيسية",href:"/dashboards?view=indicators",module:"CORE",icon:ChartNoAxesCombined},
 ];
 const settingsChildren:NavItem[]=[
   {label:"تخصيص لوحة التحكم",href:"/settings/configuration",module:"CONFIG",icon:LayoutDashboard},
