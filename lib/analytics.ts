@@ -127,6 +127,7 @@ async function transportProfitability(tx: Tx, range: Range) {
 }
 
 function monthsBetween(range: Range) { const rows: string[] = [], cursor = new Date(Date.UTC(range.from.getUTCFullYear(), range.from.getUTCMonth(), 1)); while (cursor <= range.to) { rows.push(monthKey(cursor)); cursor.setUTCMonth(cursor.getUTCMonth() + 1); } return rows; }
+function lastTwelveMonths(end: Date) { const rows: string[] = [], cursor = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() - 11, 1)); while (cursor <= end) { rows.push(monthKey(cursor)); cursor.setUTCMonth(cursor.getUTCMonth() + 1); } return rows; }
 function pct(current: number, previous: number) { return previous ? (current - previous) / Math.abs(previous) * 100 : current ? 100 : 0; }
 
 async function monthlyComparison(tx: Tx, range: Range) {
@@ -140,7 +141,7 @@ async function monthlyComparison(tx: Tx, range: Range) {
     tx.transportTrip.findMany({ where: { tripDate: { gte: start, lte: range.to } } }),
     tx.vatReturn.findMany({ where: { periodEnd: { gte: start, lte: range.to }, status: { not: "CANCELLED" } } }),
   ]);
-  const keys = monthsBetween(range), values = new Map<string, { sales: number; purchases: number; revenue: number; expenses: number; factory: number; transport: number; project: number; tax: number;mb:number;oil:number;asphalt:number }>();
+  const keys = lastTwelveMonths(range.to), values = new Map<string, { sales: number; purchases: number; revenue: number; expenses: number; factory: number; transport: number; project: number; tax: number;mb:number;oil:number;asphalt:number }>();
   const row = (key: string) => values.get(key) ?? { sales: 0, purchases: 0, revenue: 0, expenses: 0, factory: 0, transport: 0, project: 0, tax: 0, mb:0, oil:0, asphalt:0 };
   for (const sale of sales) { const key = monthKey(sale.invoiceDate), value = row(key); value.sales += n(sale.functionalTotalAmount || sale.totalAmount); values.set(key, value); }
   for (const line of saleItems) { const key=monthKey(line.sale.invoiceDate),value=row(key),name=`${line.item.code} ${line.item.nameAr} ${line.item.nameEn??""}`.toUpperCase(),amount=n(line.quantity)*n(line.unitPrice)-n(line.discount);if(/OIL|LCO|زيت/.test(name))value.oil+=amount;else if(/MB|NETAPAVE/.test(name))value.mb+=amount;else if(/ASPHALT|اسفلت|أسفلت/.test(name))value.asphalt+=amount;values.set(key,value); }
