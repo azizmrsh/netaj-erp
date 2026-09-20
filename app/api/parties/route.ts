@@ -3,14 +3,19 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { ConfigurationError, saveCustomFieldValues } from "@/lib/configuration";
 import { audit } from "@/lib/audit";
+import { authorizeRequest, authErrorResponse } from "@/lib/api-auth";
+import { AuthError } from "@/lib/auth";
+import { runWithDataScope } from "@/lib/data-scope";
 
 export async function GET(request: NextRequest) {
   try {
+    const context = await authorizeRequest(request, { moduleKey: "CORE", action: "READ" });
     const params=request.nextUrl.searchParams,page=Math.max(1,Number(params.get("page"))||1),pageSize=Math.min(100,Math.max(10,Number(params.get("pageSize"))||50)),q=String(params.get("q")??"").trim(),where=q?{OR:[{nameAr:{contains:q}},{nameEn:{contains:q}},{unifiedNumber:{contains:q}},{vatNumber:{contains:q}},{telephone:{contains:q}},{email:{contains:q}}]}:{};
-    const [parties,total] = await Promise.all([prisma.party.findMany({where,include:{address:true},orderBy:{createdAt:"desc"},skip:(page-1)*pageSize,take:pageSize}),prisma.party.count({where})]);
+    const [parties,total] = await runWithDataScope({tenantId: context.tenantId, companyId: context.companyId}, () => Promise.all([prisma.party.findMany({where,include:{address:true},orderBy:{createdAt:"desc"},skip:(page-1)*pageSize,take:pageSize}),prisma.party.count({where})]));
 
     return NextResponse.json({parties,pagination:{page,pageSize,total,pages:Math.max(1,Math.ceil(total/pageSize))}});
   } catch (error) {
+    if (error instanceof AuthError) { const response = authErrorResponse(error); return NextResponse.json({ error: response.message, code: response.code }, { status: response.status }); }
     console.error(error);
 
     return NextResponse.json(
@@ -22,6 +27,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const context = await authorizeRequest(request, { moduleKey: "CORE", action: "CREATE" });
     const body = await request.json();
 
     if (!body.nameAr?.trim()) {
@@ -38,7 +44,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const party = await prisma.$transaction(async (tx) => {
+    const party = await runWithDataScope({tenantId: context.tenantId, companyId: context.companyId}, () => prisma.$transaction(async (tx) => {
       const created = await tx.party.create({
       data: {
         nameAr: body.nameAr.trim(),
@@ -79,10 +85,11 @@ export async function POST(request: NextRequest) {
       await saveCustomFieldValues(tx, "PARTY", created.id, body.customFields);
       await audit(tx, { action: "CREATE", entityType: "PARTY", entityId: created.id });
       return created;
-    });
+    }));
 
     return NextResponse.json(party, { status: 201 });
   } catch (error) {
+    if (error instanceof AuthError) { const response = authErrorResponse(error); return NextResponse.json({ error: response.message, code: response.code }, { status: response.status }); }
     console.error(error);
 
     if (error instanceof ConfigurationError) {

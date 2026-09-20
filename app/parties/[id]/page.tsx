@@ -1,5 +1,10 @@
 import PartyTabs from "./components/PartyTabs";
 import { prisma } from "@/lib/prisma";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { requireAuthorization } from "@/lib/auth";
+import { runWithDataScope } from "@/lib/data-scope";
+import { SESSION_COOKIE } from "@/lib/auth";
 
 export default async function PartyPage({
   params,
@@ -9,12 +14,17 @@ export default async function PartyPage({
   const { id } = await params;
   const partyId = Number(id);
 
-  const party = await prisma.party.findUnique({
+  const token = (await cookies()).get(SESSION_COOKIE)?.value ?? null;
+  let context;
+  try {
+    context = await prisma.$transaction((tx) => requireAuthorization(tx, token, { moduleKey: "CORE", action: "READ" }));
+  } catch {
+    redirect("/login");
+  }
+  const party = await runWithDataScope({ tenantId: context.tenantId, companyId: context.companyId }, () => prisma.party.findUnique({
     where: { id: partyId },
-    include: {
-      address: true,
-    },
-  });
+    include: { address: true },
+  }));
 
   if (!party) {
     return (
