@@ -15,7 +15,7 @@ import NetajOne from "./NetajOne";
 
 type Session = { userName:string; companyCode:string; companyId:number; modules:string[]; availableCompanies:{id:number;code:string;legalNameAr:string}[] };
 type Theme = { logoUrl?:string|null; menuOrder?:string[]; primaryColor?:string; secondaryColor?:string; accentColor?:string };
-type NavItem = { label:string; href:string; module:string; icon:typeof LayoutDashboard };
+type NavItem = { label:string; href:string; module:string; icon:typeof LayoutDashboard; children?:NavItem[] };
 type NavGroup = { label:string; items:NavItem[] };
 
 const groups:NavGroup[] = [
@@ -95,21 +95,30 @@ const detailedGroups:NavGroup[] = [
   {label:"التقارير والاستيراد وNETAJ ONE",items:[{label:"التقارير المالية وتقارير الأقسام",href:"/reports",module:"CORE",icon:ChartNoAxesCombined},{label:"التقارير المخصصة ولوحة المؤشرات",href:"/reports/builder",module:"CORE",icon:Files},{label:"استيراد وترحيل ومطابقة البيانات",href:"/imports",module:"IMPORT",icon:UploadCloud},{label:"المساعد الذكي والتحليل والتنبيهات",href:"/assistant",module:"CORE",icon:Sparkles}]},
   {label:"المستخدمون والشركات والإعدادات",items:[{label:"المستخدمون والأدوار والصلاحيات والتدقيق",href:"/settings/users",module:"CORE",icon:ShieldCheck},{label:"الشركات والفروع والسنوات والفترات",href:"/settings/organization",module:"CORE",icon:Building2},{label:"إعدادات النظام والضرائب والترقيم والقوالب",href:"/settings/configuration",module:"CONFIG",icon:Settings},{label:"اللغة والمظهر والتكاملات",href:"/settings/design",module:"DESIGN",icon:Settings}]},
 ];
+const menuChildren=(base:string,module:string,labels:string[]):NavItem[]=>labels.map((label,index)=>({label,href:`${base}${base.includes("?")?"&":"?"}tab=sub-${index}`,module,icon:Files}));
 const referenceGroups:NavGroup[] = [{label:"مساحة العمل",items:[
-  {label:"الرئيسية",href:"/",module:"CORE",icon:LayoutDashboard},
-  {label:"المبيعات",href:"/sales",module:"SALES",icon:ShoppingCart},
-  {label:"المشتريات",href:"/purchases",module:"PURCHASES",icon:ShoppingBag},
-  {label:"المخزون",href:"/inventory",module:"INVENTORY",icon:Boxes},
-  {label:"العملاء والموردين",href:"/parties",module:"CORE",icon:Users},
-  {label:"الحسابات العامة",href:"/accounting",module:"ACCOUNTING",icon:Landmark},
-  {label:"المصروفات",href:"/accounting?tab=expenses",module:"ACCOUNTING",icon:Files},
-  {label:"الأصول الثابتة",href:"/assets",module:"ASSETS",icon:Wrench},
-  {label:"الرواتب والموارد البشرية",href:"/hr",module:"HR",icon:Users},
-  {label:"المشاريع",href:"/projects",module:"PROJECTS",icon:HardHat},
-  {label:"التقارير",href:"/reports",module:"CORE",icon:ChartNoAxesCombined},
-  {label:"الزكاة والضريبة",href:"/accounting?tab=vatReturns",module:"ACCOUNTING",icon:BadgeCheck},
-  {label:"الفوترة الإلكترونية",href:"/sales?tab=invoice",module:"SALES",icon:Files},
-  {label:"الإعدادات",href:"/settings/configuration",module:"CONFIG",icon:Settings},
+  {label:"الرئيسية",href:"/",module:"CORE",icon:LayoutDashboard,children:menuChildren("/","CORE",["لوحة التحكم","ملخص الأعمال","التنبيهات","المهام والموافقات","المؤشرات الرئيسية"])},
+  {label:"المحاسبة",href:"/accounting",module:"ACCOUNTING",icon:Landmark,children:menuChildren("/accounting","ACCOUNTING",["شجرة الحسابات","الحسابات","القيود اليومية","القيود الدورية","سندات الصرف","كل السندات","سندات القبض","سندات التحويل","أرصدة الأصناف","ميزان المراجعة","قائمة الدخل","المركز المالي","الميزانيات","قائمة التدفقات النقدية","توزيع الأرباح والخسائر","إهلاكات الأصول","مراكز التكلفة","مركز التكلفة التفصيلي","جاري الشركاء","إدارة دفاتر الشيكات","الشيكات المدفوعة","الشيكات المستلمة","طرق الدفع","العملات"])},
+  {label:"المبيعات",href:"/sales",module:"SALES",icon:ShoppingCart,children:menuChildren("/sales","SALES",["عروض الأسعار","أوامر البيع","فواتير المبيعات","إشعارات دائن ومدين","مرتجعات المبيعات","العملاء","قوائم الأسعار","مندوبي المبيعات","تقارير المبيعات"])},
+  {label:"المشتريات",href:"/purchases",module:"PURCHASES",icon:ShoppingBag,children:menuChildren("/purchases","PURCHASES",["طلبات الشراء","أوامر الشراء","فواتير المشتريات","مرتجعات المشتريات","الموردون","عروض الموردين","مقارنة الأسعار","تقارير المشتريات"])},
+  {label:"المخزون",href:"/inventory",module:"INVENTORY",icon:Boxes,children:menuChildren("/inventory","INVENTORY",["الأصناف","المستودعات","أرصدة المخزون","حركات المخزون","أذن الاستلام والتسليم","التحويل المخزني","تسوية المخزون","الجرد","مخزون الشركة ومخزون العملاء","تقارير المخزون"])},
+  {label:"المصنع والتصنيع",href:"/factory",module:"FACTORY",icon:Factory,children:menuChildren("/factory","FACTORY",["أوامر التصنيع","خطط الإنتاج","المواد الخام","المنتجات","وصفات التصنيع","استهلاك المواد","الإنتاج الفعلي","تكلفة الإنتاج","ربحية المصنع","تقارير المصنع"])},
+  {label:"النقل واللوجستيات",href:"/transport",module:"TRANSPORT",icon:Truck,children:menuChildren("/transport","TRANSPORT",["أوامر النقل","سندات النقل","الشاحنات","الصهاريج","السائقين","الرحلات","التحميل والتسليم","مصروفات الرحلات","متابعة النقل","تقارير النقل"])},
+  {label:"الموارد البشرية والرواتب",href:"/hr",module:"HR",icon:Users,children:menuChildren("/hr","HR",["الموظفون","العقود","الحضور والانصراف","الإجازات","الرواتب","البدلات","الخصومات","السلف","المستحقات","نهاية الخدمة","مسيرات الرواتب","تقارير الموارد البشرية"])},
+  {label:"المشاريع والمقاولات",href:"/projects",module:"PROJECTS",icon:HardHat,children:menuChildren("/projects","PROJECTS",["المشاريع","العقود","بنود المشروع","التكاليف","المصروفات","الإيرادات","المستخلصات","الموردون والمقاولون","تقدم المشروع","ربحية المشروع","تقارير المشاريع"])},
+  {label:"الأصول الثابتة",href:"/assets",module:"ASSETS",icon:Wrench,children:menuChildren("/assets","ASSETS",["سجل الأصول","فئات الأصول","إضافة أصل","نقل الأصول","إهلاك الأصول","بيع أو استبعاد أصل","صيانة الأصول","تقارير الأصول"])},
+  {label:"البنوك والصناديق",href:"/treasury",module:"ACCOUNTING",icon:Landmark,children:menuChildren("/treasury","ACCOUNTING",["الحسابات البنكية","الصناديق","الحركات البنكية","التحويلات","التسويات البنكية","الشيكات","كشف الحساب والتقارير"])},
+  {label:"العملاء",href:"/parties",module:"CORE",icon:Users,children:menuChildren("/parties","CORE",["قائمة العملاء","إضافة عميل","أرصدة العملاء","كشف حساب عميل","أعمار الديون","حدود الائتمان ومعاملات العميل"])},
+  {label:"الموردون",href:"/parties",module:"CORE",icon:Users,children:menuChildren("/parties","CORE",["قائمة الموردين","إضافة مورد","أرصدة الموردين","كشف حساب مورد","أعمار الديون","معاملات المورد"])},
+  {label:"المصروفات",href:"/accounting?tab=expenses",module:"ACCOUNTING",icon:Files,children:menuChildren("/accounting?tab=expenses","ACCOUNTING",["المصروفات","تصنيفات المصروفات","المصروفات المتكررة","المصروفات المستحقة","تقارير المصروفات"])},
+  {label:"المبيعات والمصروفات الخارجية",href:"/external",module:"EXTERNAL",icon:Globe2,children:menuChildren("/external","EXTERNAL",["المبيعات الخارجية","المصروفات الخارجية","العملاء الخارجيون","التحصيلات","المدفوعات","الربحية الخارجية","التقارير الخارجية"])},
+  {label:"التقارير",href:"/reports",module:"CORE",icon:ChartNoAxesCombined,children:menuChildren("/reports","CORE",["التقارير المالية","تقارير الأقسام","التقارير المخصصة","لوحة المؤشرات"])},
+  {label:"مركز الترحيل واستيراد البيانات",href:"/imports",module:"IMPORT",icon:UploadCloud,children:menuChildren("/imports","IMPORT",["استيراد البيانات","ترحيل البيانات","مطابقة البيانات","الأخطاء والاستثناءات","سجل عمليات الترحيل","قوالب الاستيراد"])},
+  {label:"NETAJ ONE",href:"/assistant",module:"CORE",icon:Sparkles,children:menuChildren("/assistant","CORE",["المساعد الذكي","اسأل عن أعمالك","التحليل المالي","التحليلات والتنبيهات الذكية والتوقعات"])},
+  {label:"الموافقات والمهام",href:"/approvals",module:"APPROVALS",icon:BadgeCheck,children:menuChildren("/approvals","APPROVALS",["صندوق الموافقات","طلباتي","المهام","سجل الموافقات","مسارات الاعتماد"])},
+  {label:"المستخدمون والصلاحيات",href:"/settings/users",module:"CORE",icon:ShieldCheck,children:menuChildren("/settings/users","CORE",["المستخدمون","الأدوار","الصلاحيات","صلاحيات الفروع والشركات","سجل النشاط","سجل التدقيق"])},
+  {label:"الفروع والشركات",href:"/settings/organization",module:"CORE",icon:Building2,children:menuChildren("/settings/organization","CORE",["الشركات","الفروع","السنوات المالية","الفترات المحاسبية","بيانات المنشأة"])},
+  {label:"الإعدادات",href:"/settings/configuration",module:"CONFIG",icon:Settings,children:menuChildren("/settings/configuration","CONFIG",["إعدادات النظام","إعدادات المحاسبة والمبيعات والمشتريات والمخزون","إعدادات الضرائب","الترقيم والتسلسل","القوالب والطباعة","الإشعارات","اللغة والمظهر والتكاملات"])}
 ]}];
 const publicRoutes=["/login","/setup","/portal"];
 const publicPage=(path:string)=>publicRoutes.some(route=>path===route||path.startsWith(`${route}/`))||/^\/(?:notes|sales|workflows)\/\d+\/print$/.test(path)||/^\/transport\/(?:trips|receipts)\/\d+\/print$/.test(path)||/^\/accounting\/vouchers\/\d+\/print$/.test(path);
@@ -120,11 +129,12 @@ Object.assign(english,{"العملاء والموردين":"Customers & Supplier
 
 export default function AppShell({children}:{children:React.ReactNode}){
   const pathname=usePathname(),router=useRouter(),[session,setSession]=useState<Session|null>(null),[theme,setTheme]=useState<Theme|null>(null),[collapsed,setCollapsed]=useState(()=>typeof window!=="undefined"&&window.localStorage.getItem("netaj-sidebar-collapsed")==="1"),[mobileOpen,setMobileOpen]=useState(false),[accountOpen,setAccountOpen]=useState(false),[query,setQuery]=useState(""),[direction,setDirection]=useState<"rtl"|"ltr">(()=>typeof window!=="undefined"&&window.localStorage.getItem("netaj-language")==="en"?"ltr":"rtl"),searchRef=useRef<HTMLInputElement>(null);
+  const [openNav,setOpenNav]=useState<Record<string,boolean>>({});
   const isPublic=publicPage(pathname);
   useEffect(()=>{if(isPublic)return;const controller=new AbortController();Promise.all([fetch("/api/auth/session",{cache:"no-store",signal:controller.signal}).then(r=>r.ok?r.json():null),fetch("/api/design/runtime",{cache:"no-store",signal:controller.signal}).then(r=>r.ok?r.json():null)]).then(([auth,runtime])=>{if(auth)setSession(auth);if(runtime?.theme)setTheme(runtime.theme)}).catch(()=>undefined);return()=>controller.abort()},[isPublic]);
   useEffect(()=>{if(isPublic)return;const handle=(event:KeyboardEvent)=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="k"){event.preventDefault();searchRef.current?.focus()}};window.addEventListener("keydown",handle);return()=>window.removeEventListener("keydown",handle)},[isPublic]);
   useEffect(()=>{if(isPublic)return;document.documentElement.dir=direction;document.documentElement.lang=direction==="rtl"?"ar":"en"},[direction,isPublic]);
-  const visibleGroups=useMemo(()=>{const enabled=new Set(session?.modules??[]),order=new Map((theme?.menuOrder??[]).map((href,index)=>[href,index])),source=referenceGroups;return source.map(group=>({...group,items:group.items.filter(item=>enabled.has(item.module)).sort((a,b)=>(order.get(a.href)??999)-(order.get(b.href)??999))})).filter(group=>group.items.length)},[session,theme]);
+  const visibleGroups=useMemo(()=>{const enabled=new Set(session?.modules??[]),order=new Map((theme?.menuOrder??[]).map((href,index)=>[href,index]));const filter=(items:NavItem[]):NavItem[]=>items.map(item=>({...item,children:item.children?filter(item.children):undefined})).filter(item=>enabled.has(item.module)||Boolean(item.children?.length)).sort((a,b)=>(order.get(a.href)??999)-(order.get(b.href)??999));return referenceGroups.map(group=>({...group,items:filter(group.items)})).filter(group=>group.items.length)},[session,theme]);
   if(isPublic)return children;
   function toggleSidebar(){setCollapsed(value=>{window.localStorage.setItem("netaj-sidebar-collapsed",value?"0":"1");return!value})}
   function search(event:FormEvent){event.preventDefault();if(query.trim().length>1)router.push(`/search?q=${encodeURIComponent(query.trim())}`)}
@@ -140,7 +150,7 @@ export default function AppShell({children}:{children:React.ReactNode}){
         <Link href="/" aria-label="الرئيسية" className="erp-brand-mark">{theme?.logoUrl?<Image src={theme.logoUrl} width={150} height={52} unoptimized alt={session?.companyCode??"NETAj"}/>:<><span className="erp-brand-gem">N</span>{!collapsed&&<span><b>NETAJ</b><small>GLOBAL ERP</small></span>}</>}</Link>
         <button aria-label={collapsed?"توسيع القائمة":"طي القائمة"} className="erp-collapse-button" onClick={toggleSidebar}>{collapsed?<PanelRightOpen size={18}/>:<PanelRightClose size={18}/>}</button>
       </div>
-      <nav aria-label={direction==="rtl"?"القائمة الرئيسية":"Main navigation"} className="erp-nav">{visibleGroups.map(group=><div key={group.label} className="erp-nav-group">{!collapsed&&<p>{translated(group.label)}</p>}{group.items.map(item=>{const Icon=item.icon,active=item.href==="/"?pathname==="/":pathname.startsWith(item.href);return <Link onClick={()=>setMobileOpen(false)} title={collapsed?translated(item.label):undefined} aria-current={active?"page":undefined} key={item.href} href={item.href} className={`erp-nav-item ${active?"is-active":""}`}><span className="erp-nav-icon"><Icon size={18}/></span>{!collapsed&&<span>{translated(item.label)}</span>}</Link>})}</div>)}</nav>
+      <nav aria-label={direction==="rtl"?"القائمة الرئيسية":"Main navigation"} className="erp-nav">{visibleGroups.map(group=><div key={group.label} className="erp-nav-group">{!collapsed&&<p>{translated(group.label)}</p>}{group.items.map(item=>{const Icon=item.icon,active=item.href==="/"?pathname==="/":pathname.startsWith(item.href),hasChildren=Boolean(item.children?.length),isOpen=Boolean(openNav[item.label]);return <div key={item.label} className="erp-nav-node"><div className="erp-nav-parent"><Link onClick={()=>setMobileOpen(false)} title={collapsed?translated(item.label):undefined} aria-current={active?"page":undefined} href={item.href} className={`erp-nav-item ${active?"is-active":""}`}><span className="erp-nav-icon"><Icon size={18}/></span>{!collapsed&&<span>{translated(item.label)}</span>}</Link>{hasChildren&&!collapsed&&<button type="button" className="erp-nav-toggle" aria-label={`${isOpen?"إغلاق":"فتح"} ${translated(item.label)}`} aria-expanded={isOpen} onClick={()=>setOpenNav(value=>({...value,[item.label]:!value[item.label]}))}><ChevronDown size={16}/></button>}</div>{hasChildren&&isOpen&&!collapsed&&<div className="erp-nav-children">{item.children?.map(child=>{const ChildIcon=child.icon,childActive=pathname.startsWith(child.href);return <Link onClick={()=>setMobileOpen(false)} key={child.href} href={child.href} className={`erp-nav-item erp-nav-child ${childActive?"is-active":""}`}><span className="erp-nav-icon"><ChildIcon size={14}/></span><span>{translated(child.label)}</span></Link>})}</div>}</div>})}</div>)}</nav>
       <div className="erp-sidebar-footer"><div className="erp-trust"><ShieldCheck size={17}/>{!collapsed&&<span>{direction==="rtl"?"بيئة مؤسسية آمنة":"Secure enterprise environment"}</span>}</div></div>
     </aside>
     <div className="erp-stage">
