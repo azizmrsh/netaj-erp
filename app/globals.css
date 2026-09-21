@@ -364,7 +364,7 @@ main section[class*="xl:grid-cols-[1.15fr_1.15fr_1fr]"] { display:none; }
   align-items:center;
   justify-content:center;
   gap:10px;
-  overflow:hidden;
+  overflow:visible;
 }
 .reference-kpi>span {
   flex:0 0 48px;
@@ -380,15 +380,16 @@ main section[class*="xl:grid-cols-[1.15fr_1.15fr_1fr]"] { display:none; }
   align-items:center;
   justify-content:center;
   gap:2px;
-  overflow:hidden;
+  overflow:visible;
   text-align:center;
 }
 .reference-kpi p {
   width:100%;
   margin:0;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  white-space:nowrap;
+  overflow:visible;
+  text-overflow:clip;
+  white-space:normal;
+  overflow-wrap:anywhere;
   font-size:clamp(.84rem, .82vw, 1.1rem);
   text-align:center;
 }
@@ -396,14 +397,16 @@ main section[class*="xl:grid-cols-[1.15fr_1.15fr_1fr]"] { display:none; }
   display:block;
   width:100%;
   max-width:100%;
-  overflow:hidden;
+  overflow:visible;
   text-overflow:clip;
-  white-space:nowrap;
+  white-space:normal;
+  overflow-wrap:anywhere;
   font-size:clamp(1rem, 1.12vw, 1.55rem);
   line-height:1.15;
   letter-spacing:-.045em;
   direction:ltr;
   text-align:center;
+  font-variant-numeric:tabular-nums;
 }
 .reference-kpi small,
 .reference-kpi em { line-height:1.1; }
@@ -411,6 +414,15 @@ main section[class*="xl:grid-cols-[1.15fr_1.15fr_1fr]"] { display:none; }
 @media (max-width:1023px) {
   .reference-kpi-grid,
   .supplementary-kpi-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .reference-kpi { gap:7px; }
+  .reference-kpi>span { flex-basis:44px; width:44px; height:44px; }
+  .reference-kpi strong { font-size:clamp(.9rem, 1.8vw, 1.3rem); }
+}
+@media (min-width:1024px) and (max-width:1400px) {
+  .reference-kpi { padding-inline:10px; gap:7px; }
+  .reference-kpi>span { flex-basis:44px; width:44px; height:44px; }
+  .reference-kpi p { font-size:clamp(.76rem, .82vw, .95rem); }
+  .reference-kpi strong { font-size:clamp(.8rem, .9vw, 1.15rem); letter-spacing:-.06em; }
 }
 @media (max-width:700px) {
   .reference-kpi-grid,
