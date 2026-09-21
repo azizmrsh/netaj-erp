@@ -19,6 +19,7 @@ function KpiCard({ label, value, color, icon, trend = "LIVE", values = [] }: { l
 }
 
 function BarChart({ title, rows, keyName, from, to }: { title: string; rows: Row[]; keyName: string; from: string; to: string }) {
+  if (keyName !== "expenses") return null;
   if (keyName === "expenses") { title = "كشف المبيعات الشهرية"; keyName = "sales"; }
   const values = rows.map(row => Number(row[keyName] ?? 0));
   const max = Math.max(1, ...values.map(value => Math.abs(value)));
@@ -26,11 +27,13 @@ function BarChart({ title, rows, keyName, from, to }: { title: string; rows: Row
 }
 
 function SalesPurchasesChart({ rows, from, to }: { rows: Row[]; from: string; to: string }) {
+  return null;
   const max = Math.max(1, ...rows.flatMap(row => [Number(row.sales ?? 0), Number(row.purchases ?? 0)]));
   return <article className="rounded-3xl border border-[#eadfc8] bg-white p-5 shadow-[0_14px_32px_rgba(83,58,14,.10)]"><div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h2 className="text-xl font-black text-[#172b5a]">المبيعات والمشتريات الشهرية</h2><span className="rounded-full bg-[#fff2ca] px-3 py-1 text-xs font-bold text-[#8b5a16]">الفترة: {from} — {to}</span></div><div className="mb-3 flex justify-end gap-5 text-xs font-bold text-[#203966]"><span><i className="ml-1 inline-block h-3 w-3 rounded-full bg-[#e2a51b]" /> المبيعات</span><span><i className="ml-1 inline-block h-3 w-3 rounded-full bg-[#123e78]" /> المشتريات</span></div><div className="grid h-64 grid-cols-12 items-end gap-2 rounded-2xl bg-gradient-to-b from-slate-50 to-white px-3 pb-2 pt-4">{rows.map((row, index) => { const sales = Number(row.sales ?? 0), purchases = Number(row.purchases ?? 0); return <div key={`${String(row.month)}-${index}`} className="flex h-full min-w-0 flex-col items-center justify-end gap-1" title={`${String(row.month)}: ${money(sales)} / ${money(purchases)}`}><div className="flex h-full items-end gap-1"><div className="w-4 rounded-t-xl border border-[#9b6d10] bg-gradient-to-r from-[#936310] via-[#ffe59a] to-[#c99218] shadow-[inset_2px_0_4px_rgba(255,255,255,.6),2px_0_0_#8b6518]" style={{ height: `${Math.max(12, sales / max * 190)}px` }} /><div className="w-4 rounded-t-xl border border-[#0c3462] bg-gradient-to-r from-[#102b53] via-[#4e8ccc] to-[#123d77] shadow-[inset_2px_0_4px_rgba(255,255,255,.4),2px_0_0_#102b53]" style={{ height: `${Math.max(12, purchases / max * 190)}px` }} /></div><small className="text-[10px] font-bold text-slate-600">{String(row.month ?? index + 1).slice(-2)}</small></div>; })}</div></article>;
 }
 
 function ProfitLineChart({ rows, from, to }: { rows: Row[]; from: string; to: string }) {
+  return null;
   const values = rows.map(row => Number(row.netProfit ?? 0));
   const max = Math.max(1, ...values), min = Math.min(0, ...values), range = Math.max(1, max - min);
   const points = values.map((value, index) => `${(index / Math.max(1, values.length - 1)) * 100},${100 - ((value - min) / range) * 78 - 8}`).join(" ");
