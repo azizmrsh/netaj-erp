@@ -8,6 +8,6 @@ export default async function AccountingPage({ searchParams }: { searchParams: P
       <div><span className="finance-eyebrow">NETAJ FINANCE</span><h1 className="mt-2 text-3xl font-black">المحاسبة والمالية</h1><p className="mt-1 text-sm text-amber-100/80">الذمم والتحصيل والبنوك والضريبة والتقارير من دفتر واحد موحّد</p></div>
       <Link href="/" className="finance-home-link">لوحة الإدارة</Link>
     </div></header>
-    <AccountingClient initialTab={query.tab} initialReport={query.report} initialVoucherType={query.tab === "payment" || query.voucherType === "SUPPLIER_PAYMENT" ? "SUPPLIER_PAYMENT" : "CUSTOMER_RECEIPT"} />
+    <AccountingClient key={`${query.tab ?? "overview"}:${query.report ?? ""}:${query.voucherType ?? ""}`} initialTab={query.tab} initialReport={query.report} initialVoucherType={query.tab === "payment" || query.voucherType === "SUPPLIER_PAYMENT" ? "SUPPLIER_PAYMENT" : "CUSTOMER_RECEIPT"} />
   </main>;
 }
