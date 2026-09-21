@@ -349,3 +349,60 @@ main section[class*="xl:grid-cols-[1.15fr_1.15fr_1fr]"] { display:none; }
 .monthly-sales-axis { display:flex; justify-content:space-between; padding-top:9px; color:#697488; font-size:.7rem; font-weight:700; }
 .monthly-sales-axis strong { color:#8b5a16; }
 @media (max-width:700px) { .monthly-sales-report>header { align-items:stretch; flex-direction:column; }.monthly-sales-chart { padding-inline:12px; }.monthly-sales-bars { gap:5px; }.monthly-sales-gridlines { inset-inline:12px; }.monthly-sales-bar span { width:min(22px,75%); }.monthly-sales-axis strong { display:none; } }
+
+/* Keep every KPI card visually identical while allowing long values to scale cleanly. */
+.reference-kpi-grid,
+.supplementary-kpi-grid { align-items:stretch; grid-auto-rows:140px; }
+.reference-kpi {
+  min-height:140px;
+  height:140px;
+  align-items:center;
+  gap:13px;
+  overflow:hidden;
+}
+.reference-kpi>span {
+  flex:0 0 54px;
+  width:54px;
+  height:54px;
+}
+.reference-kpi>div {
+  display:flex;
+  min-width:0;
+  flex:1 1 auto;
+  flex-direction:column;
+  align-items:flex-end;
+  justify-content:center;
+  gap:2px;
+  overflow:hidden;
+}
+.reference-kpi p {
+  width:100%;
+  margin:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  text-align:right;
+}
+.reference-kpi strong {
+  display:block;
+  width:100%;
+  max-width:100%;
+  overflow:hidden;
+  text-overflow:clip;
+  white-space:nowrap;
+  font-size:clamp(.88rem, .98vw, 1.35rem);
+  line-height:1.15;
+  letter-spacing:-.045em;
+  direction:ltr;
+  text-align:right;
+}
+.reference-kpi small,
+.reference-kpi em { line-height:1.1; }
+.supplementary-kpi-grid { margin-top:0; }
+@media (max-width:700px) {
+  .reference-kpi-grid,
+  .supplementary-kpi-grid { grid-auto-rows:112px; }
+  .reference-kpi { min-height:112px; height:112px; padding:10px; }
+  .reference-kpi>span { flex-basis:46px; width:46px; height:46px; border-radius:14px; }
+  .reference-kpi strong { font-size:clamp(.84rem, 3.5vw, 1.15rem); }
+}
