@@ -97,13 +97,13 @@ const detailedGroups:NavGroup[] = [
 ];
 const menuChildren=(base:string,module:string,labels:string[]):NavItem[]=>labels.map((label,index)=>({label,href:`${base}${base.includes("?")?"&":"?"}tab=sub-${index}`,module,icon:Files}));
 const accountingChildren:NavItem[]=[
-  ["شجرة الحسابات","chart"],["الحسابات","accounts"],["القيود اليومية","journals"],["القيود الدورية","journals"],
+  ["شجرة الحسابات","chart"],["الحسابات","accounts"],["القيود اليومية","journals"],["القيود الدورية","recurring"],
   ["سندات الصرف","payment"],["كل السندات","allVouchers"],["سندات القبض","receipt"],["سندات التحويل","transfer"],
-  ["أرصدة الأصناف","overview"],["ميزان المراجعة","reports"],["قائمة الدخل","reports"],["المركز المالي","reports"],
+  ["أرصدة الأصناف","inventoryBalances"],["ميزان المراجعة","reports"],["قائمة الدخل","reports"],["المركز المالي","reports"],
   ["الميزانيات","budgets"],["قائمة التدفقات النقدية","reports"],["توزيع الأرباح والخسائر","reports"],["إهلاكات الأصول","assets"],
-  ["مراكز التكلفة","reports"],["مركز التكلفة التفصيلي","reports"],["جاري الشركاء","receivables"],["إدارة دفاتر الشيكات","vouchers"],
-  ["الشيكات المدفوعة","vouchers"],["الشيكات المستلمة","vouchers"],["طرق الدفع","paymentMethods"],["العملات","currencies"]
-].map(([label,tab])=>({label,href:`/accounting?tab=${tab}`,module:"ACCOUNTING",icon:Files}));
+  ["مراكز التكلفة","costCenters"],["مركز التكلفة التفصيلي","costCenterDetail"],["جاري الشركاء","partners"],["إدارة دفاتر الشيكات","chequebooks"],
+  ["الشيكات المدفوعة","paidCheques"],["الشيكات المستلمة","receivedCheques"],["طرق الدفع","paymentMethods"],["العملات","currencies"]
+].map(([label,tab])=>({label,href: (()=>{const reports:Record<string,string>={"ميزان المراجعة":"trial-balance","قائمة الدخل":"profit-and-loss","المركز المالي":"balance-sheet","قائمة التدفقات النقدية":"cash-flow","توزيع الأرباح والخسائر":"changes-in-equity"}; if(reports[label]) return `/accounting?tab=reports&report=${reports[label]}`; return `/accounting?tab=${tab}`;})(),module:"ACCOUNTING",icon:Files}));
 const homeChildren:NavItem[]=[
   {label:"ملخص الأقسام",href:"/dashboards?view=summary",module:"CORE",icon:Files},
   {label:"ملخص الأقسام",href:"/dashboards?view=indicators",module:"CORE",icon:ChartNoAxesCombined},
