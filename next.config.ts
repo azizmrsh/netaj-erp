@@ -5,6 +5,7 @@ const scriptPolicy = process.env.NODE_ENV === "production"
   : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
 
 const nextConfig: NextConfig = {
+  distDir: process.env.NETAJ_BUILD_DIR || ".next",
   // Prisma's better-sqlite3 adapter contains a native Node.js binding. Keeping
   // both packages external prevents Next.js from relocating the binding into a
   // server chunk where Node can no longer resolve the native .node file.

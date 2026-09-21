@@ -2,31 +2,48 @@ type Cell = string | number | null | undefined;
 export type ReportTable = { title: string; subtitle?: string; columns: string[]; rows: Cell[][] };
 
 const titles: Record<string, string> = {
-  "profit-and-loss": "Profit and Loss", "balance-sheet": "Balance Sheet", "cash-flow": "Cash Flow Statement",
-  "changes-in-equity": "Statement of Changes in Equity", "trial-balance": "Trial Balance", "general-ledger": "General Ledger",
-  "account-statement": "Account Statement", "ar-aging": "Accounts Receivable Aging", "ap-aging": "Accounts Payable Aging",
-  vat: "VAT Report", "budget-vs-actual": "Budget vs Actual",
+  "profit-and-loss": "قائمة الدخل", "balance-sheet": "المركز المالي", "cash-flow": "قائمة التدفقات النقدية",
+  "changes-in-equity": "التغيرات في حقوق الملكية", "trial-balance": "ميزان المراجعة", "general-ledger": "دفتر الأستاذ",
+  "account-statement": "كشف الحساب", "ar-aging": "أعمار ذمم العملاء", "ap-aging": "أعمار ذمم الموردين",
+  vat: "ضريبة القيمة المضافة", "budget-vs-actual": "الميزانية مقابل الفعلي",
 };
 const number = (value: unknown) => typeof value === "number" ? value : Number(value ?? 0);
 
 export function toReportTable(report: string, data: unknown, subtitle?: string): ReportTable {
   const value = data as Record<string, unknown>;
   const title = titles[report] ?? report;
-  if (report === "trial-balance") return { title, subtitle, columns: ["Account", "Name", "Debit", "Credit", "Balance"], rows: ((value.rows ?? []) as Array<Record<string, unknown>>).map((row) => [String(row.code), String(row.name), number(row.debit), number(row.credit), number(row.balance)]) };
-  if (report === "general-ledger") return { title, subtitle, columns: ["Date", "Entry", "Reference", "Account", "Description", "Txn Currency", "Txn Debit", "Txn Credit", "Debit", "Credit", "Balance"], rows: (data as Array<Record<string, unknown>>).map((row) => [date(row.date), row.entryNumber as Cell, row.referenceNumber as Cell, row.accountCode as Cell, row.description as Cell, row.transactionCurrency as Cell, number(row.transactionDebit), number(row.transactionCredit), number(row.debit), number(row.credit), number(row.balance)]) };
-  if (report === "account-statement") return { title, subtitle, columns: ["Date", "Entry", "Reference", "Description", "Debit", "Credit", "Balance"], rows: ((value.rows ?? []) as Array<Record<string, unknown>>).map((row) => [date(row.date), row.entryNumber as Cell, row.referenceNumber as Cell, row.description as Cell, number(row.debit), number(row.credit), number(row.balance)]) };
-  if (report === "ar-aging" || report === "ap-aging") return { title, subtitle, columns: ["Document", "Party", "Invoice Date", "Due Date", "Total", "Paid", "Outstanding", "Age Days", "Bucket"], rows: ((value.items ?? []) as Array<Record<string, unknown>>).map((row) => [row.number as Cell, row.partyName as Cell, date(row.invoiceDate), date(row.dueDate), number(row.total), number(row.paid), number(row.outstanding), number(row.ageDays), row.bucket as Cell]) };
-  if (report === "cash-flow") return { title, subtitle, columns: ["Date", "Bank", "Reference", "Description", "Inflow", "Outflow", "Balance"], rows: ((value.rows ?? []) as Array<Record<string, unknown>>).map((row) => [date(row.transactionDate), (row.bankAccount as Record<string, unknown>)?.name as Cell, row.referenceNumber as Cell, row.description as Cell, number(row.amountIn), number(row.amountOut), number(row.balanceAfter)]) };
-  if (report === "changes-in-equity") return { title, subtitle, columns: ["Account", "Name", "Opening", "Direct Changes", "Closing before Profit"], rows: ((value.rows ?? []) as Array<Record<string, unknown>>).map((row) => [row.code as Cell, row.name as Cell, number(row.opening), number(row.directChanges), number(row.closingBeforeProfit)]) };
-  if (report === "vat") return { title, subtitle, columns: ["Date", "Entry", "Account", "Debit", "Credit"], rows: ((value.lines ?? []) as Array<Record<string, unknown>>).map((row) => [date(row.date), row.entryNumber as Cell, row.accountName as Cell, number(row.debit), number(row.credit)]) };
-  if (report === "budget-vs-actual") return { title, subtitle, columns: ["Account", "Name", "Period", "Cost Center", "Department", "Project", "Budget", "Actual", "Variance", "Variance %"], rows: ((value.rows ?? []) as Array<Record<string, unknown>>).map((row) => [row.accountCode as Cell, row.accountName as Cell, row.periodName as Cell, row.costCenter as Cell, row.department as Cell, row.projectCode as Cell, number(row.budget), number(row.actual), number(row.varianceAmount), row.variancePercent == null ? null : number(row.variancePercent)]) };
+  if (report === "trial-balance") {
+    const totals = (value.totals ?? {}) as Record<string, unknown>;
+    const rows: Cell[][] = ((value.rows ?? []) as Array<Record<string, unknown>>).map(row => [String(row.code), String(row.name), number(row.openingDebit), number(row.openingCredit), number(row.debit), number(row.credit), number(row.closingDebit ?? Math.max(number(row.balance), 0)), number(row.closingCredit ?? Math.max(-number(row.balance), 0))]);
+    if (value.totals) rows.push(["", "الإجمالي", number(totals.openingDebit), number(totals.openingCredit), number(totals.debit), number(totals.credit), number(totals.closingDebit), number(totals.closingCredit)]);
+    return { title, subtitle, columns: ["رقم الحساب", "اسم الحساب", "أول المدة مدين", "أول المدة دائن", "الحركة مدين", "الحركة دائن", "آخر المدة مدين", "آخر المدة دائن"], rows };
+  }
+  if (report === "general-ledger") return { title, subtitle, columns: ["التاريخ", "القيد", "المرجع", "الحساب", "البيان", "عملة الحركة", "مدين أجنبي", "دائن أجنبي", "مدين وظيفي", "دائن وظيفي", "رصيد الحساب"], rows: (data as Array<Record<string, unknown>>).map((row) => [date(row.date), row.entryNumber as Cell, row.referenceNumber as Cell, row.accountCode as Cell, row.description as Cell, row.transactionCurrency as Cell, number(row.transactionDebit), number(row.transactionCredit), number(row.debit), number(row.credit), number(row.balance)]) };
+  if (report === "account-statement") return { title, subtitle, columns: ["التاريخ", "القيد", "المرجع", "البيان", "مدين", "دائن", "الرصيد"], rows: [["", "", "", "رصيد أول المدة", null, null, number(value.openingBalance)], ...((value.rows ?? []) as Array<Record<string, unknown>>).map((row) => [date(row.date), row.entryNumber as Cell, row.referenceNumber as Cell, row.description as Cell, number(row.debit), number(row.credit), number(row.balance)]), ["", "", "", "رصيد آخر المدة", null, null, number(value.closingBalance)]] };
+  if (report === "ar-aging" || report === "ap-aging") return { title, subtitle, columns: ["المستند", "الجهة", "تاريخ الفاتورة", "الاستحقاق", "الإجمالي", "المسدد", "المتبقي", "أيام التأخر", "فئة التأخر"], rows: ((value.items ?? []) as Array<Record<string, unknown>>).map((row) => [row.number as Cell, row.partyName as Cell, date(row.invoiceDate), date(row.dueDate), number(row.total), number(row.paid), number(row.outstanding), number(row.ageDays), row.bucket as Cell]) };
+  if (report === "cash-flow") {
+    const categories: Record<string, string> = { OPERATING: "التشغيل", INVESTING: "الاستثمار", FINANCING: "التمويل", UNCLASSIFIED: "غير مصنف", OPENING: "تسوية افتتاحية", EXCHANGE: "فروق الصرف" };
+    const totals = (value.totals ?? {}) as Record<string, unknown>;
+    const rows: Cell[][] = ((value.rows ?? []) as Array<Record<string, unknown>>).map(row => [date(row.transactionDate), categories[String(row.category)] ?? String(row.category), row.entryNumber as Cell, row.accountName as Cell, row.description as Cell, number(row.amountIn), number(row.amountOut)]);
+    for (const [key, label] of [["openingCash", "النقد أول المدة"], ["operating", "صافي التشغيل"], ["investing", "صافي الاستثمار"], ["financing", "صافي التمويل"], ["unclassified", "تدفقات تحتاج تصنيفًا"], ["net", "صافي التدفق النقدي"], ["openingAdjustments", "تسويات الأرصدة الافتتاحية"], ["exchangeDifferences", "أثر فروق الصرف"], ["closingCash", "النقد آخر المدة"]]) rows.push(["", label, "", "", "", number(totals[key]), null]);
+    return { title, subtitle, columns: ["التاريخ", "النشاط", "القيد", "الحساب المقابل", "البيان", "داخل", "خارج"], rows };
+  }
+  if (report === "changes-in-equity") {
+    const totals = (value.totals ?? {}) as Record<string, unknown>;
+    const rows: Cell[][] = ((value.rows ?? []) as Array<Record<string, unknown>>).map(row => [row.code as Cell, row.name as Cell, number(row.opening), number(row.directChanges), number(row.closingBeforeProfit)]);
+    rows.push(["", "أرباح أول المدة غير المقفلة", number(totals.openingUnclosedProfit), null, null], ["", "صافي ربح الفترة", null, number(totals.currentProfit), null], ["", "الإجمالي شامل الأرباح", number(totals.openingEquity), number(totals.directChanges) + number(totals.currentProfit), number(totals.closingEquity)]);
+    return { title, subtitle, columns: ["رقم الحساب", "الحساب", "أول المدة", "التغيرات", "آخر المدة"], rows };
+  }
+  if (report === "vat") return { title, subtitle, columns: ["التاريخ", "القيد", "الحساب", "مدين", "دائن"], rows: ((value.lines ?? []) as Array<Record<string, unknown>>).map((row) => [date(row.date), row.entryNumber as Cell, row.accountName as Cell, number(row.debit), number(row.credit)]) };
+  if (report === "budget-vs-actual") return { title, subtitle, columns: ["رقم الحساب", "الحساب", "الفترة", "مركز التكلفة", "الإدارة", "المشروع", "المخطط", "الفعلي", "الانحراف", "الانحراف %"], rows: ((value.rows ?? []) as Array<Record<string, unknown>>).map((row) => [row.accountCode as Cell, row.accountName as Cell, row.periodName as Cell, row.costCenter as Cell, row.department as Cell, row.projectCode as Cell, number(row.budget), number(row.actual), number(row.varianceAmount), row.variancePercent == null ? null : number(row.variancePercent)]) };
   if (report === "profit-and-loss" || report === "balance-sheet") {
     const source = report === "profit-and-loss" ? value.profitAndLoss as Record<string, unknown> : value.balanceSheet as Record<string, unknown>;
     const groups = report === "profit-and-loss" ? ["revenueAccounts", "expenseAccounts"] : ["assetAccounts", "liabilityAccounts", "equityAccounts"];
     const rows = groups.flatMap((key) => ((source[key] ?? []) as Array<Record<string, unknown>>).map((row) => [row.code as Cell, row.name as Cell, String(row.type), number(row.reportAmount)]));
-    if (report === "profit-and-loss") rows.push(["", "Net Profit", "TOTAL", number(source.netProfit)]);
-    else rows.push(["", "Liabilities and Equity", "TOTAL", number(source.liabilitiesAndEquity)]);
-    return { title, subtitle, columns: ["Account", "Name", "Section", "Amount"], rows };
+    if (report === "profit-and-loss") {
+      rows.push(["", "إجمالي الإيرادات", "TOTAL", number(source.revenue)], ["", "إجمالي المصروفات", "TOTAL", number(source.expenses)], ["", "صافي الربح / الخسارة", "TOTAL", number(source.netProfit)]);
+    } else rows.push(["", "إجمالي الأصول", "TOTAL", number(source.assets)], ["", "إجمالي الخصوم", "TOTAL", number(source.liabilities)], ["", "حقوق الملكية", "TOTAL", number(source.equity)], ["", "أرباح غير مقفلة", "EQUITY", number(source.currentProfit)], ["", "إجمالي الخصوم وحقوق الملكية", "TOTAL", number(source.liabilitiesAndEquity)], ["", "فرق التوازن", "CHECK", number(source.difference)]);
+    return { title, subtitle, columns: ["رقم الحساب", "الحساب", "القسم", "المبلغ"], rows };
   }
   throw new Error("Unsupported financial export report");
 }

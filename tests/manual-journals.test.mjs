@@ -1,0 +1,42 @@
+import assert from 'node:assert/strict';
+import { after, before, test } from 'node:test';
+import { copyFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { PrismaClient } from '@prisma/client';
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
+import { saveManualJournal, manualJournalAction } from '../lib/manual-journals.ts';
+import { accountDirectory } from '../lib/account-directory.ts';
+import { ensureAccountingFoundation } from '../lib/accounting.ts';
+import { createBankAccount, createVoucher, postVoucher, ensureFinanceFoundation } from '../lib/finance.ts';
+const dir=mkdtempSync(join(tmpdir(),'netaj-manual-test-')),file=join(dir,'test.db');copyFileSync('prisma/netaj.db',file);
+const db=new PrismaClient({adapter:new PrismaBetterSqlite3({url:`file:${file}`})});
+const code=`MJ${Date.now()}`;let a,b,bank;
+before(async()=>{await db.$transaction(tx=>ensureAccountingFoundation(tx));await db.$transaction(tx=>ensureFinanceFoundation(tx));a=await db.account.create({data:{code:code+'1',nameAr:'حساب اختبار مدين',accountType:'ASSET'}});b=await db.account.create({data:{code:code+'2',nameAr:'حساب اختبار مقابل',accountType:'EQUITY'}});bank=await db.$transaction(tx=>createBankAccount(tx,{name:code,openingBalance:0}));});
+after(async()=>{await db.$disconnect();rmSync(dir,{recursive:true,force:true});});
+const input=()=>({entryDate:new Date().toISOString(),description:'اختبار دورة القيد',lines:[{accountId:a.id,debit:'123.45'},{accountId:b.id,credit:'123.45'}]});
+test('مسودة/اعتماد/ترحيل/عكس: الكسور والأرصدة وسجل المستخدم ولا حذف للأصل',async()=>{
+ const draft=await db.$transaction(tx=>saveManualJournal(tx,input(),'creator'));assert.equal(draft.status,'DRAFT');
+ assert.equal((await db.$transaction(tx=>accountDirectory(tx))).rows.find(r=>r.id===a.id).balance,0);
+ await assert.rejects(db.$transaction(tx=>manualJournalAction(tx,draft.id,'POST','poster')),/اعتماد/);
+ await db.$transaction(tx=>manualJournalAction(tx,draft.id,'APPROVE','approver'));
+ const posted=await db.$transaction(tx=>manualJournalAction(tx,draft.id,'POST','poster'));assert.equal(posted.status,'POSTED');
+ await db.$transaction(tx=>manualJournalAction(tx,draft.id,'POST','poster'));assert.equal(await db.journalEntry.count({where:{entryNumber:posted.entryNumber}}),1);
+ assert.equal((await db.$transaction(tx=>accountDirectory(tx))).rows.find(r=>r.id===a.id).balance,123.45);
+ await assert.rejects(db.$transaction(tx=>saveManualJournal(tx,input(),'editor',draft.id)),/مسودة/);
+ await db.$transaction(tx=>manualJournalAction(tx,draft.id,'REVERSE','controller'));
+ assert.equal((await db.$transaction(tx=>accountDirectory(tx))).rows.find(r=>r.id===a.id).balance,0);
+ assert.equal((await db.journalEntry.findUnique({where:{id:draft.id}})).status,'REVERSED');
+ const logs=await db.auditLog.findMany({where:{entityType:'JOURNAL_ENTRY',entityId:draft.id}});assert.ok(logs.some(l=>l.action==='JOURNAL_APPROVE'&&l.userId==='approver'));
+});
+test('رفض عدم التوازن والسطر ثنائي الطرف والحساب الرئيسي، النسخ مسودة مستقلة',async()=>{
+ await assert.rejects(db.$transaction(tx=>saveManualJournal(tx,{...input(),lines:[{accountId:a.id,debit:3},{accountId:b.id,credit:2}]},'test')),/غير متوازن/);
+ await assert.rejects(db.$transaction(tx=>saveManualJournal(tx,{...input(),lines:[{accountId:a.id,debit:3,credit:1},{accountId:b.id,credit:2}]},'test')),/مدين أو الدائن/);
+ const saved=await db.$transaction(tx=>saveManualJournal(tx,input(),'test'));const copy=await db.$transaction(tx=>manualJournalAction(tx,saved.id,'COPY','test'));assert.notEqual(copy.id,saved.id);assert.equal(copy.status,'DRAFT');assert.notEqual(copy.entryNumber,saved.entryNumber);
+ await db.$transaction(tx=>manualJournalAction(tx,saved.id,'CANCEL','test'));assert.equal((await db.journalEntry.findUnique({where:{id:saved.id}})).status,'CANCELLED');
+});
+test('سند لغير المورد: الحساب المقابل فعلي والشيك لا يرحل نقديًا من شاشة السند',async()=>{
+ const v=await db.$transaction(tx=>createVoucher(tx,{voucherType:'SUPPLIER_PAYMENT',beneficiaryType:'PARTNER',beneficiaryName:'شريك الاختبار',counterAccountId:b.id,bankAccountId:bank.id,amount:'12.34',description:'سحب شريك',paymentMethod:'BANK'}));
+ const posted=await db.$transaction(tx=>postVoucher(tx,v.id));assert.equal(posted.status,'POSTED');assert.ok(posted.journalEntry.lines.some(l=>l.accountId===b.id&&Number(l.debit)===12.34));
+ await assert.rejects(db.$transaction(tx=>createVoucher(tx,{voucherType:'SUPPLIER_PAYMENT',beneficiaryName:'اختبار',counterAccountId:b.id,bankAccountId:bank.id,amount:10,paymentMethod:'CHEQUE'})),/صفحة الشيكات/);
+});

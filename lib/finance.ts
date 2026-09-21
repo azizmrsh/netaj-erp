@@ -10,6 +10,9 @@ import {
 } from "@/lib/accounting";
 import { nextDocumentNumber } from "@/lib/document-numbering";
 import { exchangeRateAt, functionalAmount } from "@/lib/currency";
+import { getVerifiedDataScope } from "@/lib/data-scope";
+import { validateCostCenterForPosting } from "@/lib/cost-centers";
+import { validatePaymentMethodForUse } from "@/lib/payment-methods";
 
 type Tx = Prisma.TransactionClient;
 
@@ -37,7 +40,7 @@ const costCenters = [["ADMIN","الإدارة"],["FACTORY","المصنع"],["WAR
 const money = (value: unknown, label = "المبلغ") => {
   try {
     const amount = new Prisma.Decimal(String(value ?? 0)).toDecimalPlaces(2);
-    if (amount.isNegative()) throw new Error();
+    if (!amount.isFinite() || amount.isNegative()) throw new Error();
     return amount;
   } catch { throw new FinanceError("INVALID_INPUT", `${label} غير صحيح`); }
 };
@@ -96,22 +99,35 @@ export async function createVoucher(tx: Tx, input: Record<string, unknown>) {
   const voucherType = String(input.voucherType ?? "").toUpperCase();
   if (!["CUSTOMER_RECEIPT", "SUPPLIER_PAYMENT"].includes(voucherType)) throw new FinanceError("INVALID_INPUT", "نوع السند المالي غير صحيح");
   const voucherDate = parsedDate(input.voucherDate);
-  const partyId = Number(input.partyId);
+  const partyId = input.partyId ? Number(input.partyId) : null;
   const bankAccountId = Number(input.bankAccountId);
   const amount = money(input.amount);
-  if (!amount.gt(0) || !Number.isInteger(partyId) || !Number.isInteger(bankAccountId)) throw new FinanceError("INVALID_INPUT", "بيانات السند المالي غير مكتملة");
-  const [party, bank] = await Promise.all([tx.party.findUnique({ where: { id: partyId } }), tx.bankAccount.findUnique({ where: { id: bankAccountId } })]);
-  if (!party || !bank?.isActive) throw new FinanceError("NOT_FOUND", "الجهة أو الحساب البنكي غير موجود");
+  const scope = await getVerifiedDataScope();
+  const counterAccountId = input.counterAccountId ? Number(input.counterAccountId) : null;
+  if (!amount.gt(0) || (partyId !== null && !Number.isInteger(partyId)) || !Number.isInteger(bankAccountId)) throw new FinanceError("INVALID_INPUT", "بيانات السند المالي غير مكتملة");
+  const [party, bank] = await Promise.all([partyId ? tx.party.findFirst({ where: { id: partyId, ...scope, isActive: true } }) : null, tx.bankAccount.findFirst({ where: { id: bankAccountId, ...scope } })]);
+  if ((partyId && !party) || !bank?.isActive) throw new FinanceError("NOT_FOUND", "الجهة أو الحساب البنكي غير موجود");
+  if (!party && (!counterAccountId || !clean(input.beneficiaryName))) throw new FinanceError("INVALID_INPUT", "حدد اسم المستفيد والحساب المقابل عند الصرف أو القبض لغير العملاء والموردين");
+  if (party && !counterAccountId && !(voucherType === "CUSTOMER_RECEIPT" ? party.isCustomer : party.isSupplier)) throw new FinanceError("INVALID_INPUT", "الطرف ليس عميلًا/موردًا لهذا السند؛ حدد حسابه المحاسبي المقابل");
+  if (counterAccountId && !await tx.account.findFirst({ where: { id: counterAccountId, ...scope, isActive: true, allowPosting: true } })) throw new FinanceError("INVALID_INPUT", "الحساب المقابل يجب أن يكون حساب حركة نشطًا للشركة");
+  if (counterAccountId === bank.ledgerAccountId) throw new FinanceError("INVALID_INPUT", "استخدم سند التحويل للتحويل بين حسابات النقد والبنوك");
+  const branchId = input.branchId ? Number(input.branchId) : null, costCenterId = input.costCenterId ? Number(input.costCenterId) : null;
+  if (branchId && !await tx.branch.findFirst({ where: { id: branchId, companyId: scope.companyId, isActive: true } })) throw new FinanceError("INVALID_INPUT", "الفرع غير صالح");
+  await validateCostCenterForPosting(tx, { costCenterId });
   const currency = String(input.currency ?? bank.currency).trim().toUpperCase();
   if (currency !== bank.currency) throw new FinanceError("INVALID_INPUT", "عملة السند يجب أن تطابق عملة الحساب البنكي");
+  const method = await validatePaymentMethodForUse(tx, { code: String(input.paymentMethod ?? "BANK").toUpperCase(), use: voucherType === "CUSTOMER_RECEIPT" ? "RECEIPT" : "PAYMENT", bankAccountId, currency, branchId, userId: input.userId ? String(input.userId) : null });
+  if (method?.type === "CHEQUE" || String(input.paymentMethod).toUpperCase() === "CHEQUE") throw new FinanceError("INVALID_INPUT", "سجل الشيك في صفحة الشيكات لإثباته تحت التحصيل قبل حركة البنك");
   const fx = await exchangeRateAt(tx, currency, voucherDate);
   const voucherFunctionalAmount = functionalAmount(amount, fx.rate);
   const rawAllocations = Array.isArray(input.allocations) ? input.allocations : [];
+  if (rawAllocations.length && counterAccountId) throw new FinanceError("INVALID_INPUT", "تخصيص الفواتير يتطلب حساب الذمم الافتراضي دون حساب مقابل مخصص");
   const allocations: AllocationInput[] = rawAllocations.map((raw) => {
     const row = raw as Record<string, unknown>;
     return { saleId: row.saleId ? Number(row.saleId) : null, purchaseId: row.purchaseId ? Number(row.purchaseId) : null, amount: money(row.amount, "مبلغ التخصيص") };
   });
   const allocated = allocations.reduce((sum, row) => sum.plus(row.amount), new Prisma.Decimal(0));
+  if (allocations.some(row => !row.amount.gt(0)) || new Set(allocations.map(row => `${row.saleId ?? ""}:${row.purchaseId ?? ""}`)).size !== allocations.length) throw new FinanceError("INVALID_INPUT", "تخصيصات الفواتير يجب أن تكون موجبة وغير مكررة");
   if (allocated.gt(amount)) throw new FinanceError("INVALID_INPUT", "مجموع التخصيصات أكبر من مبلغ السند");
   if (voucherType === "CUSTOMER_RECEIPT" && allocations.some((row) => !row.saleId || row.purchaseId)) throw new FinanceError("INVALID_INPUT", "تخصيص سند القبض يجب أن يكون لفواتير مبيعات");
   if (voucherType === "SUPPLIER_PAYMENT" && allocations.some((row) => !row.purchaseId || row.saleId)) throw new FinanceError("INVALID_INPUT", "تخصيص سند الصرف يجب أن يكون لفواتير موردين");
@@ -149,6 +165,7 @@ export async function createVoucher(tx: Tx, input: Record<string, unknown>) {
   }
   const voucherNumber = await nextDocumentNumber(tx, voucherType === "CUSTOMER_RECEIPT" ? "RV" : "PV", voucherDate);
   const voucher = await tx.financialVoucher.create({ data: { voucherNumber, voucherType, voucherDate, partyId, amount, currency,
+    beneficiaryType: String(input.beneficiaryType ?? "PARTY"), beneficiaryName: clean(input.beneficiaryName), counterAccountId, branchId, costCenterId,
     exchangeRate: fx.rate, rateDate: fx.rateDate, functionalAmount: voucherFunctionalAmount,
     paymentMethod: String(input.paymentMethod ?? "BANK").toUpperCase(), bankAccountId, referenceNumber: clean(input.referenceNumber),
     description: clean(input.description), notes: clean(input.notes), allocations: { create: allocations } },
@@ -174,12 +191,19 @@ export async function recordBankMovement(tx: Tx, input: { bankAccountId: number;
     referenceNumber: input.referenceNumber, description: input.description } });
 }
 
-export async function postVoucher(tx: Tx, voucherId: number) {
+export async function postVoucher(tx: Tx, voucherId: number, userId?: number | string) {
   const voucher = await tx.financialVoucher.findUnique({ where: { id: voucherId }, include: { bankAccount: true, allocations: true } });
   if (!voucher) throw new FinanceError("NOT_FOUND", "السند المالي غير موجود");
   if (voucher.status === "POSTED") return tx.financialVoucher.findUniqueOrThrow({ where: { id: voucher.id }, include: { journalEntry: { include: { lines: true } }, allocations: true } });
   if (voucher.status !== "DRAFT") throw new FinanceError("INVALID_STATUS", "لا يمكن ترحيل السند في حالته الحالية");
   await assertOpenAccountingPeriod(tx, voucher.voucherDate);
+  if (!voucher.bankAccount.isActive) throw new FinanceError("INVALID_INPUT", "الحساب البنكي موقوف");
+  await validatePaymentMethodForUse(tx, { code: voucher.paymentMethod, use: voucher.voucherType === "CUSTOMER_RECEIPT" ? "RECEIPT" : "PAYMENT", bankAccountId: voucher.bankAccountId, currency: voucher.currency, branchId: voucher.branchId, userId });
+  await validateCostCenterForPosting(tx, { costCenterId: voucher.costCenterId });
+  for (const allocation of voucher.allocations) {
+    const invoice = allocation.saleId ? await tx.sale.findUnique({ where: { id: allocation.saleId }, include: { allocations: { where: { voucher: { status: "POSTED" } } } } }) : allocation.purchaseId ? await tx.purchase.findUnique({ where: { id: allocation.purchaseId }, include: { allocations: { where: { voucher: { status: "POSTED" } } } } }) : null;
+    if (!invoice || !["POSTED", "COMPLETED"].includes(invoice.status) || invoice.partyId !== voucher.partyId || invoice.currency !== voucher.currency || invoice.allocations.reduce((sum, a) => sum.plus(a.amount), new Prisma.Decimal(0)).plus(allocation.amount).gt(invoice.totalAmount)) throw new FinanceError("INVALID_INPUT", "تغير رصيد أو حالة الفاتورة منذ إنشاء المسودة؛ لا يمكن ترحيل تخصيص يتجاوز الرصيد المستحق");
+  }
   const receipt = voucher.voucherType === "CUSTOMER_RECEIPT";
   const allocatedTransaction = voucher.allocations.reduce((sum, row) => sum.plus(row.amount), new Prisma.Decimal(0));
   const carryingAllocated = voucher.allocations.reduce((sum, row) => sum.plus(row.carryingFunctionalAmount), new Prisma.Decimal(0));
@@ -189,17 +213,18 @@ export async function postVoucher(tx: Tx, voucherId: number) {
   const transactionLines = receipt
     ? [
         { accountId: voucher.bankAccount.ledgerAccountId, debit: voucher.functionalAmount, transactionDebit: voucher.amount },
-        { mappingKey: "ACCOUNTS_RECEIVABLE", credit: carryingFunctional, transactionCredit: voucher.amount, partyId: voucher.partyId },
+        { ...(voucher.counterAccountId ? { accountId: voucher.counterAccountId } : { mappingKey: "ACCOUNTS_RECEIVABLE" }), credit: carryingFunctional, transactionCredit: voucher.amount, partyId: voucher.partyId, costCenterId: voucher.costCenterId },
         ...(realizedFx.gt(0) ? [{ mappingKey: "REALIZED_FX_GAIN", credit: realizedFx, transactionCredit: 0 }] : []),
         ...(realizedFx.lt(0) ? [{ mappingKey: "REALIZED_FX_LOSS", debit: realizedFx.abs(), transactionDebit: 0 }] : []),
       ]
     : [
-        { mappingKey: "ACCOUNTS_PAYABLE", debit: carryingFunctional, transactionDebit: voucher.amount, partyId: voucher.partyId },
+        { ...(voucher.counterAccountId ? { accountId: voucher.counterAccountId } : { mappingKey: "ACCOUNTS_PAYABLE" }), debit: carryingFunctional, transactionDebit: voucher.amount, partyId: voucher.partyId, costCenterId: voucher.costCenterId },
         ...(realizedFx.gt(0) ? [{ mappingKey: "REALIZED_FX_LOSS", debit: realizedFx, transactionDebit: 0 }] : []),
         ...(realizedFx.lt(0) ? [{ mappingKey: "REALIZED_FX_GAIN", credit: realizedFx.abs(), transactionCredit: 0 }] : []),
         { accountId: voucher.bankAccount.ledgerAccountId, credit: voucher.functionalAmount, transactionCredit: voucher.amount },
       ];
   const journal = await createBalancedJournal(tx, { entryDate: voucher.voucherDate,
+    branchId: voucher.branchId,
     description: receipt ? `سند قبض ${voucher.voucherNumber}` : `سند صرف ${voucher.voucherNumber}`,
     referenceType: "FINANCIAL_VOUCHER", referenceId: voucher.id, referenceNumber: voucher.voucherNumber,
     transactionCurrencyCode: voucher.currency, functionalCurrencyCode: (await exchangeRateAt(tx, voucher.currency, voucher.voucherDate)).company.baseCurrencyCode,

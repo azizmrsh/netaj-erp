@@ -70,8 +70,9 @@ export async function budgetVsActual(tx: Tx, params: URLSearchParams) {
     const ledgerLines = await tx.journalEntryLine.findMany({ where: { accountId: line.accountId,
       ...(line.costCenterId ? { OR: [{ costCenterId: line.costCenterId }, { costCenter: line.costCenter?.code }] } : {}),
       ...(line.departmentId ? { departmentId: line.departmentId } : {}), ...(line.projectCode ? { projectCode: line.projectCode } : {}),
-      journalEntry: { status: "POSTED", entryDate: { gte: startDate, lte: endDate } } }, include: { journalEntry: true }, orderBy: [{ journalEntry: { entryDate: "asc" } }, { id: "asc" }] });
-    const actual = ledgerLines.reduce((sum, entry) => sum + (line.account.accountType === "REVENUE" ? Number(entry.credit) - Number(entry.debit) : Number(entry.debit) - Number(entry.credit)), 0);
+      journalEntry: { status: { in: ["POSTED", "REVERSED"] }, entryDate: { gte: startDate, lte: endDate } } }, include: { journalEntry: true }, orderBy: [{ journalEntry: { entryDate: "asc" } }, { id: "asc" }] });
+    const creditNature = ["REVENUE", "LIABILITY", "EQUITY"].includes(line.account.accountType);
+    const actual = ledgerLines.reduce((sum, entry) => sum.plus(creditNature ? new Prisma.Decimal(entry.credit).minus(entry.debit) : new Prisma.Decimal(entry.debit).minus(entry.credit)), new Prisma.Decimal(0)).toNumber();
     const budgetAmount = Number(line.amount), varianceAmount = actual - budgetAmount;
     rows.push({ id: line.id, accountId: line.accountId, accountCode: line.account.code, accountName: line.account.nameAr, accountType: line.account.accountType,
       periodType: line.periodType, fiscalPeriodId: line.fiscalPeriodId, periodName: line.fiscalPeriod?.name ?? "سنوي",
@@ -84,4 +85,3 @@ export async function budgetVsActual(tx: Tx, params: URLSearchParams) {
   return { budget: { id: budget.id, number: budget.budgetNumber, name: budget.name, fiscalYear: budget.fiscalYear.name, currencyCode: budget.currencyCode }, rows,
     totals: rows.reduce((sum, row) => ({ budget: sum.budget + row.budget, actual: sum.actual + row.actual, varianceAmount: sum.varianceAmount + row.varianceAmount }), { budget: 0, actual: 0, varianceAmount: 0 }) };
 }
-

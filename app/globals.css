@@ -21,6 +21,28 @@
   --premium-shadow: 0 18px 45px rgb(63 48 26 / 0.08), 0 3px 10px rgb(63 48 26 / 0.04);
 }
 
+/* Keep accounting table headers, column filters, and actions aligned. */
+.finance-workspace .overflow-x-auto > table { min-width: 900px; table-layout: auto; }
+.finance-workspace .account-directory-table { min-width: 1120px; }
+.account-directory-table th:first-child { width: 36px; }
+.account-directory-table th:last-child { min-width: 200px; }
+.finance-workspace .overflow-x-auto > table th,
+.finance-workspace .overflow-x-auto > table td {
+  vertical-align: middle;
+}
+.finance-workspace .overflow-x-auto > table thead tr + tr th {
+  background: #fff;
+  padding: .5rem;
+}
+.finance-workspace td details > summary { display: none !important; }
+.finance-workspace td details { display: block; }
+.finance-workspace td details > div { position: static; display: flex !important; visibility: visible !important; opacity: 1 !important; width: auto; gap: .35rem; border: 0; padding: 0; box-shadow: none; background: transparent; }
+.finance-workspace td details > div button { border: 1px solid #c9972b; border-radius: .45rem; background: linear-gradient(180deg,#e8c66f,#c9972b); color: #172033; padding: .45rem .65rem; font-size: .75rem; font-weight: 700; white-space: nowrap; }
+.finance-workspace td details > div button:hover { background: linear-gradient(180deg,#f0d78c,#d5a83c); }
+dialog { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); margin: 0; max-width: 92vw; max-height: 90vh; }
+dialog::backdrop { background: rgb(15 23 42 / .58); }
+dialog [data-save] { background: #c9972b !important; color: #172033 !important; }
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -215,8 +237,8 @@ html[data-theme="dark"] .erp-workspace .text-slate-900 { color:var(--foreground)
 .finance-hero::after { position:absolute; inset-block:0; inset-inline-end:3%; width:32%; content:""; opacity:.24; background:repeating-linear-gradient(125deg,transparent 0 18px,#d7a84b 19px 20px); transform:skewX(-15deg); }
 .finance-hero>div { position:relative; z-index:1; }.finance-eyebrow { color:#edc66f; font-size:.66rem; font-weight:950; letter-spacing:.22em; }.finance-home-link { border:1px solid #d5a646; border-radius:12px; padding:10px 16px; color:#ffe5a4; background:rgb(0 0 0 / .2); font-size:.8rem; font-weight:850; }
 .finance-tabs { display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr)); gap:7px; border:1px solid #e3d4b9; border-radius:18px; padding:8px; background:rgb(255 253 248 / .88); box-shadow:0 8px 22px rgb(75 48 8 / .08); }
-.finance-tabs button { min-height:42px; border:1px solid transparent; border-radius:11px; padding:8px 10px; color:#4b5568; background:#f4ede1; font-size:.72rem; font-weight:850; text-align:center; }
-.finance-tabs button:hover { border-color:#d4ac5e; color:#6f4a09; }.finance-tabs button.is-active { border-color:#d5a646; color:#fff4d2; background:linear-gradient(130deg,#101722,#2d220f); box-shadow:inset 0 1px rgb(255 255 255 / .12),0 6px 14px rgb(44 29 7 / .2); }
+.finance-tabs :is(button, a) { min-height:42px; border:1px solid transparent; border-radius:11px; padding:8px 10px; color:#4b5568; background:#f4ede1; font-size:.72rem; font-weight:850; text-align:center; }
+.finance-tabs :is(button, a):hover { border-color:#d4ac5e; color:#6f4a09; }.finance-tabs :is(button, a).is-active { border-color:#d5a646; color:#fff4d2; background:linear-gradient(130deg,#101722,#2d220f); box-shadow:inset 0 1px rgb(255 255 255 / .12),0 6px 14px rgb(44 29 7 / .2); }
 .finance-workspace .rounded-2xl.bg-white { border-color:#e3d8c5 !important; background:rgb(255 254 251 / .96) !important; box-shadow:0 8px 21px rgb(64 43 10 / .07); }.finance-workspace thead,.finance-workspace .bg-slate-100 { background:#f1e8d8 !important; }.finance-workspace th { color:#43351c; font-weight:900; }.finance-workspace input:focus,.finance-workspace select:focus,.finance-workspace textarea:focus { border-color:#b9882e; box-shadow:0 0 0 3px rgb(196 146 48 / .14); outline:0; }
 .voucher-print,.netaj-note-print,.netaj-invoice-print { position:relative; overflow:hidden; font-family:Arial,"Tahoma",sans-serif; }
 .netaj-form-header { display:grid; grid-template-columns:minmax(0,1fr) 175px minmax(0,1fr); align-items:start; gap:20px; color:#090909; direction:ltr; }
@@ -265,7 +287,7 @@ html[data-theme="dark"] .erp-workspace .text-slate-900 { color:var(--foreground)
   .premium-kpi { min-height:92px; padding:11px; }.premium-kpi-icon { width:32px; height:32px; }.premium-kpi small { overflow:hidden; max-width:90px; text-overflow:ellipsis; }.premium-kpi-grid { gap:7px; }
   .premium-dual-bars { height:142px; }.premium-chart-legend { position:static; justify-content:flex-end; margin-top:6px; }.premium-activity-row { grid-template-columns:32px 1fr auto; }.premium-activity-row>strong { display:none; }.premium-quick-heading { min-width:95px; }.premium-quick-action { min-width:112px; }
   .reference-dashboard { padding:8px; }.reference-hero { min-height:280px; }.reference-hero-content { min-height:280px; padding:20px; }.reference-hero h1 { font-size:1.75rem; }.reference-ai-card>i { width:100px; }.reference-kpi-grid { grid-template-columns:1fr 1fr; gap:7px; }.reference-kpi { min-height:98px; padding:10px; }.reference-kpi>span { width:44px; height:44px; border-radius:14px; }.reference-kpi strong { font-size:1.05rem; }.reference-chart-grid,.reference-bottom-grid { grid-template-columns:1fr; }.reference-chart-grid>.reference-card:first-child,.reference-transactions { grid-column:auto; grid-row:auto; }.reference-donut-wrap { justify-content:flex-start; }.reference-detail-strip { grid-template-columns:1fr 1fr; }.reference-period { flex-wrap:wrap; }.reference-period>span { width:100%; margin:0; }.reference-date { flex:1; }
-  .finance-tabs { grid-template-columns:1fr 1fr; padding:6px; }.finance-tabs button { min-height:39px; padding:6px; font-size:.66rem; }.finance-hero { padding-inline:16px; }.finance-workspace { padding-inline:10px !important; }
+  .finance-tabs { grid-template-columns:1fr 1fr; padding:6px; }.finance-tabs :is(button, a) { min-height:39px; padding:6px; font-size:.66rem; }.finance-hero { padding-inline:16px; }.finance-workspace { padding-inline:10px !important; }
 }
 
 html[data-cards="square"] .rounded-2xl,

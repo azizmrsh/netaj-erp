@@ -30,6 +30,8 @@ export const scopedModels = new Set([
   "BusinessDocumentLine", "DocumentSequence", "Attachment", "AuditLog", "Account", "AccountingMapping",
   "AccountingPeriod", "Expense", "Revenue", "CostCenter", "ExpenseCategory", "RevenueCategory",
   "BankAccount", "BankTransaction", "BankTransfer", "FinancialVoucher", "VoucherAllocation",
+  "RecurringJournal", "RecurringJournalLine", "RecurringJournalRun",
+  "ChequeBook", "Cheque",
   "BankReconciliation", "BankReconciliationLine", "VatReturn", "VatReturnLine",
   "CreditDebitNote", "AccountingAdjustment", "AccountingAdjustmentLine",
   "ExchangeRate", "FxRevaluation", "FxRevaluationLine", "Budget", "BudgetLine",

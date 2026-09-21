@@ -1736,6 +1736,7 @@ model JournalEntry {
   id        Int @id @default(autoincrement())
   tenantId  Int @default(1)
   companyId Int @default(1)
+  branchId  Int?
 
   entryNumber String   @unique
   entryDate   DateTime @default(now())
@@ -2400,6 +2401,11 @@ model FinancialVoucher {
   voucherType      String
   voucherDate      DateTime  @default(now())
   partyId          Int?
+  beneficiaryType  String    @default("PARTY")
+  beneficiaryName  String?
+  counterAccountId Int?
+  branchId         Int?
+  costCenterId     Int?
   amount           Decimal
   currency         String    @default("SAR")
   exchangeRate     Decimal   @default(1)
@@ -4804,4 +4810,137 @@ model MembershipRole {
   role       Role             @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   @@id([membershipId, roleId])
+}
+
+// Recurring templates are independent from posted journals; each due date has
+// one durable execution record and can create at most one journal entry.
+model RecurringJournal {
+  id             Int       @id @default(autoincrement())
+  tenantId       Int       @default(1)
+  companyId      Int       @default(1)
+  code           String
+  name           String
+  description    String
+  branchId       Int?
+  currency       String    @default("SAR")
+  frequency      String
+  runDay         Int?
+  startDate      DateTime
+  endDate        DateTime?
+  nextRunAt      DateTime?
+  lastRunAt      DateTime?
+  retryAt        DateTime?
+  lastError      String?
+  executionCount Int       @default(0)
+  status         String    @default("DRAFT")
+  createdBy      String
+  approvedBy     String?
+  approvedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  lines          RecurringJournalLine[]
+  runs           RecurringJournalRun[]
+
+  @@unique([tenantId, companyId, code])
+  @@index([tenantId, companyId, status, nextRunAt])
+}
+
+model RecurringJournalLine {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int      @default(1)
+  companyId          Int      @default(1)
+  recurringJournalId Int
+  accountId          Int
+  debit              Decimal  @default(0)
+  credit             Decimal  @default(0)
+  description        String?
+  costCenterId       Int?
+  projectCode        String?
+  recurringJournal   RecurringJournal @relation(fields: [recurringJournalId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, companyId, recurringJournalId])
+}
+
+model RecurringJournalRun {
+  id                 Int      @id @default(autoincrement())
+  tenantId           Int      @default(1)
+  companyId          Int      @default(1)
+  recurringJournalId Int
+  scheduledFor       DateTime
+  status             String   @default("PENDING")
+  journalEntryId     Int?     @unique
+  entryNumber        String?
+  attempts           Int      @default(0)
+  error              String?
+  executedBy         String?
+  executedAt         DateTime?
+  createdAt          DateTime @default(now())
+  recurringJournal   RecurringJournal @relation(fields: [recurringJournalId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, companyId, recurringJournalId, scheduledFor])
+  @@index([tenantId, companyId, recurringJournalId])
+}
+
+model ChequeBook {
+  id            Int      @id @default(autoincrement())
+  tenantId      Int      @default(1)
+  companyId     Int      @default(1)
+  code          String
+  bankAccountId Int
+  issueDate     DateTime
+  firstNumber   Int
+  lastNumber    Int
+  status        String   @default("ACTIVE")
+  createdBy     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  cheques       Cheque[]
+
+  @@unique([tenantId, companyId, code])
+  @@index([tenantId, companyId, bankAccountId])
+}
+
+model Cheque {
+  id                     Int       @id @default(autoincrement())
+  tenantId               Int       @default(1)
+  companyId              Int       @default(1)
+  internalNumber         String
+  registrationKey        String
+  direction              String
+  chequeNumber           String
+  bankAccountId          Int
+  draweeBank             String    @default("")
+  draweeAccount          String    @default("")
+  chequeBookId           Int?
+  partyId                Int
+  counterAccountId       Int
+  suspenseAccountId      Int
+  branchId               Int?
+  amount                 Decimal
+  currency               String
+  issueDate              DateTime
+  dueDate                DateTime
+  description            String
+  referenceNumber        String?
+  status                 String    @default("DRAFT")
+  issueJournalId         Int?       @unique
+  clearingJournalId      Int?       @unique
+  reversalJournalId      Int?       @unique
+  exchangeRate           Decimal   @default(1)
+  functionalAmount       Decimal   @default(0)
+  clearingFunctionalAmount Decimal?
+  clearedAt              DateTime?
+  cancelledAt            DateTime?
+  cancellationReason     String?
+  createdBy              String
+  approvedBy             String?
+  approvedAt             DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  chequeBook             ChequeBook? @relation(fields: [chequeBookId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, companyId, internalNumber])
+  @@unique([tenantId, companyId, registrationKey])
+  @@unique([tenantId, companyId, direction, bankAccountId, draweeBank, draweeAccount, chequeNumber])
+  @@index([tenantId, companyId, direction, status, dueDate])
 }

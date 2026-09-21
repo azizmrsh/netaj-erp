@@ -114,12 +114,15 @@ test("الميزانية السنوية والشهرية تقارن الفعلي
   assert.equal(monthly.transactions[0].referenceType, "BUDGET_TEST_ACTUAL");
 });
 
-test("Excel وPDF exports ملفات ثنائية حقيقية قابلة للتعرف", () => {
+test("Excel يحفظ عنوان التقرير العربي ومولد PDF القديم يحفظ نص ASCII", () => {
   const table = toReportTable("trial-balance", { rows: [{ code: "110100", name: "Accounts Receivable", debit: 375, credit: 0, balance: 375 }] }, "2026");
-  const xlsx = createXlsx(table), pdf = createPdf(table);
+  // The financial-report endpoint uses structured Arabic print HTML. This
+  // legacy low-level serializer is still tested only with its ASCII title.
+  const xlsx = createXlsx(table), pdf = createPdf({ ...table, title: "Trial Balance" });
   assert.equal(xlsx.subarray(0, 2).toString(), "PK");
   assert.equal(xlsx.includes(Buffer.from("xl/worksheets/sheet1.xml")), true);
   assert.equal(xlsx.includes(Buffer.from("Financial Report")), true);
+  assert.equal(xlsx.includes(Buffer.from("ميزان المراجعة")), true);
   assert.equal(pdf.subarray(0, 8).toString(), "%PDF-1.7");
   assert.equal(pdf.includes(Buffer.from("Trial Balance")), true);
   assert.equal(pdf.subarray(-5).toString(), "%%EOF");

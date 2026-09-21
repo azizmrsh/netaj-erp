@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 
 const supportedCodes = new Set([
+  "RJ", "CHQ", "CHQB",
   "QT", "PI", "SO", "PR", "PO", "GRN", "DN", "TR", "TRC", "INV", "PV", "RV", "JE", "BT", "BR", "VAT", "CN", "DBN", "ADJ", "FXR", "BUD", "FT", "FF", "FM", "IC", "EMP", "EWR", "PAY", "ADV", "EWC", "XTR", "XCO", "XEX", "PRJ", "PCT", "PCO", "PPC", "SCT", "SCC", "LEAD", "OPP", "ASSET", "MWO", "DMS", "APR", "PRQ", "JOB",
 ]);
 

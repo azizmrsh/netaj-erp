@@ -15,7 +15,9 @@ export async function GET(request: Request) {
       prisma.financialVoucher.findMany({ include: { party: true, bankAccount: true, allocations: true }, orderBy: [{ voucherDate: "desc" }, { id: "desc" }], take: 30 }),
       Promise.all([prisma.expenseCategory.findMany({ where: { isActive: true }, orderBy: { nameAr: "asc" } }), prisma.revenueCategory.findMany({ where: { isActive: true }, orderBy: { nameAr: "asc" } }), prisma.costCenter.findMany({ where: { isActive: true }, orderBy: { nameAr: "asc" } })]),
       prisma.party.findMany({ where: { isActive: true }, select: { id: true, nameAr: true, isCustomer: true, isSupplier: true }, orderBy: { nameAr: "asc" } }),
-      prisma.account.findMany({ where: { isActive: true, allowPosting: true }, orderBy: { code: "asc" } }),
+      // The chart of accounts needs both posting accounts and their parent
+      // nodes. Filtering to allowPosting accounts made the tree look flat.
+      prisma.account.findMany({ where: { isActive: true }, orderBy: { code: "asc" } }),
       prisma.accountingPeriod.findMany({ orderBy: { startDate: "desc" } }),
       prisma.journalEntry.findMany({ include: { lines: true }, orderBy: [{ entryDate: "desc" }, { id: "desc" }], take: 50 }),
       prisma.bankTransfer.findMany({ include: { fromBankAccount: true, toBankAccount: true }, orderBy: [{ transferDate: "desc" }, { id: "desc" }], take: 50 }),
@@ -35,7 +37,8 @@ export async function GET(request: Request) {
       prisma.journalEntryLine.findMany({ where: { debit: { gt: 0 }, account: { accountType: "EXPENSE" }, journalEntry: { status: "POSTED" } }, include: { account: true, journalEntry: true }, orderBy: [{ journalEntry: { entryDate: "desc" } }, { id: "desc" }], take: 500 }),
       prisma.journalEntryLine.findMany({ where: { credit: { gt: 0 }, account: { accountType: "REVENUE" }, journalEntry: { status: "POSTED" } }, include: { account: true, journalEntry: true }, orderBy: [{ journalEntry: { entryDate: "desc" } }, { id: "desc" }], take: 500 }),
     ]);
-    return NextResponse.json({ banks, receivables, payables, statements, cash, recentVouchers,
+    const branches = await prisma.branch.findMany({ where: { companyId: auth.companyId, isActive: true }, select: { id: true, nameAr: true } });
+    return NextResponse.json({ banks, branches, receivables, payables, statements, cash, recentVouchers,
       expenseCategories: categories[0], revenueCategories: categories[1], costCenters: categories[2], parties, accounts, periods, journals, transfers, reconciliations, vatReturns, creditDebitNotes, adjustments, salesInvoices: invoices[0], purchaseInvoices: invoices[1],
       fiscalYears, departments, currencies, exchangeRates, budgets, fxRevaluations, ledgerExpenses, ledgerRevenues });
   } catch (error) {

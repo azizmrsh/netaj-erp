@@ -27,7 +27,7 @@ export async function fiscalPeriodBlockers(tx: Tx, periodId: number) {
     tx.financialVoucher.count({ where: { status: "DRAFT", voucherDate: range } }),
     tx.vatReturn.count({ where: { status: "DRAFT", periodStart: { lte: period.endDate }, periodEnd: { gte: period.startDate } } }),
     tx.fxRevaluation.count({ where: { status: "DRAFT", fiscalPeriodId: period.id } }),
-    tx.journalEntry.findMany({ where: { status: "POSTED", entryDate: range }, select: { entryNumber: true, totalDebit: true, totalCredit: true } }),
+    tx.journalEntry.findMany({ where: { status: { in: ["POSTED", "REVERSED"] }, entryDate: range }, select: { entryNumber: true, totalDebit: true, totalCredit: true } }),
   ]);
   const unbalanced = postedJournals.filter((row) => !row.totalDebit.equals(row.totalCredit));
   const blockers = [
@@ -77,7 +77,7 @@ export async function closeFiscalYear(tx: Tx, fiscalYearId: number, userId?: str
   if (finalCheck.blockers.length) throw new FiscalCloseError("BLOCKED", "الفترة الأخيرة تحتوي عناصر معلقة", finalCheck.blockers);
 
   const profitAndLossLines = await tx.journalEntryLine.findMany({
-    where: { account: { accountType: { in: ["REVENUE", "EXPENSE"] } }, journalEntry: { status: "POSTED", entryDate: { gte: year.startDate, lte: year.endDate } } },
+    where: { account: { accountType: { in: ["REVENUE", "EXPENSE"] } }, journalEntry: { status: { in: ["POSTED", "REVERSED"] }, entryDate: { gte: year.startDate, lte: year.endDate } } },
     include: { account: true },
   });
   const balances = new Map<number, { accountId: number; debit: Prisma.Decimal; credit: Prisma.Decimal }>();
@@ -111,11 +111,13 @@ export async function reopenFiscalYear(tx: Tx, fiscalYearId: number, reason: unk
   const year = await tx.fiscalYear.findFirst({ where: { id: fiscalYearId, companyId }, include: { periods: { orderBy: { periodNumber: "desc" } } } });
   if (!year) throw new FiscalCloseError("NOT_FOUND", "السنة المالية غير موجودة");
   if (year.status === "OPEN") return year;
-  if (year.closingJournalEntryId) await reverseJournalEntry(tx, { originalId: year.closingJournalEntryId,
-    referenceType: `FISCAL_YEAR_REOPEN_${Date.now()}`, referenceId: year.id, referenceNumber: `FY-${year.id}`, description: `عكس إقفال ${year.name}: ${explanation}` });
   const finalPeriod = year.periods[0];
   if (finalPeriod) await tx.fiscalPeriod.update({ where: { id: finalPeriod.id }, data: { status: "OPEN", closedAt: null, closedBy: null, reopenedAt: new Date() } });
   const reopened = await tx.fiscalYear.update({ where: { id: year.id }, data: { status: "OPEN", closingJournalEntryId: null, closedAt: null, closedBy: null, reopenedAt: new Date() }, include: { periods: { orderBy: { periodNumber: "asc" } } } });
+  // Administrative reopen restores the final period before reversing its closing
+  // entry on that same date; a general reversal may not bypass a closed period.
+  if (year.closingJournalEntryId) await reverseJournalEntry(tx, { originalId: year.closingJournalEntryId,
+    referenceType: `FISCAL_YEAR_REOPEN_${Date.now()}`, referenceId: year.id, referenceNumber: `FY-${year.id}`, description: `عكس إقفال ${year.name}: ${explanation}`, reversalDate: year.endDate });
   await audit(tx, { action: "FISCAL_YEAR_REOPEN", entityType: "FISCAL_YEAR", entityId: year.id, userId: actor(userId), metadata: { reason: explanation } });
   return reopened;
 }

@@ -1,4 +1,5 @@
 "use client";
+import { accountingPages } from "@/lib/accounting-navigation";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -96,14 +97,7 @@ const detailedGroups:NavGroup[] = [
   {label:"المستخدمون والشركات والإعدادات",items:[{label:"المستخدمون والأدوار والصلاحيات والتدقيق",href:"/settings/users",module:"CORE",icon:ShieldCheck},{label:"الشركات والفروع والسنوات والفترات",href:"/settings/organization",module:"CORE",icon:Building2},{label:"إعدادات النظام والضرائب والترقيم والقوالب",href:"/settings/configuration",module:"CONFIG",icon:Settings},{label:"اللغة والمظهر والتكاملات",href:"/settings/design",module:"DESIGN",icon:Settings}]},
 ];
 const menuChildren=(base:string,module:string,labels:string[]):NavItem[]=>labels.map((label,index)=>{const salesTypes:Record<string,string>={"عروض الأسعار":"QUOTATION","أوامر البيع":"SALES_ORDER","فواتير المبيعات":"SALES_INVOICE","الفواتير الأولية":"PROFORMA_INVOICE"};const purchaseTypes:Record<string,string>={"طلبات الشراء":"PURCHASE_REQUEST","أوامر الشراء":"PURCHASE_ORDER","فواتير المشتريات":"PURCHASE_INVOICE"};const direct:Record<string,string>={"العملاء":"/parties","الموردون":"/parties","مندوبي المبيعات":"/crm","الأصناف":"/items","سجل الأصول":"/assets","إضافة أصل":"/assets"};const type=base==="/sales"?salesTypes[label]:base==="/purchases"?purchaseTypes[label]:undefined;const param=type?`type=${type}`:`section=${encodeURIComponent(label)}`;return {label,href:direct[label]??`${base}${base.includes("?")?"&":"?"}${param}`,module,icon:Files};});
-const accountingChildren:NavItem[]=[
-  ["شجرة الحسابات","chart"],["الحسابات","accounts"],["القيود اليومية","journals"],["القيود الدورية","recurring"],
-  ["سندات الصرف","payment"],["كل السندات","allVouchers"],["سندات القبض","receipt"],["سندات التحويل","transfer"],
-  ["أرصدة الأصناف","inventoryBalances"],["ميزان المراجعة","reports"],["قائمة الدخل","reports"],["المركز المالي","reports"],
-  ["الميزانيات","budgets"],["قائمة التدفقات النقدية","reports"],["توزيع الأرباح والخسائر","reports"],["إهلاكات الأصول","assets"],
-  ["مراكز التكلفة","costCenters"],["مركز التكلفة التفصيلي","costCenterDetail"],["جاري الشركاء","partners"],["إدارة دفاتر الشيكات","chequebooks"],
-  ["الشيكات المدفوعة","paidCheques"],["الشيكات المستلمة","receivedCheques"],["طرق الدفع","paymentMethods"],["العملات","currencies"]
-].map(([label,tab])=>({label,href: (()=>{const reports:Record<string,string>={"ميزان المراجعة":"trial-balance","قائمة الدخل":"profit-and-loss","المركز المالي":"balance-sheet","قائمة التدفقات النقدية":"cash-flow","توزيع الأرباح والخسائر":"changes-in-equity"}; if(reports[label]) return `/accounting?tab=reports&report=${reports[label]}`; return `/accounting?tab=${tab}`;})(),module:"ACCOUNTING",icon:Files}));
+const accountingChildren:NavItem[]=accountingPages.map(page=>({label:page.label,href:page.href,module:"ACCOUNTING",icon:Files}));
 const homeChildren:NavItem[]=[
   {label:"ملخص الأقسام",href:"/dashboards?view=summary",module:"CORE",icon:Files},
   {label:"ملخص الأقسام",href:"/dashboards?view=indicators",module:"CORE",icon:ChartNoAxesCombined},

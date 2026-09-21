@@ -1,5 +1,6 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { audit } from "@/lib/audit";
+import { validateCostCenterForPosting } from "@/lib/cost-centers";
 import { nextDocumentNumber } from "@/lib/document-numbering";
 import { getVerifiedDataScope } from "@/lib/data-scope";
 import { exchangeRateAt, functionalAmount } from "@/lib/currency";
@@ -38,17 +39,41 @@ export class AccountingError extends Error {
 }
 
 export async function ensureAccountingFoundation(tx: TransactionClient) {
+  const roots = [
+    { code: "100000", nameAr: "الأصول", type: "ASSET" },
+    { code: "200000", nameAr: "الخصوم", type: "LIABILITY" },
+    { code: "300000", nameAr: "حقوق الملكية", type: "EQUITY" },
+    { code: "400000", nameAr: "الإيرادات", type: "REVENUE" },
+    { code: "500000", nameAr: "المصروفات", type: "EXPENSE" },
+  ] as const;
+  const rootAccounts = new Map<string, number>();
+  for (const root of roots) {
+    const account = await tx.account.upsert({
+      where: { code: root.code },
+      create: { code: root.code, nameAr: root.nameAr, accountType: root.type, allowPosting: false },
+      update: { nameAr: root.nameAr, accountType: root.type, allowPosting: false },
+    });
+    rootAccounts.set(root.type, account.id);
+  }
   for (const entry of defaults) {
     const account = await tx.account.upsert({
       where: { code: entry.code },
       create: { code: entry.code, nameAr: entry.nameAr, accountType: entry.type },
-      update: {},
+      update: { parentId: rootAccounts.get(entry.type) },
     });
+    if (account.parentId === null) await tx.account.update({ where: { id: account.id }, data: { parentId: rootAccounts.get(entry.type) } });
     await tx.accountingMapping.upsert({
       where: { key: entry.key },
       create: { key: entry.key, accountId: account.id, description: entry.nameAr },
       update: {},
     });
+  }
+  // Keep existing imported accounts in the same hierarchy when they do not
+  // already have an explicit parent.
+  const ungrouped = await tx.account.findMany({ where: { parentId: null, code: { notIn: roots.map((root) => root.code) } }, select: { id: true, accountType: true } });
+  for (const account of ungrouped) {
+    const parentId = rootAccounts.get(account.accountType);
+    if (parentId) await tx.account.update({ where: { id: account.id }, data: { parentId } });
   }
   const year = new Date().getFullYear();
   await tx.accountingPeriod.upsert({
@@ -125,6 +150,7 @@ export async function createBalancedJournal(
   tx: TransactionClient,
   input: {
     entryDate: Date;
+    branchId?: number | null;
     description: string;
     referenceType: string;
     referenceId: number;
@@ -142,12 +168,15 @@ export async function createBalancedJournal(
   });
   if (existing) return existing;
 
+  if (input.lines.length < 2) throw new AccountingError("يجب أن يحتوي القيد على طرفين على الأقل");
+
   const resolved = [];
   let totalDebit = new Prisma.Decimal(0);
   let totalCredit = new Prisma.Decimal(0);
   let totalTransactionDebit = new Prisma.Decimal(0);
   let totalTransactionCredit = new Prisma.Decimal(0);
   for (const line of input.lines) {
+    await validateCostCenterForPosting(tx, line);
     const account = line.accountId
       ? await tx.account.findUnique({ where: { id: line.accountId } })
       : line.mappingKey
@@ -160,7 +189,7 @@ export async function createBalancedJournal(
     const credit = new Prisma.Decimal(line.credit ?? 0).toDecimalPlaces(2);
     const transactionDebit = new Prisma.Decimal(line.transactionDebit ?? debit).toDecimalPlaces(2);
     const transactionCredit = new Prisma.Decimal(line.transactionCredit ?? credit).toDecimalPlaces(2);
-    if (debit.isNegative() || credit.isNegative() || (debit.isZero() && credit.isZero())) {
+    if (!debit.isFinite() || !credit.isFinite() || debit.isNegative() || credit.isNegative() || (debit.isZero() && credit.isZero()) || (debit.gt(0) && credit.gt(0))) {
       throw new AccountingError("قيمة سطر القيد غير صحيحة");
     }
     totalDebit = totalDebit.plus(debit);
@@ -180,6 +209,7 @@ export async function createBalancedJournal(
     data: {
       entryNumber,
       entryDate: input.entryDate,
+      branchId: input.branchId ?? null,
       description: input.description,
       referenceType: input.referenceType,
       referenceId: input.referenceId,
@@ -239,16 +269,20 @@ export async function assertOpenAccountingPeriod(tx: TransactionClient, entryDat
 
 export async function reverseJournalEntry(
   tx: TransactionClient,
-  input: { originalId: number; referenceType: string; referenceId: number; referenceNumber?: string | null; description: string }
+  input: { originalId: number; referenceType: string; referenceId: number; referenceNumber?: string | null; description: string; reversalDate?: Date }
 ) {
   const existing = await tx.journalEntry.findFirst({ where: { referenceType: input.referenceType, referenceId: input.referenceId } });
   if (existing) return existing;
   const original = await tx.journalEntry.findUnique({ where: { id: input.originalId }, include: { lines: true } });
   if (!original) throw new AccountingError("القيد الأصلي غير موجود");
-  const entryNumber = await nextDocumentNumber(tx, "JE", new Date());
+  if (original.status !== "POSTED") throw new AccountingError("يمكن عكس القيد المرحل فقط");
+  const reversalDate = input.reversalDate ?? new Date();
+  await assertOpenAccountingPeriod(tx, reversalDate);
+  const entryNumber = await nextDocumentNumber(tx, "JE", reversalDate);
   const reversal = await tx.journalEntry.create({
     data: {
-      entryNumber, entryDate: new Date(), description: input.description,
+      entryNumber, entryDate: reversalDate, description: input.description,
+      branchId: original.branchId,
       referenceType: input.referenceType, referenceId: input.referenceId,
       referenceNumber: input.referenceNumber ?? original.referenceNumber,
       status: "POSTED", totalDebit: original.totalCredit, totalCredit: original.totalDebit,

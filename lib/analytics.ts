@@ -25,7 +25,7 @@ const active = { notIn: ["CANCELLED", "REVERSED"] };
 
 async function ledgerProfit(tx: Tx, range: Range) {
   const lines = await tx.journalEntryLine.findMany({
-    where: { journalEntry: { status: "POSTED", entryDate: dateWhere(range) }, account: { accountType: { in: ["REVENUE", "EXPENSE"] } } },
+    where: { journalEntry: { status: { in: ["POSTED", "REVERSED"] }, entryDate: dateWhere(range) }, account: { accountType: { in: ["REVENUE", "EXPENSE"] } } },
     include: { account: true, journalEntry: { select: { id: true, entryNumber: true, entryDate: true, referenceType: true, referenceId: true } } },
   });
   const revenue = lines.filter((row) => row.account?.accountType === "REVENUE").reduce((sum, row) => sum + n(row.credit) - n(row.debit), 0);
@@ -37,7 +37,7 @@ async function executiveFinancialView(tx: Tx, range: Range, officialNetProfit: n
   const now = range.to < new Date() ? range.to : new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1), monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
   const [lines, centers, monthSales, monthPurchases, includedTransport] = await Promise.all([
-    tx.journalEntryLine.findMany({ where: { journalEntry: { status: "POSTED", entryDate: dateWhere(range) }, account: { accountType: { in: ["REVENUE", "EXPENSE"] } } }, include: { account: true } }),
+    tx.journalEntryLine.findMany({ where: { journalEntry: { status: { in: ["POSTED", "REVERSED"] }, entryDate: dateWhere(range) }, account: { accountType: { in: ["REVENUE", "EXPENSE"] } } }, include: { account: true } }),
     tx.costCenter.findMany({ where: { isActive: true } }),
     tx.sale.findMany({ where: { status: active, invoiceDate: { gte: monthStart, lte: now } } }),
     tx.purchase.findMany({ where: { status: active, purchaseDate: { gte: monthStart, lte: now } } }),
@@ -136,7 +136,7 @@ async function monthlyComparison(tx: Tx, range: Range) {
     tx.sale.findMany({ where: { status: active, invoiceDate: { gte: start, lte: range.to } } }),
     tx.saleItem.findMany({ where: { sale: { status: active, invoiceDate: { gte: start, lte: range.to } } }, include: { sale: true, item: true } }),
     tx.purchase.findMany({ where: { status: active, purchaseDate: { gte: start, lte: range.to } } }),
-    tx.journalEntry.findMany({ where: { status: "POSTED", entryDate: { gte: start, lte: range.to } }, include: { lines: { include: { account: true } } } }),
+    tx.journalEntry.findMany({ where: { status: { in: ["POSTED", "REVERSED"] }, entryDate: { gte: start, lte: range.to } }, include: { lines: { include: { account: true } } } }),
     tx.factoryTransaction.findMany({ where: { status: "POSTED", transactionDate: { gte: start, lte: range.to } }, include: { item: true } }),
     tx.transportTrip.findMany({ where: { tripDate: { gte: start, lte: range.to } } }),
     tx.vatReturn.findMany({ where: { periodEnd: { gte: start, lte: range.to }, status: { not: "CANCELLED" } } }),
@@ -178,7 +178,7 @@ export async function loadExecutiveDashboard(tx: Tx, range: Range, enabledModule
     enabledModules.has("ACCOUNTING") ? widget("monthly-comparison", () => monthlyComparison(tx, range), []) : [],
     enabledModules.has("INVENTORY") ? widget("customer-activity", () => customerActivity(tx, range, inactiveDays), []) : [],
     enabledModules.has("ACCOUNTING") ? widget("vat-returns", () => tx.vatReturn.findMany({where:{periodEnd:dateWhere(range),status:{not:"CANCELLED"}},select:{netVatDue:true}}), []) : [],
-    enabledModules.has("PROJECTS") ? widget("project-profitability", () => tx.journalEntryLine.findMany({where:{projectCode:{not:null},journalEntry:{status:"POSTED",entryDate:dateWhere(range)}},include:{account:true}}), []) : [],
+    enabledModules.has("PROJECTS") ? widget("project-profitability", () => tx.journalEntryLine.findMany({where:{projectCode:{not:null},journalEntry:{status:{in:["POSTED","REVERSED"]},entryDate:dateWhere(range)}},include:{account:true}}), []) : [],
   ]);
   const salesTotal = sales.reduce((sum, row) => sum + n(row.functionalTotalAmount || row.totalAmount), 0), purchaseTotal = purchases.reduce((sum, row) => sum + n(row.functionalTotalAmount || row.totalAmount), 0);
   const ar = sales.reduce((sum, row) => sum + n(row.functionalTotalAmount || row.totalAmount) - row.allocations.reduce((s, a) => s + n(a.functionalAmount || a.amount), 0) - row.creditDebitNotes.reduce((s, note) => s + (note.noteType === "CREDIT_NOTE" ? n(note.functionalTotalAmount || note.totalAmount) : -n(note.functionalTotalAmount || note.totalAmount)), 0), 0);
@@ -191,7 +191,7 @@ export async function loadExecutiveDashboard(tx: Tx, range: Range, enabledModule
     enabledModules.has("ACCOUNTING") ? widget("recent-vouchers",()=>tx.financialVoucher.findMany({ where:{voucherDate:dateWhere(range),status:{notIn:["CANCELLED","REVERSED"]}},include:{party:true},orderBy:{voucherDate:"desc"},take:5 }),[]) : [],
     enabledModules.has("TRANSPORT") ? widget("recent-trips",()=>tx.transportTrip.findMany({ where:{tripDate:dateWhere(range)},include:{party:true},orderBy:{tripDate:"desc"},take:5 }),[]) : [],
     enabledModules.has("INVENTORY") ? widget("recent-stock",()=>tx.stockMovement.findMany({ where:{movementDate:dateWhere(range)},include:{item:true,party:true},orderBy:[{movementDate:"desc"},{id:"desc"}],take:5 }),[]) : [],
-    enabledModules.has("ACCOUNTING") ? widget("recent-journals",()=>tx.journalEntry.findMany({ where:{entryDate:dateWhere(range),status:"POSTED"},orderBy:{entryDate:"desc"},take:5 }),[]) : [],
+    enabledModules.has("ACCOUNTING") ? widget("recent-journals",()=>tx.journalEntry.findMany({ where:{entryDate:dateWhere(range),status:{in:["POSTED","REVERSED"]}},orderBy:{entryDate:"desc"},take:5 }),[]) : [],
     enabledModules.has("APPROVALS") && tx.unifiedApprovalRequest ? widget("pending-approvals",()=>tx.unifiedApprovalRequest.count({where:{status:"PENDING"}}),0) : 0,
     tx.backgroundJob ? widget("failed-jobs",()=>tx.backgroundJob.count({where:{status:{in:["FAILED","DEAD"]}}}),0) : 0,
     enabledModules.has("IMPORT") ? widget("migration-warnings",()=>tx.importBatch.count({where:{status:{in:["FAILED","MISMATCH","WARNING"]}}}),0) : 0,
@@ -220,7 +220,7 @@ export async function loadLegacyReport(tx: Tx, report: string, range: Range, par
     const centers = await tx.costCenter.findMany({ where: { isActive: true } });
     const centerById = new Map(centers.map((row) => [row.id, row.code]));
     const sector = (value: string | null | undefined) => { const key = clean(value || "OTHER").toUpperCase(); if (["TRADE","SALES","PURCHASING","WAREHOUSE"].includes(key)) return "TRADE"; if (key === "FACTORY") return "FACTORY"; if (key === "TRANSPORT") return "TRANSPORT"; if (["PROJECT","PROJECTS","CONTRACTING"].includes(key)) return "PROJECTS"; return "OTHER"; };
-    const rows = await tx.journalEntryLine.findMany({ where: { journalEntry: { status: "POSTED", entryDate: dateWhere(range) }, account: { accountType: { in: ["REVENUE","EXPENSE"] } } }, include: { account: true, journalEntry: true }, orderBy: [{ journalEntry: { entryDate: "desc" } }, { id: "desc" }] });
+    const rows = await tx.journalEntryLine.findMany({ where: { journalEntry: { status: { in: ["POSTED", "REVERSED"] }, entryDate: dateWhere(range) }, account: { accountType: { in: ["REVENUE","EXPENSE"] } } }, include: { account: true, journalEntry: true }, orderBy: [{ journalEntry: { entryDate: "desc" } }, { id: "desc" }] });
     const output = rows.map((row) => { const code = sector(row.costCenter ?? centerById.get(row.costCenterId ?? -1)); return { id: row.id, sector: code, date: day(row.journalEntry.entryDate), entryNumber: row.journalEntry.entryNumber, accountCode: row.accountCode, accountName: row.accountName, description: row.description ?? row.journalEntry.description, revenue: row.account?.accountType === "REVENUE" ? n(row.credit) - n(row.debit) : 0, directCost: row.account?.accountType === "EXPENSE" && (row.costCenterId || row.costCenter) ? n(row.debit) - n(row.credit) : 0, allocatedCost: row.account?.accountType === "EXPENSE" && !row.costCenterId && !row.costCenter ? n(row.debit) - n(row.credit) : 0, href: `/accounting?tab=journal&id=${row.journalEntryId}` }; }).filter((row) => !selected || row.sector === selected);
     const revenue = output.reduce((sum,row)=>sum+row.revenue,0), directCost=output.reduce((sum,row)=>sum+row.directCost,0), allocatedCost=output.reduce((sum,row)=>sum+row.allocatedCost,0), profit=revenue-directCost-allocatedCost;
     return { summary: { revenue, directCost, allocatedCost, profit, margin: revenue ? profit/revenue*100 : 0 }, rows: output };
@@ -243,7 +243,7 @@ export async function loadLegacyReport(tx: Tx, report: string, range: Range, par
       tx.deliveryReceiptNote.findMany({ where: { status: "POSTED", noteDate: dateWhere(range), noteType: "DELIVERY", salesInvoices: { none: {} } }, include: { items: true } }),
     ]);
     const mapping = new Map(mappings.map((row) => [row.key, row.accountId])), accountIds = [...new Set([...banks.map((row) => row.ledgerAccountId), ...mappings.map((row) => row.accountId)])];
-    const ledgerLines = await tx.journalEntryLine.findMany({ where: { accountId: { in: accountIds }, journalEntry: { status: "POSTED", entryDate: { lte: range.to } } } });
+    const ledgerLines = await tx.journalEntryLine.findMany({ where: { accountId: { in: accountIds }, journalEntry: { status: { in: ["POSTED", "REVERSED"] }, entryDate: { lte: range.to } } } });
     const balance = (accountId: number | undefined, creditNormal = false) => ledgerLines.filter((row) => row.accountId === accountId).reduce((sum, row) => sum + (creditNormal ? n(row.credit) - n(row.debit) : n(row.debit) - n(row.credit)), 0);
     const ar = sales.reduce((sum, row) => sum + n(row.functionalTotalAmount || row.totalAmount) - row.allocations.reduce((s, a) => s + n(a.functionalAmount || a.amount), 0), 0), ap = purchases.reduce((sum, row) => sum + n(row.functionalTotalAmount || row.totalAmount) - row.allocations.reduce((s, a) => s + n(a.functionalAmount || a.amount), 0), 0), inventory = stocks.reduce((sum, row) => sum + n(row.quantity) * n(row.averageCost), 0), bankOperational = banks.reduce((s, b) => s + n(b.currentBalance), 0), bankLedger = banks.reduce((s, b) => s + balance(b.ledgerAccountId), 0), arLedger = balance(mapping.get("ACCOUNTS_RECEIVABLE")), apLedger = balance(mapping.get("ACCOUNTS_PAYABLE"), true), inventoryLedger = balance(mapping.get("INVENTORY_ASSET")), vatOperational = vat.reduce((s, v) => s + n(v.netVatDue), 0), vatLedger = balance(mapping.get("VAT_PAYABLE"), true) - balance(mapping.get("INPUT_VAT")), customerOwned = customerStocks.reduce((sum, row) => sum + n(row.quantity) * n(row.averageValue), 0), uninvoicedQuantity = uninvoiced.flatMap((row) => row.items).reduce((sum, row) => sum + n(row.quantity), 0), sarNet = ar - ap;
     const make = (area: string, operational: number, ledger: number, href: string, note?: string) => ({ area, operational, ledger, difference: operational - ledger, note, href });
