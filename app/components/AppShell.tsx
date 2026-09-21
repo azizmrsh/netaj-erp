@@ -106,7 +106,7 @@ const accountingChildren:NavItem[]=[
 ].map(([label,tab])=>({label,href:`/accounting?tab=${tab}`,module:"ACCOUNTING",icon:Files}));
 const homeChildren:NavItem[]=[
   {label:"ملخص الأقسام",href:"/dashboards?view=summary",module:"CORE",icon:Files},
-  {label:"ملخص الأعمال",href:"/dashboards?view=indicators",module:"CORE",icon:ChartNoAxesCombined},
+  {label:"ملخص الأقسام",href:"/dashboards?view=indicators",module:"CORE",icon:ChartNoAxesCombined},
   {label:"التنبيهات",href:"/notifications",module:"CORE",icon:Bell},
   {label:"المهام والموافقات",href:"/approvals",module:"APPROVALS",icon:BadgeCheck},
 ];
