@@ -41,6 +41,7 @@ function ProfitLineChart({ rows, from, to }: { rows: Row[]; from: string; to: st
 }
 
 function ProfitDonut({ items }: { items: { label: string; value: number }[] }) {
+  return null;
   const colors = ["#d4a72c", "#2563eb", "#a855f7", "#059669", "#f97316"], values = items.map(item => Math.max(0, item.value)), total = values.reduce((sum, value) => sum + value, 0);
   let cursor = 0;
   const gradient = values.map((value, index) => { const start = cursor; cursor += value / Math.max(total, 1) * 100; return `${colors[index % colors.length]} ${start}% ${cursor}%`; }).join(",");
