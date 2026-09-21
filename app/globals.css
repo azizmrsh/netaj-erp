@@ -371,6 +371,8 @@ main section[class*="xl:grid-cols-[1.15fr_1.15fr_1fr]"] { display:none; }
 .monthly-sales-cumulative { display:block; min-height:16px; color:#98620b; font-size:.66rem; font-weight:900; line-height:1; white-space:nowrap; }
 .monthly-sales-axis { display:flex; justify-content:space-between; padding-top:9px; color:#697488; font-size:.7rem; font-weight:700; }
 .monthly-sales-axis strong { color:#8b5a16; }
+.monthly-unavailable-report .monthly-sales-chart { min-height:180px; display:grid; place-items:center; }
+.monthly-unavailable-message { border:1px dashed #d7c7a6; border-radius:14px; padding:18px 24px; color:#687287; background:#fffaf0; font-weight:800; text-align:center; }
 @media (max-width:700px) { .monthly-sales-report>header { align-items:stretch; flex-direction:column; }.monthly-sales-chart { padding-inline:28px 12px; }.monthly-sales-bars { gap:5px; }.monthly-sales-gridlines { inset-inline:28px 12px; }.monthly-sales-y-axis { inset-inline-start:5px; font-size:.58rem; }.monthly-sales-bar span { width:min(22px,75%); }.monthly-sales-bar small,.monthly-sales-bar em,.monthly-sales-cumulative { font-size:.56rem; }.monthly-sales-axis strong { display:none; } }
 
 /* Keep every KPI card visually identical while allowing long values to scale cleanly. */
