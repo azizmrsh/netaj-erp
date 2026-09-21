@@ -8,12 +8,14 @@ type Row = Record<string, unknown>;
 const money = (value: unknown) => `${Number(value ?? 0).toLocaleString("en-US", { maximumFractionDigits: 2 })} ر.س`;
 const compact = (value: number) => Math.abs(value) >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : Math.abs(value) >= 1_000 ? `${(value / 1_000).toFixed(0)}K` : String(Math.round(value));
 
-function Sparkline({ color }: { color: string }) {
-  return <svg viewBox="0 0 150 42" className="h-10 w-full" aria-hidden="true"><defs><linearGradient id={`spark-${color.replace(/[^a-z0-9]/gi, "")}`} x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor={color} stopOpacity=".28" /><stop offset="1" stopColor={color} stopOpacity="0" /></linearGradient></defs><path d="M2 33 C15 27 19 37 32 29 S50 23 58 29 S76 33 84 19 S101 26 111 16 S126 25 148 8 V42 H2 Z" fill={`url(#spark-${color.replace(/[^a-z0-9]/gi, "")})`} /><path d="M2 33 C15 27 19 37 32 29 S50 23 58 29 S76 33 84 19 S101 26 111 16 S126 25 148 8" fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" /></svg>;
+function Sparkline({ color, values }: { color: string; values: number[] }) {
+  const source = values.length ? values : [0], min = Math.min(...source), max = Math.max(...source), span = Math.max(1, max - min), points = source.map((value, index) => `${2 + (index / Math.max(1, source.length - 1)) * 146},${36 - ((value - min) / span) * 28}`).join(" ");
+  return <svg viewBox="0 0 150 42" className="mt-2 h-9 w-full" aria-hidden="true"><polyline points={points} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
 
-function KpiCard({ label, value, color, icon, trend = "LIVE" }: { label: string; value: unknown; color: string; icon: ReactNode; trend?: string }) {
-  return <article className={`reference-kpi ${color}`}><span>{icon}</span><div><p>{label}</p><strong>{money(value).replace(" ر.س", "")}</strong><small>SAR</small><em className={trend === "LIVE" ? "neutral" : "up"}>{trend}</em></div></article>;
+function KpiCard({ label, value, color, icon, trend = "LIVE", values = [] }: { label: string; value: unknown; color: string; icon: ReactNode; trend?: string; values?: number[] }) {
+  const stroke = color === "blue" || color === "cyan" ? "#1272e4" : color === "purple" ? "#8b35d6" : color === "gold" || color === "amber" ? "#d49313" : "#0a9f63";
+  return <article className={`reference-kpi ${color}`}><span>{icon}</span><div><p>{label}</p><strong>{money(value).replace(" ر.س", "")}</strong><small>SAR</small><em className={trend === "LIVE" ? "neutral" : "up"}>{trend}</em><Sparkline color={stroke} values={values} /></div></article>;
 }
 
 function BarChart({ title, rows, keyName, from, to }: { title: string; rows: Row[]; keyName: string; from: string; to: string }) {
