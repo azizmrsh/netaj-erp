@@ -358,6 +358,9 @@ main section[class*="xl:grid-cols-[1.15fr_1.15fr_1fr]"] { display:none; }
 .monthly-purchases-report .monthly-sales-bar span { border-color:#7c26b8; background:linear-gradient(90deg,#7c26b8 0%,#ad43d4 24%,#efb2ff 52%,#b64bd8 78%,#66209b 100%); box-shadow:inset 2px 0 5px rgb(255 255 255 / .7),2px 0 #66209b,0 -4px 12px rgb(173 67 212 / .28); }
 .monthly-purchases-report .monthly-sales-bar b,
 .monthly-purchases-report .monthly-sales-cumulative { color:#7c26b8; }
+.monthly-sales-only .monthly-sales-bar span { border-color:#0753c2; background:linear-gradient(90deg,#0753c2 0%,#2589e5 24%,#a7ddff 52%,#3c9de8 78%,#06439c 100%); box-shadow:inset 2px 0 5px rgb(255 255 255 / .7),2px 0 #06439c,0 -4px 12px rgb(37 137 229 / .28); }
+.monthly-sales-only .monthly-sales-bar b,
+.monthly-sales-only .monthly-sales-cumulative { color:#0753c2; }
 .monthly-sales-bar small { color:#5d687b; font-size:.68rem; font-weight:800; }
 .monthly-sales-bar em { color:#98620b; font-size:.66rem; font-style:normal; font-weight:900; white-space:nowrap; }
 .monthly-sales-cumulative { display:block; min-height:16px; color:#98620b; font-size:.66rem; font-weight:900; line-height:1; white-space:nowrap; }
