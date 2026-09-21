@@ -351,12 +351,12 @@ main section[class*="xl:grid-cols-[1.15fr_1.15fr_1fr]"] { display:none; }
 .monthly-sales-gridlines { position:absolute; inset:25px 30px 54px; display:flex; flex-direction:column; justify-content:space-between; opacity:.5; }
 .monthly-sales-gridlines i { border-top:1px solid #d8dce4; }
 .monthly-sales-y-axis { position:absolute; inset-inline-start:8px; inset-block:25px 70px; z-index:2; display:flex; flex-direction:column; justify-content:space-between; color:#697488; font-size:.68rem; font-weight:800; }
-.monthly-sales-bars { position:relative; z-index:1; display:grid; height:270px; grid-template-columns:repeat(12,minmax(0,1fr)); align-items:end; gap:12px; border-bottom:1px solid #8e99aa; border-left:1px solid #8e99aa; }
+.monthly-sales-bars { position:relative; z-index:1; display:grid; height:290px; grid-template-columns:repeat(12,minmax(0,1fr)); align-items:end; gap:12px; border-bottom:1px solid #8e99aa; border-left:1px solid #8e99aa; }
 .monthly-sales-bar { display:flex; min-width:0; height:100%; flex-direction:column; align-items:center; justify-content:end; gap:5px; }
 .monthly-sales-bar b { color:#172b5a; font-size:.7rem; white-space:nowrap; }
-.monthly-sales-bar span { width:min(30px,70%); border:1px solid #936614; border-radius:12px 12px 2px 2px; background:linear-gradient(90deg,#936310,#ffe59a 50%,#c99218); box-shadow:inset 2px 0 4px rgb(255 255 255 / .6),2px 0 #8b6518; }
+.monthly-sales-bar span { width:min(30px,70%); border:1px solid #98620b; border-radius:12px 12px 3px 3px; background:linear-gradient(90deg,#a36708 0%,#e2a52a 24%,#fff0ae 52%,#e0a32a 78%,#8f5707 100%); box-shadow:inset 2px 0 5px rgb(255 255 255 / .7),2px 0 #87530b,0 -4px 12px rgb(224 163 42 / .28); }
 .monthly-sales-bar small { color:#5d687b; font-size:.68rem; font-weight:800; }
-.monthly-sales-bar em { color:#172b5a; font-size:.68rem; font-style:normal; font-weight:900; white-space:nowrap; }
+.monthly-sales-bar em { color:#98620b; font-size:.66rem; font-style:normal; font-weight:900; white-space:nowrap; }
 .monthly-sales-axis { display:flex; justify-content:space-between; padding-top:9px; color:#697488; font-size:.7rem; font-weight:700; }
 .monthly-sales-axis strong { color:#8b5a16; }
 @media (max-width:700px) { .monthly-sales-report>header { align-items:stretch; flex-direction:column; }.monthly-sales-chart { padding-inline:28px 12px; }.monthly-sales-bars { gap:5px; }.monthly-sales-gridlines { inset-inline:28px 12px; }.monthly-sales-y-axis { inset-inline-start:5px; font-size:.58rem; }.monthly-sales-bar span { width:min(22px,75%); }.monthly-sales-bar small,.monthly-sales-bar em { font-size:.56rem; }.monthly-sales-axis strong { display:none; } }
