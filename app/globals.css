@@ -307,3 +307,10 @@ html[data-tables="minimal"] table tr { border-color: transparent; }
 
 /* The indicators page now keeps only the monthly sales report. */
 main section[class*="xl:grid-cols-[1.15fr_1.15fr_1fr]"] { display:none; }
+
+.reference-kpi>div { min-width:0; overflow:hidden; }
+.reference-kpi p { font-size:clamp(.78rem, .72vw, 1.05rem); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.reference-kpi strong { display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; font-size:clamp(1.05rem, 1.35vw, 1.75rem); line-height:1.15; white-space:nowrap; direction:ltr; text-align:right; }
+.reference-kpi small { font-size:clamp(.62rem, .55vw, .78rem); }
+.reference-kpi em { font-size:clamp(.58rem, .52vw, .72rem); white-space:nowrap; }
+@media (max-width:700px) { .reference-kpi { min-width:0; }.reference-kpi p { white-space:normal; }.reference-kpi strong { font-size:clamp(1rem, 4.2vw, 1.45rem); } }
