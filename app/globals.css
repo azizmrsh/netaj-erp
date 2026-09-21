@@ -329,3 +329,4 @@ main section[class*="xl:grid-cols-[1.15fr_1.15fr_1fr]"] { display:none; }
 .metric-icon.blue { background:linear-gradient(145deg,#50b8f1,#0753c2); }
 .metric-icon.rose,.metric-icon.purple { background:linear-gradient(145deg,#d26eed,#7c26b8); }
 .metric-icon.green { background:linear-gradient(145deg,#54cb96,#087b51); }
+.supplementary-kpi-grid { padding:0 20px 24px; background:#f8f5ee; }
